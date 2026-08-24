@@ -1,0 +1,37 @@
+# MCD AI 内容运营工作台依赖
+# 与现有 mcd-copy-analyzer / mcd-ctr-predictor 兼容
+
+# Web 框架
+streamlit>=1.30.0
+
+# 数据处理
+pandas>=2.0.0
+openpyxl>=3.1.0
+numpy>=1.24.0
+
+# 文本分析
+jieba>=0.42.1
+
+# LLM 客户端（OpenAI 兼容协议，覆盖 OpenAI/SiliconFlow/百度千帆/MiniMax）
+openai>=1.0.0
+
+# 可视化
+plotly>=5.18.0
+
+# 数据契约（Pydantic v2 更快更严，比 dataclass 适合配置/Schema）
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# 配置 + 环境
+python-dotenv>=1.0.0
+PyYAML>=6.0.1
+
+# 工具
+python-dateutil>=2.8.2
+
+# 测试
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# 可选：脏 JSON 解析（LLM 输出非标 JSON 时降级方案）
+# dirtyjson>=1.0.5
