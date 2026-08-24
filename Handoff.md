@@ -69,19 +69,21 @@
 
 - **2026-08-24**：项目立项，PRD v2.0 + 3 处补充（§4.0 CTR 三入口 / §13.5 Adapter 策略 / §15.A 工程化配套）
 - **2026-08-24**：端口 8501 → 8510（避让旧项目）；setup_and_run.bat 多次重写（v1 chcp 闪退 → v2 netstat 闪退 → v3 activate.bat 损坏 → v4 GBK 编码 → **v5 跳过 venv，用系统 Python**）
-- **下一步**：Phase 1（CTR Adapter 实施）
+- **2026-08-24**：Phase 1 完成（commit `dc831b0` Phase 1a + `bf1db9b` Phase 1b）；82 verify.py 用例全过；GitHub ori-yin/mcd-ai-content-platform 公开仓库
+- **2026-08-24**：修复 setup_and_run.bat 双标签 bug——删除 `explorer.exe` 行，让 Streamlit `--server.headless=false` 自动开浏览器
+- **下一步**：Phase 2（copy-analyzer Adapter抽离 + 4 个缺失分析从零实现）
 
 ---
 
 ## 6. 待办
 
-### Phase 1 — CTR Adapter（核心复用层）
-- [ ] 抽 `get_baseline_ctr` / `get_time_multiplier` / `build_context_for_llm` 等到 `adapters/ctr_predictor_adapter/`
-- [ ] 拆 `call_llm_batch` 为 `enrich_rows_for_llm` + `ProviderRouter`
-- [ ] 写 `PredictionResult` dataclass + `CTRPredictionAdapter` 接口
-- [ ] `tests/test_ctr_adapter.py` + verify.py 用例
+### Phase 1 — CTR Adapter（核心复用层） ✅ 已完成
+- [x] 抽 `get_baseline_ctr` / `get_time_multiplier` / `build_context_for_llm` 等到 `adapters/ctr_predictor_adapter/`
+- [x] 拆 `call_llm_batch` 为 `enrich_rows_for_llm` + `ProviderRouter`
+- [x] 写 `PredictionResult` dataclass + `CTRPredictionAdapter` 接口
+- [x] `tests/test_ctr_adapter.py` + verify.py 用例（verify.py 82 用例全过；pytest 版按 CLAUDE.md §4.4 留待 Phase 2/3 接服务层一起补）
 
-### Phase 2 — copy-analyzer Adapter
+### Phase 2 — copy-analyzer Adapter（待开始）
 - [ ] 抽 `data.py` / `analyzer.py` / `ai_service.py` 纯函数
 - [ ] 从零实现 4 个缺失分析（高效 plan / 相似 plan / 每日趋势 / Owner 对比）
 
@@ -115,6 +117,10 @@
 ### OneDrive + git
 `C:\ideon` 不是 OneDrive 同步目录，git 正常。搬 OneDrive 后按 memory `feedback-onedrive-git` 恢复。
 
+### setup_and_run.bat 双标签（2026-08-24 实战）
+`start "" explorer.exe "http://..."` + `streamlit --server.headless=false` → 各开一个浏览器 tab。
+正确做法：删 explorer 行，让 Streamlit 自己用 webbrowser 模块开浏览器（headless=false 默认行为）。
+
 ### PowerShell 编码
 Windows 上 WriteAllText+UTF8Encoding($false)。Claude Code Write 工具默认 UTF-8 无 BOM，OK。
 
@@ -142,9 +148,9 @@ Windows 上 WriteAllText+UTF8Encoding($false)。Claude Code Write 工具默认 U
 1. 读本 Handoff（项目记忆）
 2. 读 `CLAUDE.md`（架构 + 约束）
 3. 读 `PRD.md §4.0 / §13.5 / §15.A`（三处补充）
-4. 跑 `python tests/verify.py`（32 用例）
+4. 跑 `python tests/verify.py`（82 用例）
 5. 看 `.claude/agents/` 3 个 sub-agent
-6. 当前是 Phase 0 已完成，**Phase 1 待开始**
+6. 当前是 **Phase 1 已完成，Phase 2 待开始**
 
 ---
 

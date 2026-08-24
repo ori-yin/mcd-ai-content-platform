@@ -58,7 +58,7 @@ col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric("Phase 0（首批交付）", "完成", "工程化资产 + 项目骨架")
 with col2:
-    st.metric("Phase 1（CTR Adapter）", "待开始", "抽 ctr_predictor 纯函数")
+    st.metric("Phase 1（CTR Adapter）", "完成", "4 纯函数模块 + PredictionResult + ProviderRouter")
 with col3:
     st.metric("Phase 2（copy-analyzer Adapter）", "待开始", "抽文案分析纯函数")
 with col4:
@@ -104,7 +104,7 @@ assets = [
     (".claude/agents/integration-helper.md", "指导 import 旧模块 sub-agent"),
     (".claude/agents/test-runner.md", "运行 verify + pytest sub-agent"),
     ("setup_and_run.bat", "一键启动脚本（仿 mcd-reach-trend）"),
-    ("tests/verify.py", "32 用例集成验证（无 pytest 依赖）"),
+    ("tests/verify.py", "82 用例集成验证（无 pytest 依赖）"),
     ("data/ctr_baseline.json", "CTR 7 维度基准（v3.0）"),
     ("data/custom_dict.txt", "jieba 自定义词典（65 行）"),
     ("data/stopwords.txt", "停用词 + 禁词段"),

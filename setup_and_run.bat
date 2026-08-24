@@ -63,14 +63,13 @@ if errorlevel 1 (
 )
 
 REM Start streamlit (use python -m to bypass PATH issues)
+REM Streamlit --server.headless=false 自动开浏览器，不要再用 explorer.exe 否则会双 tab
 echo.
 echo ============================================================
 echo   Starting on port %PORT%
 echo   URL: http://localhost:%PORT%
 echo ============================================================
 echo.
-
-start "" explorer.exe "http://localhost:%PORT%"
 
 python -m streamlit run app.py --server.port=%PORT% --server.headless=false --browser.gatherUsageStats=false
 
