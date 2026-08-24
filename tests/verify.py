@@ -288,6 +288,185 @@ def test_adapter_prompt_builder():
 
 
 # ============================================================
+# 10) PredictionResult 四态（Phase 1b — core/schemas.py）
+# ============================================================
+
+_section("10) PredictionResult 四态")
+
+def test_prediction_result():
+    from core import PredictionResult
+
+    # 四态构造合法
+    p1 = PredictionResult.baseline_only(0.0357)
+    _check("baseline_only pred_ctr set", p1.pred_ctr == 0.0357, f"got {p1.pred_ctr}")
+    _check("baseline_only has_ctr=True", p1.has_ctr, "should be aggregable")
+
+    p2 = PredictionResult.model_prediction(0.04, 0.8, "加emoji")
+    _check("model_prediction pred_ctr+confidence", p2.pred_ctr == 0.04 and p2.confidence == 0.8,
+           f"got {p2.pred_ctr}/{p2.confidence}")
+
+    p3 = PredictionResult.demo(0.03, suggestion="演示数据")
+    _check("demo is_demo=True", p3.is_demo, "wrong is_demo")
+
+    p4 = PredictionResult.unavailable("API 限流")
+    _check("unavailable has_ctr=False", not p4.has_ctr, "should not aggregate")
+    _check("unavailable error set", p4.error == "API 限流", f"got {p4.error}")
+
+    # 非法 result_type 应抛 ValueError
+    raised = False
+    try:
+        PredictionResult(result_type="prediction_accuracy_77", pred_ctr=0.03)
+    except ValueError:
+        raised = True
+    _check("非法 result_type → ValueError", raised, "should reject")
+
+    # pred_ctr 越界应抛
+    raised = False
+    try:
+        PredictionResult(result_type="model_prediction", pred_ctr=1.5)
+    except ValueError:
+        raised = True
+    _check("pred_ctr>1 → ValueError", raised, "should reject")
+
+    # confidence 越界应抛
+    raised = False
+    try:
+        PredictionResult(result_type="model_prediction", pred_ctr=0.03, confidence=1.5)
+    except ValueError:
+        raised = True
+    _check("confidence>1 → ValueError", raised, "should reject")
+
+    # to_dict 序列化
+    d = p1.to_dict()
+    _check("to_dict 含 result_type", d["result_type"] == "baseline_only",
+           f"got {d['result_type']}")
+    _check("label 四态映射",
+           p1.label == "历史基准" and p2.label == "LLM 预测"
+           and p3.label == "演示数据" and p4.label == "无结果",
+           f"got {[p1.label, p2.label, p3.label, p4.label]}")
+
+
+# ============================================================
+# 11) ProviderRouter JSON 解析（Phase 1b — core/llm_gateway.py）
+# ============================================================
+
+_section("11) ProviderRouter JSON 解析")
+
+def test_provider_router_parse():
+    from core import ProviderRouter
+
+    # 标准 JSON 数组
+    raw = '[{"pred_ctr": 0.04, "confidence": 0.8, "suggestion": "ok"}]'
+    rows = ProviderRouter.parse_json_response(raw, expected_count=1)
+    _check("标准 JSON 解析", rows[0]["pred_ctr"] == 0.04, f"got {rows[0]}")
+
+    # markdown ```json``` 包裹
+    raw_md = '```json\n[{"pred_ctr": 0.05, "confidence": 0.7, "suggestion": "x"}]\n```'
+    rows = ProviderRouter.parse_json_response(raw_md, expected_count=1)
+    _check("markdown 包裹解析", rows[0]["pred_ctr"] == 0.05, f"got {rows[0]}")
+
+    # 多余前缀文字
+    raw_pre = '好的，以下是结果 [{"pred_ctr": 0.06, "confidence": 0.9, "suggestion": "y"}]'
+    rows = ProviderRouter.parse_json_response(raw_pre, expected_count=1)
+    _check("多余前缀解析", rows[0]["pred_ctr"] == 0.06, f"got {rows[0]}")
+
+    # 长度不匹配 → 截断/补空
+    raw_short = '[{"pred_ctr": 0.01, "confidence": 0.5, "suggestion": "1"}, {"pred_ctr": 0.02, "confidence": 0.6, "suggestion": "2"}]'
+    rows = ProviderRouter.parse_json_response(raw_short, expected_count=3)
+    _check("长度不匹配补空", len(rows) == 3 and rows[2].get("pred_ctr") is None,
+           f"got len={len(rows)} last={rows[2]}")
+
+    # _error 标记 → 返回全部 _error 行
+    raw_err = '{"_error": "API错误: rate limit"}'
+    rows = ProviderRouter.parse_json_response(raw_err, expected_count=2)
+    _check("_error 标记返回 2 行 _error",
+           len(rows) == 2 and "_error" in rows[0].get("suggestion", "") or "错误" in rows[0].get("suggestion", ""),
+           f"got {rows}")
+
+    # 完全 JSON 失败 → 全部 _error 行
+    rows = ProviderRouter.parse_json_response("not json at all", expected_count=2)
+    _check("完全 JSON 失败", len(rows) == 2 and "JSON失败" in rows[0]["suggestion"],
+           f"got {rows}")
+
+    # 空响应
+    rows = ProviderRouter.parse_json_response("", expected_count=1)
+    _check("空响应", len(rows) == 1, f"got {len(rows)}")
+
+    # 非法 provider 应抛 ValueError
+    raised = False
+    try:
+        ProviderRouter(provider="unknown")
+    except ValueError:
+        raised = True
+    _check("非法 provider → ValueError", raised, "should reject")
+
+
+# ============================================================
+# 12) CTRPredictionAdapter 四态行为（Phase 1b — adapters/）
+# ============================================================
+
+_section("12) CTRPredictionAdapter 四态")
+
+def test_ctr_prediction_adapter():
+    from adapters.ctr_predictor_adapter import CTRPredictionAdapter
+
+    rows = [{"标题": "测试标题", "内容": "正文", "渠道": "APP Push",
+             "是否用券": "否", "工作日类型": "工作日",
+             "发送时间": "9:30", "计划类型": "普通Plan", "预算Owner": ""}]
+
+    # mode = "baseline_only"
+    a_bl = CTRPredictionAdapter(mode="baseline_only")
+    res_bl = a_bl.predict_batch(rows)
+    _check("baseline_only 返回 1 条",
+           len(res_bl) == 1 and res_bl[0].result_type == "baseline_only",
+           f"got {res_bl}")
+    _check("baseline_only baseline_ctr set",
+           res_bl[0].baseline_ctr is not None and 0 < res_bl[0].baseline_ctr < 1,
+           f"got {res_bl[0].baseline_ctr}")
+
+    # mode = "demo"
+    a_demo = CTRPredictionAdapter(mode="demo")
+    res_demo = a_demo.predict_batch(rows)
+    _check("demo 返回 1 条",
+           len(res_demo) == 1 and res_demo[0].result_type == "demo",
+           f"got {res_demo}")
+    _check("demo is_demo=True + pred_ctr in (0,1)",
+           res_demo[0].is_demo and 0 < res_demo[0].pred_ctr < 1,
+           f"got {res_demo[0]}")
+
+    # mode = "unavailable"
+    a_off = CTRPredictionAdapter(mode="unavailable")
+    res_off = a_off.predict_batch(rows)
+    _check("unavailable 返回 1 条 + has_ctr=False",
+           len(res_off) == 1 and res_off[0].result_type == "unavailable"
+           and not res_off[0].has_ctr,
+           f"got {res_off}")
+
+    # mode = "existing_predictor" 无 router → 降级 unavailable
+    a_no_router = CTRPredictionAdapter(mode="existing_predictor", router=None)
+    res_nr = a_no_router.predict_batch(rows)
+    _check("existing_predictor 无 router → unavailable",
+           res_nr[0].result_type == "unavailable" and "ProviderRouter" in res_nr[0].error,
+           f"got {res_nr[0]}")
+
+    # 非法 mode → ValueError
+    raised = False
+    try:
+        CTRPredictionAdapter(mode="prediction_accuracy_77")
+    except ValueError:
+        raised = True
+    _check("非法 mode → ValueError", raised, "should reject")
+
+    # 空 rows → 空 list
+    _check("空 rows → 空 list", a_bl.predict_batch([]) == [], "wrong shape")
+
+    # predict_one 便捷方法
+    res_one = a_bl.predict_one(rows[0])
+    _check("predict_one 兼容", res_one.result_type == "baseline_only",
+           f"got {res_one}")
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -305,6 +484,9 @@ def main():
     test_adapter_char_utils()
     test_adapter_column_mapping()
     test_adapter_prompt_builder()
+    test_prediction_result()
+    test_provider_router_parse()
+    test_ctr_prediction_adapter()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

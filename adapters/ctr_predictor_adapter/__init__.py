@@ -8,14 +8,17 @@ Phase 1a 导出（4 个纯函数模块）：
 - column_mapping:   auto_detect / auto_detect_all + 8 组 KNOWN_*_ALIASES
 - prompt_builder:   build_context_for_llm / enrich_rows_for_llm
 
-Phase 1b 待补：
-- PredictionResult dataclass
-- CTRPredictionAdapter 统一入口（四态分明）
-- core/llm_gateway.py ProviderRouter（OpenAI/Anthropic 协议分流）
+Phase 1b 新增（CLAUDE.md §6.2 CTR_MODE）：
+- CTRPredictionAdapter: 统一入口，四态分明
+    - existing_predictor: 调真实 LLM（需注入 ProviderRouter）
+    - baseline_only:       仅历史基准
+    - demo:                演示数据稳定占位
+    - unavailable:         无有效结果
 
 红线（CLAUDE.md §4.1）：
-- 页面层不得 import 此 adapter 的内部模块，统一通过此 __init__.py
-- 本 adapter 不得 import openai / anthropic SDK（Phase 1b 由 core/llm_gateway 承担）
+- 页面层不得 import 此 adapter 的内部模块，统一通过本 __init__.py
+- 本 adapter 不得 import openai / anthropic SDK（由 core/llm_gateway 承担）
+- mode = "existing_predictor" 必须显式注入 router，否则降级为 unavailable
 """
 
 from .baseline_lookup import get_baseline, get_baseline_ctr, get_time_multiplier
@@ -34,16 +37,174 @@ from .column_mapping import (
 )
 from .prompt_builder import build_context_for_llm, enrich_rows_for_llm
 
+from typing import Optional  # noqa: E402
+
+# ── Phase 1b: CTRPredictionAdapter ─────────────────────────────────────
+# lazy import core/ 避免顶层循环依赖（core/ 也 import adapters 的常量？不，但保持清洁）
+from core import PredictionResult, ProviderRouter  # noqa: E402
+
+
+VALID_MODES = ("existing_predictor", "baseline_only", "demo", "unavailable")
+
+
+class CTRPredictionAdapter:
+    """CTR 预测统一入口，四态分明。
+
+    用法：
+        adapter = CTRPredictionAdapter(
+            mode="existing_predictor",
+            router=ProviderRouter(provider="siliconflow", api_key="xxx", model="yyy"),
+            baseline=baseline_dict,  # 可选，默认从 JSON 读
+        )
+        results: list[PredictionResult] = adapter.predict_batch(rows)
+
+    mode 决定行为：
+    - existing_predictor: enrich + 拼 prompt + router.call + 合并四态
+                          （无 router 时降级为 unavailable）
+    - baseline_only:      enrich → 每行仅返回 baseline（无 LLM）
+    - demo:               enrich → 每行返回 demo 占位（标"演示数据"）
+    - unavailable:        每行 unavailable（带 error 原因）
+    """
+
+    def __init__(
+        self,
+        mode: str = "baseline_only",
+        router: ProviderRouter = None,
+        baseline: Optional[dict] = None,
+    ):
+        if mode not in VALID_MODES:
+            raise ValueError(f"mode must be one of {VALID_MODES}, got {mode!r}")
+        self.mode = mode
+        self.router = router
+        self.baseline = baseline  # None 时内部用 get_baseline() 兜底
+
+    # ── 主入口 ─────────────────────────────────────────────────────────
+    def predict_batch(self, rows: list, **kwargs) -> list:
+        """批量预测，返回 list[PredictionResult]，长度 == len(rows)。
+
+        kwargs:
+            model: 覆盖 router 默认 model（仅 existing_predictor 模式生效）
+        """
+        if not rows:
+            return []
+
+        # 1) 先 enrich，拿到 baseline + tm（任何模式都要算，便于 UI 对比展示）
+        enriched = enrich_rows_for_llm(rows, baseline=self.baseline)
+
+        # 2) 按 mode 分流
+        if self.mode == "unavailable":
+            return [PredictionResult.unavailable(error=f"CTR_MODE=unavailable") for _ in rows]
+
+        if self.mode == "baseline_only":
+            return [self._baseline_only_pred(r) for r in enriched]
+
+        if self.mode == "demo":
+            return [self._demo_pred(r) for r in enriched]
+
+        # mode == "existing_predictor"
+        return self._llm_predict_batch(enriched, **kwargs)
+
+    def predict_one(self, row: dict, **kwargs) -> PredictionResult:
+        """单条便捷方法。"""
+        return self.predict_batch([row], **kwargs)[0]
+
+    # ── existing_predictor 路径 ────────────────────────────────────────
+    def _llm_predict_batch(self, enriched: list, model: Optional[str] = None) -> list:
+        if self.router is None:
+            return [
+                PredictionResult.unavailable(error="existing_predictor 模式需注入 ProviderRouter")
+                for _ in enriched
+            ]
+
+        context = build_context_for_llm(baseline=self.baseline)
+        batch_text = "\n".join(
+            f"【{i+1}】标题：{r.get('标题','')}｜正文：{r.get('内容','')}｜渠道：{r.get('渠道','') or '未填'}"
+            f"｜用券：{r.get('是否用券','') or '未填'}｜工作日：{r.get('工作日类型','') or '未填'}"
+            f"｜发送时间：{r.get('发送时间','') or '未填'}｜计划类型：{r.get('计划类型','') or '未填'}"
+            f"｜预算Owner：{r.get('预算Owner','') or '未填'}｜基准CTR：{r.get('_bl_str','')}｜时段系数：{r.get('_tm', 1.0):.2f}"
+            for i, r in enumerate(enriched)
+        )
+        prompt = (
+            "你是一个麦当劳中国Push文案CTR优化专家。\n\n"
+            f"{context}\n\n"
+            f"以下是要预测的文案（共{len(enriched)}条）：\n{batch_text}\n\n"
+            "请预测每条文案的CTR，并给出具体改进建议。\n"
+            "【重要】标题字数仅供参考，不是主要因素，权重低于渠道、时段和内容质量。\n"
+            "输出格式：严格JSON数组，每条包含：\n"
+            "- \"pred_ctr\": 预测CTR小数（如0.025=2.5%，需综合基准CTR、时段系数、内容质量判断）\n"
+            "- \"confidence\": 置信度0-1（信息越充分越接近1）\n"
+            "- \"suggestion\": 改进建议（30字内，具体到文案本身）\n\n"
+            "直接返回JSON数组，不要其他文字："
+        )
+
+        raw = self.router.call(prompt, model=model)
+        parsed = ProviderRouter.parse_json_response(raw, expected_count=len(enriched))
+
+        # 合并 LLM 结果 + baseline/tm（_error 行降级为 unavailable）
+        results = []
+        for i, r in enumerate(enriched):
+            bl = _safe_ctr(r.get("_bl_str"))
+            tm = r.get("_tm", 1.0)
+            row_parsed = parsed[i]
+            if isinstance(row_parsed, dict) and "_error" in str(row_parsed.get("suggestion", "")):
+                # 解析阶段已把 _error 放进 suggestion（不抛异常路径）
+                results.append(PredictionResult.unavailable(
+                    error=str(row_parsed["suggestion"]),
+                    suggestion=str(row_parsed["suggestion"]),
+                ))
+            else:
+                results.append(PredictionResult.model_prediction(
+                    pred_ctr=row_parsed.get("pred_ctr"),
+                    confidence=row_parsed.get("confidence"),
+                    suggestion=str(row_parsed.get("suggestion", "")),
+                    baseline_ctr=bl,
+                    time_multiplier=tm,
+                    source="ctr_predictor_adapter/llm",
+                ))
+        return results
+
+    # ── baseline_only / demo 工厂 ─────────────────────────────────────
+    def _baseline_only_pred(self, r: dict) -> PredictionResult:
+        bl = _safe_ctr(r.get("_bl_str"))
+        return PredictionResult.baseline_only(
+            baseline_ctr=bl,
+            suggestion="无 LLM，仅历史基准（请开启 existing_predictor 模式）"
+                       if bl is None else f"基准CTR {bl*100:.2f}%，建议开启 existing_predictor 跑 LLM 精修",
+            time_multiplier=r.get("_tm", 1.0),
+        )
+
+    def _demo_pred(self, r: dict) -> PredictionResult:
+        bl = _safe_ctr(r.get("_bl_str"))
+        # demo 占位：基准 × 时段系数 ± 5%（这里用 baseline * tm 作为"稳定占位"）
+        tm = r.get("_tm", 1.0)
+        demo_ctr = (bl * tm) if bl else 0.02  # 兜底 2%
+        return PredictionResult.demo(
+            pred_ctr=round(demo_ctr, 5),
+            confidence=0.5,
+            suggestion=f"演示数据：基准CTR {bl*100:.2f}% × 时段系数 {tm:.2f}",
+            baseline_ctr=bl,
+            time_multiplier=tm,
+        )
+
+
+def _safe_ctr(bl_str) -> Optional[float]:
+    """从 '_bl_str' 字段（如 "3.572%" 或 "未知"）解析出 float，失败返回 None。"""
+    if not bl_str or bl_str == "未知":
+        return None
+    try:
+        return float(str(bl_str).rstrip("%")) / 100.0
+    except (ValueError, AttributeError):
+        return None
+
+
 __all__ = [
-    # baseline_lookup
+    # 纯函数（Phase 1a）
     "get_baseline",
     "get_baseline_ctr",
     "get_time_multiplier",
-    # char_utils
     "count_chars",
     "get_char_range",
     "suggest_char_range",
-    # column_mapping
     "KNOWN_TITLE_ALIASES",
     "KNOWN_BODY_ALIASES",
     "KNOWN_CHANNEL_ALIASES",
@@ -54,7 +215,9 @@ __all__ = [
     "KNOWN_OWNER_ALIASES",
     "auto_detect",
     "auto_detect_all",
-    # prompt_builder
     "build_context_for_llm",
     "enrich_rows_for_llm",
+    # 统一入口（Phase 1b）
+    "CTRPredictionAdapter",
+    "VALID_MODES",
 ]
