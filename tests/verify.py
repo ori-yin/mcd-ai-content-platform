@@ -467,6 +467,407 @@ def test_ctr_prediction_adapter():
 
 
 # ============================================================
+# Phase 2a — data_loader (services/data_loader.py)
+# ============================================================
+
+_section("13) data_loader — parse_message")
+
+def test_data_loader_parse_message():
+    from services.data_loader import parse_message
+
+    # APP Push 标准 JSON
+    raw = '{"title": "限时免费", "text": "快来领取"}'
+    t, b = parse_message(raw)
+    _check("parse_message title", t == "限时免费", f"got {t!r}")
+    _check("parse_message text", b == "快来领取", f"got {b!r}")
+
+    # 非 JSON → 空串
+    t2, b2 = parse_message("plain text")
+    _check("parse_message 非 JSON → empty", t2 == "" and b2 == "", f"got {t2!r}/{b2!r}")
+
+    # 空 / None
+    _check("parse_message None → empty", parse_message(None) == ("", ""),
+           "wrong shape")
+    _check("parse_message 空串 → empty", parse_message("") == ("", ""),
+           "wrong shape")
+
+    # 换行清洗
+    raw_nl = '{"title": "标题\\n含换行", "text": "正文\\r\\n也有"}'
+    t3, b3 = parse_message(raw_nl)
+    _check("parse_message 清换行", "\n" not in t3 and "\r" not in b3,
+           f"got {t3!r}/{b3!r}")
+
+    # 只有 text → title 拿首句兜底
+    raw_only_text = '{"text": "限时免费领取优惠券"}'
+    t4, b4 = parse_message(raw_only_text)
+    _check("parse_message 只有 text → title 兜底首句", t4 == "限时免费领取优惠券",
+           f"got {t4!r}")
+
+
+_section("14) data_loader — map_columns")
+
+def test_data_loader_map_columns():
+    from services.data_loader import map_columns
+    import pandas as pd
+
+    df = pd.DataFrame(columns=["发送日期date", "渠道", "触达成功reach",
+                               "点击人次click", "owner", "plan_id"])
+    out = map_columns(df)
+    mapped = set(out.columns)
+    _check("map_columns '发送日期date' → '发送日期'", "发送日期" in mapped,
+           f"got {mapped}")
+    _check("map_columns '触达成功reach' → '触达成功'", "触达成功" in mapped, "")
+    _check("map_columns '点击人次click' → '点击人次'", "点击人次" in mapped, "")
+
+    # 标准列名已存在时不重复映射
+    df2 = pd.DataFrame(columns=["渠道", "触达成功", "点击人次"])
+    out2 = map_columns(df2)
+    _check("map_columns 保留已有 '渠道'", "渠道" in out2.columns, "")
+
+
+# ============================================================
+# Phase 2a — text_analyzer (services/text_analyzer.py)
+# ============================================================
+
+_section("15) text_analyzer — tokenize + 工具函数")
+
+def test_text_analyzer_tools():
+    from services.text_analyzer import (
+        extract_emojis, count_emojis, first_emoji_pos, tokenize,
+        load_stopwords, banned_words, dict_words, dict_counts,
+    )
+
+    # emoji
+    _check("extract_emojis('hi 🍔🍟')", extract_emojis("hi 🍔🍟") == ["🍔", "🍟"],
+           f"got {extract_emojis('hi 🍔🍟')}")
+    _check("count_emojis('no emoji')", count_emojis("no emoji") == 0, "wrong count")
+    _check("first_emoji_pos('hi 🍔')", first_emoji_pos("hi 🍔") == 3,
+           f"got {first_emoji_pos('hi 🍔')}")
+    _check("first_emoji_pos 无 emoji → -1", first_emoji_pos("no") == -1, "wrong")
+
+    # 停用词 + 禁词（默认 data/）
+    stop = load_stopwords()
+    _check("load_stopwords is frozenset", isinstance(stop, frozenset), "")
+    ban = banned_words()
+    _check("banned_words is tuple", isinstance(ban, tuple), "")
+
+    # dict_counts staging 优先
+    n1, n2 = dict_counts(staging_dict=["w1", "w2"], staging_ban=["b1"])
+    _check("dict_counts staging_dict=2", n1 == 2, f"got {n1}")
+    _check("dict_counts staging_ban=1", n2 == 1, f"got {n2}")
+    # 退化：staging=None 走文件
+    n3, n4 = dict_counts()
+    _check("dict_counts 退化读文件", n3 >= 0 and n4 >= 0,
+           f"got ({n3},{n4})")
+
+    # tokenize 纯函数（用默认词典）
+    toks = tokenize("限时免费麦旋风", stop, ["券"], ban)
+    _check("tokenize 返回 list", isinstance(toks, list), "")
+
+
+_section("16) text_analyzer — diagnose_score")
+
+def test_text_analyzer_diagnose():
+    from services.text_analyzer import diagnose_score, diagnose_problems, diagnose_suggestions
+    import pandas as pd
+
+    # 空 DataFrame → 退化诊断
+    r = diagnose_score("限时免费", "快领取", df=pd.DataFrame())
+    _check("diagnose_score 空 df → score in [0,100]", 0 <= r["score"] <= 100,
+           f"got {r['score']}")
+    _check("diagnose_score grade 合法", r["grade"] in ("优秀", "良好", "需优化", "重写"),
+           f"got {r['grade']!r}")
+
+    # 短标题 → 触发标题过短问题
+    diag_short = diagnose_score("短", "正文很长很长很长很长很长很长很长很长很长很长很长", df=pd.DataFrame())
+    problems = diagnose_problems("短", "正文很长", diag_short["diag"])
+    _check("diagnose_problems 标题过短", any(p["label"] == "标题过短" for p in problems),
+           f"got {problems}")
+
+    # 空标题 + 空正文 → 重写 + 多问题
+    diag_empty = diagnose_score("", "", df=pd.DataFrame())
+    p_empty = diagnose_problems("", "", diag_empty["diag"])
+    _check("diagnose_problems 空文案 → 多问题", len(p_empty) >= 2,
+           f"got {len(p_empty)}")
+    _check("diagnose_problems 含 tag 缺失", any(p["tag"] == "缺失" for p in p_empty), "")
+
+    # 建议
+    p1, p2 = diagnose_suggestions(diag_empty["diag"], p_empty)
+    _check("diagnose_suggestions p1 是 list", isinstance(p1, list), "")
+    _check("diagnose_suggestions p2 是 list", isinstance(p2, list), "")
+
+
+_section("17) text_analyzer — match_frameworks")
+
+def test_match_frameworks():
+    from services.text_analyzer import match_frameworks
+
+    fw = [
+        {
+            "channel": "APP Push",
+            "rules": {"require_emoji": True, "title_len_max": 15},
+            "keywords": {
+                "利益": ["免费", "立减"],
+                "数字": ["9.9", "5折"],
+            },
+        },
+        {
+            "channel": "企微1v1",
+            "rules": {},
+            "keywords": {"招呼": ["你好"], "专属": ["专属"]},
+        },
+    ]
+
+    # APP Push 命中 2 组
+    matches = match_frameworks("免费限时", "立减9.9元", "APP Push", fw)
+    _check("match_frameworks APP Push 命中 1 个", len(matches) == 1,
+           f"got {len(matches)}")
+    fw_hit, violations = matches[0]
+    _check("match_frameworks 返回 violations list", isinstance(violations, list), "")
+
+    # require_emoji 不满足 → violation
+    matches2 = match_frameworks("免费限时", "立减9.9元", "APP Push", fw)
+    has_emoji_violation = any("emoji" in v for v in matches2[0][1])
+    _check("match_frameworks 缺 emoji → violation", has_emoji_violation, "")
+
+    # 渠道不匹配 → 空
+    matches3 = match_frameworks("你好专属", "专属福利", "APP Push", fw)
+    _check("match_frameworks 渠道错 → 空", len(matches3) == 0,
+           f"got {len(matches3)}")
+
+
+_section("18) text_analyzer — word_frequency")
+
+def test_word_frequency():
+    from services.text_analyzer import word_frequency, add_tokens
+    import pandas as pd
+
+    df = pd.DataFrame({
+        "Plan ID": ["P1", "P1", "P2", "P2"],
+        "标题": ["免费限时", "免费麦辣", "立减优惠", "立减专属"],
+        "正文": ["快领取", "快来抢", "新人专享", "新人优惠"],
+        "触达成功": [5000, 4000, 3000, 2000],
+        "点击人次": [300, 200, 100, 80],
+    })
+    df2 = add_tokens(df)
+    _check("add_tokens 加 _tokens/_emojis/_len",
+           all(c in df2.columns for c in ["_tokens", "_emojis", "_len"]),
+           f"got {df2.columns.tolist()}")
+
+    wf = word_frequency(df2, min_plans=1)
+    _check("word_frequency 返回 DataFrame", isinstance(wf, pd.DataFrame)
+           and not wf.empty, "")
+    _check("word_frequency 含 含CTR% / 不含CTR%",
+           "含CTR%" in wf.columns and "不含CTR%" in wf.columns,
+           f"got {wf.columns.tolist()}")
+
+
+# ============================================================
+# Phase 2a — llm_adapter (adapters/llm_adapter.py)
+# ============================================================
+
+_section("19) llm_adapter — 纯函数")
+
+def test_llm_adapter_pure():
+    from adapters.llm_adapter import (
+        build_user_prompt, fingerprint, parse_json_response, PROVIDERS, SYSTEM_PROMPT,
+    )
+
+    local = {"hit_words": ["免费", "限时"], "miss_top": ["立减"], "emoji_count": 1}
+    p = build_user_prompt("限时免费", "快领取", local)
+    _check("build_user_prompt 含 标题", "限时免费" in p, "")
+    _check("build_user_prompt 含 历史高效词命中", "免费、限时" in p, "")
+    _check("build_user_prompt 含 emoji 计数", "emoji 1 个" in p, "")
+
+    # fingerprint 稳定
+    fp1 = fingerprint("a", "b", "MiniMax", "MiniMax-M3", local)
+    fp2 = fingerprint("a", "b", "MiniMax", "MiniMax-M3", local)
+    _check("fingerprint 稳定（同输入）", fp1 == fp2, "different")
+    fp3 = fingerprint("a", "b", "MiniMax", "MiniMax-M3", {"hit_words": [], "miss_top": [], "emoji_count": 0})
+    _check("fingerprint 区分（local 变）", fp1 != fp3, "same")
+
+    # parse_json_response 单 dict
+    raw = '{"score": 8, "issues": ["x"], "rewrites": [{"title": "t", "body": "b"}]}'
+    parsed = parse_json_response(raw)
+    _check("parse_json_response 单 dict", isinstance(parsed, dict)
+           and parsed.get("score") == 8, f"got {parsed}")
+
+    # markdown 包裹
+    raw_md = '```json\n{"score": 7}\n```'
+    parsed_md = parse_json_response(raw_md)
+    _check("parse_json_response markdown 包裹", parsed_md.get("score") == 7,
+           f"got {parsed_md}")
+
+    # 失败 → None
+    _check("parse_json_response 失败 → None", parse_json_response("not json") is None, "")
+    _check("parse_json_response 空 → None", parse_json_response("") is None, "")
+
+    # SYSTEM_PROMPT 非空
+    _check("SYSTEM_PROMPT 非空", len(SYSTEM_PROMPT) > 50, "")
+    # PROVIDERS 含 4 个
+    _check("PROVIDERS 含 4 个 provider", len(PROVIDERS) >= 4,
+           f"got {list(PROVIDERS.keys())}")
+
+
+def test_llm_adapter_call_no_key():
+    """call_llm 在没 router 或没 api_key 时返回 error，不调 SDK。"""
+    from adapters.llm_adapter import call_llm
+
+    r = call_llm(None, "t", "b", {"hit_words": [], "miss_top": [], "emoji_count": 0})
+    _check("call_llm router=None → error", "error" in r, f"got {r}")
+
+    r2 = call_llm(object(), "t", "b", {"hit_words": [], "miss_top": [], "emoji_count": 0})
+    # router.api_key 不存在 → error
+    _check("call_llm 无 api_key → error", "error" in r2, f"got {r2}")
+
+
+# ============================================================
+# Phase 2b — analytics 4 个分析
+# ============================================================
+
+_section("20) analytics — high_effort_plans.rank_plans")
+
+def test_rank_plans():
+    import pandas as pd
+    from services.analytics.high_effort_plans import rank_plans
+
+    # 3 个 plan，分别 CTR 不同
+    df = pd.DataFrame({
+        "Plan ID": ["P1"]*3 + ["P2"]*3 + ["P3"]*3,
+        "Plan名称": ["Plan1"]*3 + ["Plan2"]*3 + ["Plan3"]*3,
+        "渠道": ["APP Push"]*9,
+        "owner": ["BU-A"]*9,
+        "触达成功": [5000, 4000, 3000, 2000, 2000, 2000, 1000, 1000, 1000],
+        "点击人次": [400, 320, 240, 60, 60, 60, 50, 50, 50],
+        "标题": ["限时免费麦旋风"]*9,
+        "正文": ["快领取"]*9,
+    })
+    # 构造差异：P2 CTR = 60/2000/3=1%, P3 CTR = 50/1000/3=1.67%, P1 CTR = 400/5000=8%
+    r = rank_plans(df, min_reach=1000, min_plans=2, sort_by="加权CTR%")
+    _check("rank_plans 返回 3 个 plan", len(r) == 3, f"got {len(r)}")
+    if len(r) >= 3:
+        _check("rank_plans 按 CTR 降序 P1 第一", r.iloc[0]["plan_id"] == "P1",
+               f"got {r.iloc[0]['plan_id']}")
+
+    # min_reach 过滤：提高到 50000 → 所有 plan 都被过滤（P1 总触达仅 12000）
+    r2 = rank_plans(df, min_reach=50000, min_plans=2)
+    _check("rank_plans min_reach 过滤", len(r2) == 0,
+           f"got {len(r2)}")
+
+    # min_plans 过滤：plan 只有 1 条记录 → 过滤
+    df_small = pd.DataFrame({
+        "Plan ID": ["P1"],
+        "触达成功": [5000],
+        "点击人次": [400],
+    })
+    r3 = rank_plans(df_small, min_reach=1000, min_plans=2)
+    _check("rank_plans min_plans 过滤单 plan", len(r3) == 0, f"got {len(r3)}")
+
+
+_section("21) analytics — similarity.find_similar_plans")
+
+def test_find_similar_plans():
+    import pandas as pd
+    from services.analytics.similarity import find_similar_plans
+
+    df = pd.DataFrame({
+        "Plan ID": ["P1", "P1", "P2", "P2", "P3", "P3"],
+        "Plan名称": ["免费麦旋风", "免费麦辣", "立减优惠", "立减专属", "积分兑换", "积分换豪礼"],
+        "渠道": ["APP Push"]*6,
+        "owner": ["BU-A"]*6,
+        "触达成功": [5000, 4000, 3000, 2000, 1000, 1000],
+        "点击人次": [400, 320, 100, 80, 50, 40],
+        "标题": ["限时免费麦旋风", "免费麦辣鸡腿堡", "立减9.9", "立减5元优惠券", "积分兑换", "积分换豪礼"],
+        "正文": ["快领取免费麦旋风", "免费送鸡腿堡", "新人立减", "新人专享", "积分换好礼", "积分换奖"],
+    })
+
+    # 找相似：query "免费" + 麦旋风 应该命中 P1（最高）
+    res = find_similar_plans(df, "免费麦旋风", "快领取", top_k=2)
+    _check("find_similar_plans 返回 DataFrame", isinstance(res, pd.DataFrame), "")
+    _check("find_similar_plans top_k=2", len(res) <= 2, f"got {len(res)}")
+    if not res.empty:
+        _check("find_similar_plans 含 similarity 列", "similarity" in res.columns, "")
+        _check("find_similar_plans P1 排第一",
+               res.iloc[0]["plan_id"] == "P1",
+               f"got {res.iloc[0]['plan_id']}")
+        _check("find_similar_plans similarity 在 [0,1]",
+               all(0 <= s <= 1 for s in res["similarity"]),
+               f"got {res['similarity'].tolist()}")
+
+    # 空 query → 空结果
+    res_empty = find_similar_plans(df, "", "", top_k=3)
+    _check("find_similar_plans 空 query → 空", res_empty.empty, "")
+
+
+_section("22) analytics — daily_trend")
+
+def test_daily_trend():
+    import pandas as pd
+    from services.analytics.daily_trend import daily_aggregate, daily_summary
+
+    df = pd.DataFrame({
+        "Plan ID": ["P1"]*10,
+        "owner": ["BU-A"]*10,
+        "渠道": ["APP Push"]*10,
+        "发送日期": pd.to_datetime([
+            "2026-08-01", "2026-08-01", "2026-08-02", "2026-08-02", "2026-08-03",
+            "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08",
+        ]),
+        "触达成功": [1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000],
+        "点击人次": [50, 50, 60, 60, 70, 80, 90, 100, 110, 120],
+    })
+
+    # daily_aggregate
+    agg = daily_aggregate(df)
+    _check("daily_aggregate 返回 DataFrame", isinstance(agg, pd.DataFrame), "")
+    _check("daily_aggregate 8 天（10 条 / 8 unique）", len(agg) == 8,
+           f"got {len(agg)}")
+    _check("daily_aggregate 含 周环比%（>=8 天触发）", "周环比%" in agg.columns,
+           f"got {agg.columns.tolist()}")
+
+    # daily_summary
+    s = daily_summary(df)
+    _check("daily_summary 总触达", s.get("总触达") == 10000, f"got {s}")
+    _check("daily_summary 总点击", s.get("总点击") == 790, f"got {s}")
+    _check("daily_summary 整体CTR%", isinstance(s.get("整体CTR%"), (int, float)), "")
+    _check("daily_summary 活跃天数=8", s.get("活跃天数") == 8, f"got {s}")
+
+    # 空 df
+    agg_empty = daily_aggregate(pd.DataFrame())
+    _check("daily_aggregate 空 df → 空 DataFrame", agg_empty.empty, "")
+
+
+_section("23) analytics — owner_compare")
+
+def test_owner_compare():
+    import pandas as pd
+    from services.analytics.owner_compare import owner_compare
+
+    df = pd.DataFrame({
+        "Plan ID": ["P1", "P1", "P1", "P2", "P2", "P2", "P3", "P3"],
+        "owner": ["BU-A"]*3 + ["BU-B"]*3 + ["BU-A"]*2,
+        "渠道": ["APP Push"]*8,
+        "发送日期": pd.to_datetime(["2026-08-01"]*8),
+        "触达成功": [5000, 4000, 3000, 2000, 2000, 2000, 1000, 1000],
+        "点击人次": [400, 320, 240, 100, 100, 100, 50, 50],
+        "标题": ["限时免费麦旋风", "免费麦辣鸡腿堡", "限时优惠", "立减9.9元", "新人专享立减", "立减优惠",
+                "积分兑换", "积分换豪礼"],
+        "正文": ["快领取"]*4 + ["新人立减"]*4,
+    })
+    oc = owner_compare(df, min_plans=1, min_reach=1000)
+    _check("owner_compare 返回 DataFrame", isinstance(oc, pd.DataFrame), "")
+    _check("owner_compare 2 个 owner", len(oc) == 2, f"got {len(oc)}")
+    if len(oc) >= 1:
+        _check("owner_compare 列名完整",
+               all(c in oc.columns for c in
+                   ["owner", "n_plans", "触达成功", "点击", "加权CTR%"]),
+               f"got {oc.columns.tolist()}")
+
+    # 空 df
+    _check("owner_compare 空 df → 空", owner_compare(pd.DataFrame()).empty, "")
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -487,6 +888,20 @@ def main():
     test_prediction_result()
     test_provider_router_parse()
     test_ctr_prediction_adapter()
+    # Phase 2a
+    test_data_loader_parse_message()
+    test_data_loader_map_columns()
+    test_text_analyzer_tools()
+    test_text_analyzer_diagnose()
+    test_match_frameworks()
+    test_word_frequency()
+    test_llm_adapter_pure()
+    test_llm_adapter_call_no_key()
+    # Phase 2b
+    test_rank_plans()
+    test_find_similar_plans()
+    test_daily_trend()
+    test_owner_compare()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")
