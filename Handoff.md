@@ -29,14 +29,14 @@
 
 ### 3.1 mcd-copy-analyzer
 
-| 原模块 | 处理 | 新位置 |
-|---|---|---|
-| `data.py` parse_message / _map_columns | 直接复用 | `services/data_loader.py` |
-| `analyzer.py` tokenize / diagnose_score | 抽纯函数 + 替 cache | `services/text_analyzer.py` |
-| `ai_service.py` provider + JSON 解析 | thin wrapper | `adapters/llm_adapter.py` |
-| `config.py` 颜色 token + axis_rate | 直接复用 | `ui/theme_tokens.py` |
-| `advanced.py` 缺的 4 分析 | **从零实现** | `services/analytics/*.py` |
-| `app.py` / `inject_css` | **不复用** | 重写为 `pages/` + `ui/styles.py` |
+| 原模块 | 处理 | 新位置 | 状态 |
+|---|---|---|---|
+| `data.py` parse_message / _map_columns | 直接复用 | `services/data_loader.py` | ✅ Phase 2 |
+| `analyzer.py` tokenize / diagnose_score | 抽纯函数 + 替 cache | `services/text_analyzer.py` | ✅ Phase 2 |
+| `ai_service.py` provider + JSON 解析 | thin wrapper | `adapters/llm_adapter.py` | ✅ Phase 2 |
+| `config.py` 颜色 token + axis_rate | 直接复用 | `ui/theme_tokens.py` / `ui/plotly_helpers.py` | ✅ Phase 0 |
+| `advanced.py` 缺的 4 分析 | **从零实现** | `services/analytics/*.py` | ✅ Phase 2 |
+| `app.py` / `inject_css` | **不复用** | 重写为 `pages/` + `ui/styles.py` | ⏳ Phase 3 |
 
 ### 3.2 mcd-ctr-predictor
 
@@ -71,7 +71,9 @@
 - **2026-08-24**：端口 8501 → 8510（避让旧项目）；setup_and_run.bat 多次重写（v1 chcp 闪退 → v2 netstat 闪退 → v3 activate.bat 损坏 → v4 GBK 编码 → **v5 跳过 venv，用系统 Python**）
 - **2026-08-24**：Phase 1 完成（commit `dc831b0` Phase 1a + `bf1db9b` Phase 1b）；82 verify.py 用例全过；GitHub ori-yin/mcd-ai-content-platform 公开仓库
 - **2026-08-24**：修复 setup_and_run.bat 双标签 bug——删除 `explorer.exe` 行，让 Streamlit `--server.headless=false` 自动开浏览器
-- **下一步**：Phase 2（copy-analyzer Adapter抽离 + 4 个缺失分析从零实现）
+- **2026-08-24**：Phase 2 完成（commit `99ee282` 抽 copy-analyzer Adapter + `b44d85d` verify.py 152 用例）；新增 services/ + services/analytics/ + adapters/llm_adapter.py；Handoff §3.1 复用清单加状态列（✅/⏳）
+- **2026-08-24**：修复 setup_and_run.bat 第 6 次闪退——LF 换行改 CRLF（commit `25b1a30`）；新铁律：所有 Windows bat 必须 CRLF（Write 工具默认 LF 是陷阱）
+- **下一步**：Phase 3（业务页面 01-04 + rule_engine + generation_service + SQLite）
 
 ---
 
@@ -83,15 +85,19 @@
 - [x] 写 `PredictionResult` dataclass + `CTRPredictionAdapter` 接口
 - [x] `tests/test_ctr_adapter.py` + verify.py 用例（verify.py 82 用例全过；pytest 版按 CLAUDE.md §4.4 留待 Phase 2/3 接服务层一起补）
 
-### Phase 2 — copy-analyzer Adapter（待开始）
-- [ ] 抽 `data.py` / `analyzer.py` / `ai_service.py` 纯函数
-- [ ] 从零实现 4 个缺失分析（高效 plan / 相似 plan / 每日趋势 / Owner 对比）
+### Phase 2 — copy-analyzer Adapter + 缺失分析 ✅ 已完成
+- [x] 抽 `data.py` 纯函数 → `services/data_loader.py`（load_sheet / map_columns / parse_message / build）
+- [x] 抽 `analyzer.py` 纯函数 + 替 `@st.cache_data` → `services/text_analyzer.py`（@functools.lru_cache 仿 ctr_predictor_adapter 模式）
+- [x] `dict_counts(staging_dict, staging_ban)` 改为参数注入（UI 层从 session_state 取出传入）
+- [x] 抽 `ai_service.py` 纯函数 → `adapters/llm_adapter.py`（call_llm 接收 ProviderRouter，不直接 SDK）
+- [x] 从零实现 4 个缺失分析 → `services/analytics/`（rank_plans / find_similar_plans / daily_aggregate / owner_compare）
+- [x] verify.py 加 11 个测试函数（§13-23）共 70 用例；总计 **152 PASS, 0 FAIL**
 
-### Phase 3 — 业务页面
+### Phase 3 — 业务页面（待开始）
 - [ ] `pages/01_content_studio.py` 三栏主流程
 - [ ] `pages/02_copy_diagnosis.py` 文案诊断（CTR 入口 B）
 - [ ] `pages/03_batch_evaluation.py` 批量评估（CTR 入口 C）
-- [ ] `pages/04_historical_insights.py` 历史洞察
+- [ ] `pages/04_historical_insights.py` 历史洞察（接 services/analytics/*）
 - [ ] `services/rule_engine.py` + `services/generation_service.py` + SQLite
 
 ### 待业务确认（PRD §26，12 项）
@@ -114,12 +120,43 @@
 
 **铁律**：bat 文件**只用 ASCII**（含 `setlocal enabledelayedexpansion` 支持 `!VAR!`）；每个 `exit /b` 前 `pause`；最后成功也 `pause`；不依赖 `where` / `netstat`，用 PowerShell 替代。
 
+### bat 文件 LF vs CRLF 换行符（2026-08-24 实战第 6 次闪退）
+
+**症状**：v5 bat 跑起来报 `'form' / 'dexpansion' / 'Platform' / 'k' 不是内部或外部命令`，cmd 把整段当一行命令执行。
+
+**真因**：bat 文件用 LF（`\n`）换行，cmd **严格要求 CRLF**（`\r\n`）。Write 工具默认 UTF-8 LF，commit 时 git 还提醒 `LF will be replaced by CRLF`——但当时没人注意到这个 warning 已经把文件存成了 LF。
+
+**检测**：`grep -c $'\r' setup_and_run.bat` ≥ 1 才是 CRLF，= 0 是 LF-only 闪退风险。
+
+**修复**（一次性 Python 脚本）：
+```python
+p = 'setup_and_run.bat'
+content = open(p, 'rb').read()
+fixed = content.replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
+open(p, 'wb').write(fixed)
+```
+
+**铁律**：所有 Windows bat 必须 **CRLF**；新建 bat 后立刻 `grep -c $'\r' 文件.bat` 验证 ≥ 1，否则必闪退。
+
 ### OneDrive + git
 `C:\ideon` 不是 OneDrive 同步目录，git 正常。搬 OneDrive 后按 memory `feedback-onedrive-git` 恢复。
 
 ### setup_and_run.bat 双标签（2026-08-24 实战）
 `start "" explorer.exe "http://..."` + `streamlit --server.headless=false` → 各开一个浏览器 tab。
 正确做法：删 explorer 行，让 Streamlit 自己用 webbrowser 模块开浏览器（headless=false 默认行为）。
+
+### analyzer.py → text_analyzer.py 脱 Streamlit（2026-08-24 实战）
+- `@st.cache_data` 全替 `@functools.lru_cache(maxsize=N)`，注意 frozenset 不能放 lru_cache（需 tuple 装返回）+ 字典读 file 时路径要 fallback（参数注入）
+- `dict_counts()` 旧实现读 `st.session_state` 返回实时 staging 数。脱 Streamlit 后改成 `dict_counts(staging_dict=None, staging_ban=None)`，UI 层从 `st.session_state.get(...)` 取出传入——保持语义不变、不丢功能
+- `frozenset` 替 `set`：放进 pandas `apply(axis=1)` 的 Series 时，**frozenset 比 set 安全**（避免 set 在 dataframe 操作中被冻结抛 Unhashable）
+
+### diagnose_problems 参数陷阱（2026-08-24 实战）
+`diagnose_score(...)` 返回 `{"diag": local_diagnose_dict, ...}`。调用 `diagnose_problems(title, body, diag)` 时 `diag` 必须是 **local_diagnose dict**（含 `len_title` / `len_body` / `emoji_count` / `hit_words` / `miss_top`），不是 score 顶层 dict。
+- 正确写法：`diagnose_problems(t, b, score_result["diag"])`
+- 错误写法：`diagnose_problems(t, b, score_result)` → `KeyError: 'len_title'`
+
+### verify.py 用例数从 82 → 152（2026-08-24 实战）
+Phase 2 新增 11 个测试函数（§13-23，共 70 用例）。跑测试要 `PYTHONIOENCODING=utf-8`，否则 `_check()` 的 emoji 中文会撞 GBK codec（不是 bug，但中断 print 流导致用例数不准）。
 
 ### PowerShell 编码
 Windows 上 WriteAllText+UTF8Encoding($false)。Claude Code Write 工具默认 UTF-8 无 BOM，OK。
