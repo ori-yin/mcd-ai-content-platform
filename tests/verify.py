@@ -868,6 +868,336 @@ def test_owner_compare():
 
 
 # ============================================================
+# 24) core/schemas.py Phase 3 增补 (TaskInput / Candidate / RuleResult)
+# ============================================================
+_section("24) schemas Phase 3 增补")
+
+def test_schemas_phase3():
+    from core.schemas import (
+        TaskInput, Candidate, RuleItem, RuleResult, GenerationRecord,
+        CANDIDATE_STRATEGIES, TARGET_AUDIENCE, CHANNELS,
+        SEVERITY_PASS, SEVERITY_WARN, SEVERITY_FAIL,
+    )
+
+    # TaskInput
+    t = TaskInput(
+        product_benefit="新品限时优惠", audience="常规大盘",
+        channel="APP Push", objective="建立认知", stage="活动预热",
+        scene="早餐", tone="直接利益型",
+    )
+    _check("TaskInput 必填齐 is_complete=True", t.is_complete is True)
+    _check("TaskInput.to_dict 含 product_benefit", "product_benefit" in t.to_dict())
+    try:
+        TaskInput(product_benefit="", audience="常规大盘", channel="APP Push",
+                  objective="建立认知", stage="活动预热", scene="早餐", tone="直接利益型")
+        _check("TaskInput product_benefit 空 抛错", False, "未抛错")
+    except ValueError:
+        _check("TaskInput product_benefit 空 抛错", True)
+
+    # Candidate
+    c = Candidate(id="A", strategy="A_核心利益直给", title="新品限时", body="点击查看详情")
+    _check("Candidate effective_title 默认等于 title", c.effective_title == "新品限时")
+    _check("Candidate is_edited 默认 False", c.is_edited is False)
+    c.title_edited = "新品限时来啦"
+    _check("Candidate 改 title_edited is_edited=True", c.is_edited is True)
+    _check("Candidate effective_title 用 edited", c.effective_title == "新品限时来啦")
+    c.reset_edit()
+    _check("Candidate reset_edit 恢复", c.effective_title == "新品限时")
+    try:
+        Candidate(id="X", strategy="A_核心利益直给", title="t", body="b")
+        _check("Candidate.id 非法抛错", False, "未抛错")
+    except ValueError:
+        _check("Candidate.id 非法抛错", True)
+    try:
+        Candidate(id="A", strategy="A_核心利益直给", title="", body="b")
+        _check("Candidate 空 title 不抛错（短信允许）", True)
+    except ValueError:
+        _check("Candidate 空 title 不抛错（短信允许）", False, "不应抛错")
+    try:
+        Candidate(id="A", strategy="A_核心利益直给", title="t", body="")
+        _check("Candidate 空 body 抛错", False, "未抛错")
+    except ValueError:
+        _check("Candidate 空 body 抛错", True)
+
+    # RuleItem / RuleResult
+    rr = RuleResult(items=[
+        RuleItem(category="字数", severity=SEVERITY_PASS, message="ok"),
+        RuleItem(category="禁词", severity=SEVERITY_FAIL, message="x"),
+    ])
+    _check("RuleResult 含 fail → status=fail", rr.status == SEVERITY_FAIL)
+    _check("RuleResult has_blocking=True", rr.has_blocking is True)
+    _check("RuleResult fails 1 条", len(rr.fails) == 1)
+    _check("RuleResult passes 1 条", len(rr.passes) == 1)
+    _check("RuleResult warns 0 条", len(rr.warns) == 0)
+    rr2 = RuleResult(items=[
+        RuleItem(category="风险词", severity=SEVERITY_WARN, message="x"),
+    ])
+    _check("RuleResult 仅 warn → status=warn", rr2.status == SEVERITY_WARN)
+    _check("RuleResult 仅 warn has_blocking=False", rr2.has_blocking is False)
+
+    # GenerationRecord.to_row
+    rec = GenerationRecord(task=t, candidates=[c], selected_id="A")
+    row = rec.to_row()
+    for k in ("task_json", "candidates_json", "rule_results_json",
+              "ctr_results_json", "similar_summary_json", "selected_id", "created_at"):
+        _check(f"GenerationRecord.to_row 含 {k}", k in row)
+
+    # 常量
+    _check("CANDIDATE_STRATEGIES 3 条", len(CANDIDATE_STRATEGIES) == 3)
+    _check("TARGET_AUDIENCE 含 5 项", len(TARGET_AUDIENCE) >= 5)
+    _check("CHANNELS 4 渠道", set(CHANNELS) == {"APP Push", "企微 1v1", "短信", "站内信"})
+
+
+# ============================================================
+# 25) services/rule_engine.py
+# ============================================================
+_section("25) rule_engine")
+
+def test_rule_engine():
+    from services.rule_engine import load_rules, check_one, check_candidates
+    from core.schemas import Candidate
+
+    cr, br = load_rules()
+    ch = "APP Push"
+
+    # 正常通过
+    r = check_one("新品限时", "新品限时优惠，点击查看详情领券", ch, cr, br)
+    _check("正常文案 status != fail", r.status != "fail", r.status)
+    _check("正常文案 含 字数 pass",
+           any(it.category == "字数" and it.severity == "pass" for it in r.items))
+
+    # 标题超长 → fail
+    long_title = "限时新品优惠大放送绝对不能错过的好机会快来点击"
+    r = check_one(long_title, "正文", ch, cr, br)
+    _check("长标题触发 fail", r.status == "fail")
+    _check("长标题 fail 至少 1 条", len(r.fails) >= 1)
+
+    # 禁词 → fail
+    r = check_one("新功能上线", "正文", ch, cr, br)
+    _check("禁词触发 fail", r.status == "fail")
+    _check("禁词 fail 提到'禁词'分类",
+           any(it.category == "禁词" and it.severity == "fail" for it in r.fails))
+
+    # 风险词 → warn
+    r = check_one("保证最低价", "新品限时点击查看", ch, cr, br)
+    _check("风险词触发 warn", r.status == "warn")
+    _check("风险词 warn 提到'风险词'分类",
+           any(it.category == "风险词" and it.severity == "warn" for it in r.warns))
+
+    # 候选差异
+    cands = [
+        Candidate(id="A", strategy="A_核心利益直给", title="新品限时", body="点击查看详情"),
+        Candidate(id="B", strategy="B_消费场景切入", title="新品限时", body="点击查看详情"),
+        Candidate(id="C", strategy="C_行动号召强化", title="新品限时优惠", body="点击查看详情领券"),
+    ]
+    results = check_candidates(cands, ch, cr, br)
+    _check("check_candidates 返回 3 条", len(results) == 3)
+    _check("A 和 B 重复 → warn",
+           results[0].status == "warn" and results[1].status == "warn")
+    _check("C 独立 → 不含重复 warn",
+           not any(it.category == "重复" and it.severity == "warn" for it in results[2].items))
+
+    # load_rules 自定义路径
+    cr2, br2 = load_rules(
+        channel_path=str(ROOT / "config" / "channel_rules.yaml"),
+        brand_path=str(ROOT / "config" / "brand_rules.yaml"),
+    )
+    _check("load_rules 自定义路径返回 channel_rules", "channels" in cr2)
+    _check("load_rules brand 含 banned_terms", "banned_terms" in br2)
+
+
+# ============================================================
+# 26) services/generation_service.py (Demo 模式)
+# ============================================================
+_section("26) generation_service (Demo 模式)")
+
+def test_generation_service_demo():
+    from services.generation_service import generate, build_record, GenerationError
+    from services.rule_engine import load_rules
+    from core.schemas import TaskInput
+
+    cr, _ = load_rules()
+
+    # Demo 模式
+    task = TaskInput(
+        product_benefit="新品限时优惠", audience="常规大盘", channel="APP Push",
+        objective="建立认知", stage="活动预热", scene="早餐", tone="直接利益型",
+    )
+    cands = generate(task, router=None, channel_rules=cr)
+    _check("Demo 模式生成 3 条", len(cands) == 3)
+    _check("Demo 候选 ids = {A,B,C}", set(c.id for c in cands) == {"A", "B", "C"})
+    _check("Demo 候选 strategies 严格对应 A/B/C",
+           [c.strategy for c in cands] == list(
+               ("A_核心利益直给", "B_消费场景切入", "C_行动号召强化")))
+    _check("Demo 候选 provider='demo'", all(c.provider == "demo" for c in cands))
+
+    # 必填字段缺失抛错（schema 层 ValueError 或 service 层 GenerationError 都算）
+    try:
+        bad_task = TaskInput(product_benefit="", audience="x", channel="APP Push",
+                             objective="x", stage="x", scene="x", tone="x")
+        generate(bad_task)
+        _check("缺 product_benefit 抛错", False, "未抛错")
+    except (GenerationError, ValueError):
+        _check("缺 product_benefit 抛错", True)
+
+    # 短信渠道
+    sms_task = TaskInput(
+        product_benefit="新品限时", audience="常规大盘", channel="短信",
+        objective="建立认知", stage="活动预热", scene="早餐", tone="直接利益型",
+    )
+    sms_cands = generate(sms_task, router=None)
+    _check("短信渠道 title 全空", all(c.title == "" for c in sms_cands))
+    _check("短信渠道 body 含 '回T退订'",
+           all("回T退订" in c.body for c in sms_cands))
+
+    # build_record
+    rec = build_record(task=task, candidates=cands, selected_id="A")
+    _check("build_record 含 created_at", bool(rec.created_at))
+    row = rec.to_row()
+    _check("build_record.to_row 含 task_json", "task_json" in row)
+    _check("build_record.to_row 含 candidates_json", "candidates_json" in row)
+
+
+# ============================================================
+# 27) repositories/sqlite_repository.py + record_service
+# ============================================================
+_section("27) SQLite repository + record_service")
+
+def test_sqlite_repository():
+    import tempfile
+    from pathlib import Path
+    from repositories import sqlite_repository
+    from core.schemas import TaskInput, Candidate, GenerationRecord
+
+    with tempfile.TemporaryDirectory() as td:
+        db_path = str(Path(td) / "test_records.db")
+
+        task = TaskInput(
+            product_benefit="测试", audience="常规大盘", channel="APP Push",
+            objective="建立认知", stage="活动预热", scene="早餐", tone="直接利益型",
+        )
+        cands = [
+            Candidate(id="A", strategy="A_核心利益直给", title="t", body="b"),
+            Candidate(id="B", strategy="B_消费场景切入", title="t", body="b"),
+            Candidate(id="C", strategy="C_行动号召强化", title="t", body="b"),
+        ]
+        rec = GenerationRecord(
+            task=task, candidates=cands, selected_id="A",
+            created_at="2026-08-24T10:00:00",
+        )
+        rid = sqlite_repository.save(rec.to_row(), db_path=db_path)
+        _check("save 返回 id > 0", rid > 0)
+
+        rows = sqlite_repository.list_all(limit=10, db_path=db_path)
+        _check("list_all 返回 1 条", len(rows) == 1)
+        _check("list_all 解析 task dict", isinstance(rows[0].get("task"), dict))
+        _check("list_all 解析 candidates 列表", isinstance(rows[0].get("candidates"), list))
+
+        got = sqlite_repository.get_by_id(rid, db_path=db_path)
+        _check("get_by_id 命中", got is not None)
+        _check("get_by_id selected_id=A", got["selected_id"] == "A")
+
+        not_found = sqlite_repository.get_by_id(99999, db_path=db_path)
+        _check("get_by_id 不存在返 None", not_found is None)
+
+
+# ============================================================
+# 28) prompts/copy_generation + copy_rewrite
+# ============================================================
+_section("28) prompts")
+
+def test_prompts():
+    from prompts import copy_generation, copy_rewrite
+    from core.schemas import TaskInput
+
+    _check("copy_generation.VERSION 非空", bool(copy_generation.VERSION))
+    _check("copy_generation.SYSTEM_PROMPT 非空", bool(copy_generation.SYSTEM_PROMPT))
+
+    task = TaskInput(
+        product_benefit="新品", audience="常规大盘", channel="APP Push",
+        objective="建立认知", stage="活动预热", scene="早餐", tone="直接利益型",
+        expected_action="点击", extra_requirements="不得出现免费",
+    )
+    channel_rules = {"channels": {"APP Push": {"title_max": 15, "body_max": 60, "emoji_max": 2}}}
+    p = copy_generation.build_user_prompt(task, channel_rules)
+    _check("user_prompt 含'产品与权益'", "产品与权益" in p)
+    _check("user_prompt 含'额外要求'", "额外要求" in p)
+    _check("user_prompt 含字数上限 15", "15" in p)
+
+    raw = '```json\n[{"id":"A","strategy":"A_核心利益直给","title":"t","body":"b"}]\n```'
+    parsed = copy_generation.parse_response(raw)
+    _check("parse_response 兼容 markdown 围栏",
+           len(parsed) == 1 and parsed[0]["id"] == "A")
+
+    parsed_empty = copy_generation.parse_response("")
+    _check("parse_response 空响应返 error",
+           len(parsed_empty) == 1 and "error" in parsed_empty[0])
+
+    _check("copy_rewrite.VERSION 非空", bool(copy_rewrite.VERSION))
+    sp = copy_rewrite.get_system_prompt("shorten")
+    _check("rewrite get_system_prompt 'shorten' 非空", len(sp) > 0)
+    parsed_rewrite = copy_rewrite.parse_response('{"title":"x","body":"y","reason":"z"}')
+    _check("rewrite parse 正常 dict", parsed_rewrite.get("title") == "x")
+
+
+# ============================================================
+# 29) Phase 3 import sanity
+# ============================================================
+_section("29) Phase 3 import sanity")
+
+def test_phase3_imports():
+    try:
+        from services import (  # noqa
+            generation_service, rule_engine, record_service,
+            ctr_prediction_service, similarity_service, copy_analysis_service,
+        )
+        from repositories import sqlite_repository  # noqa
+        from prompts import copy_generation, copy_rewrite  # noqa
+        _check("Phase 3 service / repository / prompts import 成功", True)
+    except Exception as e:
+        _check("Phase 3 service / repository / prompts import 成功", False, str(e))
+
+    try:
+        from core.schemas import (  # noqa
+            TaskInput, Candidate, RuleResult, GenerationRecord,
+            RuleItem, CANDIDATE_STRATEGIES,
+        )
+        _check("Phase 3 schemas 全部 import 成功", True)
+    except Exception as e:
+        _check("Phase 3 schemas 全部 import 成功", False, str(e))
+
+
+# ============================================================
+# 30) Phase 3.2 pages import sanity
+# ============================================================
+_section("30) pages import sanity")
+
+def test_pages_import():
+    import importlib
+
+    for page in ("pages.00_home", "pages.01_content_studio",
+                 "pages.02_copy_diagnosis", "pages.03_batch_evaluation",
+                 "pages.04_historical_insights"):
+        try:
+            importlib.import_module(page)
+            _check(f"{page} import 成功", True)
+        except Exception as e:
+            _check(f"{page} import 成功", False, str(e))
+
+    # app.py 是入口（无 st.navigation / st.Page，避免自引用递归；pages/ 自动发现）
+    app_path = ROOT / "app.py"
+    try:
+        content = app_path.read_text(encoding="utf-8")
+        # 必须含 set_page_config + inject_base_css；不能含自引用 st.Page("app.py")
+        _check("app.py 含 set_page_config", "set_page_config" in content)
+        _check("app.py 含 inject_base_css", "inject_base_css" in content)
+        _check("app.py 不含 st.Page('app.py', ...) 自引用",
+               'st.Page("app.py"' not in content and "st.Page('app.py'" not in content)
+    except Exception as e:
+        _check("app.py 入口检查", False, str(e))
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -902,6 +1232,14 @@ def main():
     test_find_similar_plans()
     test_daily_trend()
     test_owner_compare()
+    # Phase 3
+    test_schemas_phase3()
+    test_rule_engine()
+    test_generation_service_demo()
+    test_sqlite_repository()
+    test_prompts()
+    test_phase3_imports()
+    test_pages_import()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

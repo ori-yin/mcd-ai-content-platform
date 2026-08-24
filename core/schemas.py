@@ -148,3 +148,222 @@ class PredictionResult:
             "demo":             "演示数据",
             "unavailable":      "无结果",
         }.get(self.result_type, self.result_type)
+
+
+# ── 任务输入（PRD §6.2 左栏 11 字段）─────────────────────────────────
+TARGET_AUDIENCE = ("常规大盘", "新品兴趣人群", "近期活跃用户", "沉默召回人群", "高价值会员")
+OBJECTIVES      = ("建立认知", "提升点击", "促进领券", "促进下单", "用户召回", "新品种草")
+CHANNELS        = ("APP Push", "企微 1v1", "短信", "站内信")
+STAGES          = ("活动预热", "活动上线", "活动爆发", "活动收尾")
+SCENES          = ("早餐", "午餐", "下午茶", "晚餐", "夜宵", "周末聚会", "其他")
+TONES           = ("直接利益型", "场景种草型", "品牌互动型", "行动号召型")
+ACTIONS         = ("点击", "领券", "下单", "回流", "到店", "查看详情")
+PLAN_TYPES      = ("普通 Plan", "AARR Plan", "未知")
+COUPON_FLAGS    = ("是", "否", "未知")
+
+
+@dataclass
+class TaskInput:
+    """左栏"定义经营任务"输入（PRD §6.2）。
+
+    必填 7 项：product_benefit / audience / channel / objective /
+              stage / scene / tone
+    可选 4 项：expected_action / plan_type / coupon / planned_send_date
+    附加：extra_requirements
+
+    字段名沿用 PRD §9.1 输入 schema（snake_case），便于未来落库 JSON。
+    """
+    product_benefit: str
+    audience: str
+    channel: str
+    objective: str
+    stage: str
+    scene: str
+    tone: str
+    expected_action: str = ""
+    plan_type: str = "未知"
+    coupon: str = "未知"
+    planned_send_date: Optional[str] = None   # ISO 日期字符串，未填为 None
+    extra_requirements: str = ""
+
+    REQUIRED_FIELDS: tuple = (
+        "product_benefit", "audience", "channel", "objective", "stage", "scene", "tone",
+    )
+
+    def __post_init__(self):
+        # 必填校验（页面层也校验，这里兜底）
+        for f in self.REQUIRED_FIELDS:
+            v = getattr(self, f)
+            if not v or (isinstance(v, str) and not v.strip()):
+                raise ValueError(f"TaskInput 必填字段 {f} 为空")
+        # 枚举校验（不强制——给默认值兜底，但给 warning 即可，不抛错便于 demo 跑通）
+        # PRD §26 待业务确认项，宽松处理：不在枚举内的值原样保留，UI 层可能显示为"自定义"
+
+    @property
+    def is_complete(self) -> bool:
+        return all(bool(getattr(self, f)) for f in self.REQUIRED_FIELDS)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_form(cls, form_data: dict) -> "TaskInput":
+        """从 st.session_state / form dict 构造（缺失字段填空串不抛错）。"""
+        return cls(
+            product_benefit=(form_data.get("product_benefit") or "").strip(),
+            audience=form_data.get("audience") or "",
+            channel=form_data.get("channel") or "",
+            objective=form_data.get("objective") or "",
+            stage=form_data.get("stage") or "",
+            scene=form_data.get("scene") or "",
+            tone=form_data.get("tone") or "",
+            expected_action=form_data.get("expected_action") or "",
+            plan_type=form_data.get("plan_type") or "未知",
+            coupon=form_data.get("coupon") or "未知",
+            planned_send_date=form_data.get("planned_send_date") or None,
+            extra_requirements=(form_data.get("extra_requirements") or "").strip(),
+        )
+
+
+# ── 候选（PRD §7 / §9.2 输出 schema）───────────────────────────────────
+CANDIDATE_STRATEGIES = ("A_核心利益直给", "B_消费场景切入", "C_行动号召强化")
+
+
+@dataclass
+class Candidate:
+    """中栏候选（PRD §7.2 / §9.2）。
+
+    字段语义：
+    - id: "A" / "B" / "C"
+    - strategy: A_核心利益直给 / B_消费场景切入 / C_行动号召强化
+    - title / body: AI 原文（永不被人工编辑覆盖）
+    - title_edited / body_edited: 人工编辑后内容；未编辑时为 None
+    - reason: 生成理由（PRD §9.2）
+    - risk_flags: 风险标记列表（PRD §9.2）
+    - used_input_fields: 使用了哪些 TaskInput 字段
+    - provider / model / prompt_version: 生成溯源（PRD §10.3 Prompt 版本管理）
+
+    PRD §17 状态管理要求：切换候选不重生成 / 人工编辑不丢 / title 与 title_edited 分离。
+    """
+    id: str
+    strategy: str
+    title: str
+    body: str
+    reason: str = ""
+    risk_flags: list = field(default_factory=list)
+    used_input_fields: list = field(default_factory=list)
+    title_edited: Optional[str] = None
+    body_edited: Optional[str] = None
+    provider: str = "demo"
+    model: str = ""
+    prompt_version: str = "v1.0"
+
+    def __post_init__(self):
+        if self.id not in ("A", "B", "C"):
+            raise ValueError(f"Candidate.id must be A/B/C, got {self.id!r}")
+        # body 必须非空；title 允许为空（短信 / 企微 1v1 无独立标题，PRD §8.2）
+        if not self.body.strip():
+            raise ValueError("Candidate.body 不能为空")
+
+    @property
+    def effective_title(self) -> str:
+        return self.title_edited if self.title_edited is not None else self.title
+
+    @property
+    def effective_body(self) -> str:
+        return self.body_edited if self.body_edited is not None else self.body
+
+    @property
+    def is_edited(self) -> bool:
+        return self.title_edited is not None or self.body_edited is not None
+
+    def reset_edit(self) -> None:
+        self.title_edited = None
+        self.body_edited = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+# ── 规则检查结果（PRD §8.4 绿/黄/红 + §11 规则引擎）────────────────────
+SEVERITY_PASS = "pass"
+SEVERITY_WARN = "warn"
+SEVERITY_FAIL = "fail"
+VALID_SEVERITIES = (SEVERITY_PASS, SEVERITY_WARN, SEVERITY_FAIL)
+
+
+@dataclass
+class RuleItem:
+    """单条规则结果。"""
+    category: str           # 字数 / 必带词 / 禁词 / 风险词 / 标点 / ...
+    severity: str           # pass / warn / fail
+    message: str            # 给用户看的中文短句
+    suggestion: str = ""    # 改进建议
+
+
+@dataclass
+class RuleResult:
+    """一组规则检查的聚合结果（一条 Candidate 对应一个）。"""
+    items: list = field(default_factory=list)
+
+    @property
+    def status(self) -> str:
+        """聚合状态：任意 fail → fail；任意 warn → warn；全 pass → pass。"""
+        severities = [it.severity for it in self.items]
+        if SEVERITY_FAIL in severities:
+            return SEVERITY_FAIL
+        if SEVERITY_WARN in severities:
+            return SEVERITY_WARN
+        return SEVERITY_PASS
+
+    @property
+    def has_blocking(self) -> bool:
+        """PRD §8.5：存在阻断项（fail）不得推荐正式使用。"""
+        return any(it.severity == SEVERITY_FAIL for it in self.items)
+
+    @property
+    def passes(self) -> list:
+        return [it for it in self.items if it.severity == SEVERITY_PASS]
+
+    @property
+    def warns(self) -> list:
+        return [it for it in self.items if it.severity == SEVERITY_WARN]
+
+    @property
+    def fails(self) -> list:
+        return [it for it in self.items if it.severity == SEVERITY_FAIL]
+
+    def to_dict(self) -> dict:
+        return {
+            "status": self.status,
+            "items": [asdict(it) for it in self.items],
+        }
+
+
+# ── 生成记录（repositories/sqlite_repository 入库结构）────────────────
+@dataclass
+class GenerationRecord:
+    """完整保存一次"任务输入 → 生成 → 选择"全过程。"""
+    task: TaskInput
+    candidates: list            # list[Candidate]
+    selected_id: str            # "A" / "B" / "C"
+    rule_results: list = field(default_factory=list)   # list[RuleResult] 与 candidates 对齐
+    ctr_results: list = field(default_factory=list)    # list[PredictionResult]
+    similar_summary: dict = field(default_factory=dict)  # {"count": N, "avg_ctr": ..., "top_terms": [...]}
+    created_at: str = ""        # ISO 时间戳
+
+    def to_row(self) -> dict:
+        """转 SQLite 入库 dict。"""
+        import json
+        return {
+            "task_json":           json.dumps(self.task.to_dict(), ensure_ascii=False),
+            "candidates_json":     json.dumps([c.to_dict() for c in self.candidates], ensure_ascii=False),
+            "rule_results_json":   json.dumps([r.to_dict() for r in self.rule_results], ensure_ascii=False),
+            "ctr_results_json":    json.dumps(
+                [c.to_dict() if hasattr(c, "to_dict") else c for c in self.ctr_results],
+                ensure_ascii=False,
+            ),
+            "similar_summary_json": json.dumps(self.similar_summary, ensure_ascii=False),
+            "selected_id":         self.selected_id,
+            "created_at":          self.created_at,
+        }

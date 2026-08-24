@@ -73,7 +73,9 @@
 - **2026-08-24**：修复 setup_and_run.bat 双标签 bug——删除 `explorer.exe` 行，让 Streamlit `--server.headless=false` 自动开浏览器
 - **2026-08-24**：Phase 2 完成（commit `99ee282` 抽 copy-analyzer Adapter + `b44d85d` verify.py 152 用例）；新增 services/ + services/analytics/ + adapters/llm_adapter.py；Handoff §3.1 复用清单加状态列（✅/⏳）
 - **2026-08-24**：修复 setup_and_run.bat 第 6 次闪退——LF 换行改 CRLF（commit `25b1a30`）；新铁律：所有 Windows bat 必须 CRLF（Write 工具默认 LF 是陷阱）
-- **下一步**：Phase 3（业务页面 01-04 + rule_engine + generation_service + SQLite）
+- **2026-08-24**：Phase 3.1 基础设施——6 service + 2 prompt + 1 repository + 2 yaml + core/schemas 增补 + ui/styles 增 6 class；`tests/verify.py` 152 → 222 PASS
+- **2026-08-24**：Phase 3.2 页面 + 多页——`pages/01_content_studio.py` 三栏主流程 + `pages/02-04_*.py` Phase 4 占位 + `app.py` 改 pages/ 自动发现入口（修复 st.Page 自引用递归 bug）；`tests/verify.py` 222 → 230 PASS
+- **下一步**：Phase 4（02 文案诊断 / 03 批量评估 / 04 历史洞察 + 渠道预览补全 + pytest 版测试）
 
 ---
 
@@ -93,12 +95,25 @@
 - [x] 从零实现 4 个缺失分析 → `services/analytics/`（rank_plans / find_similar_plans / daily_aggregate / owner_compare）
 - [x] verify.py 加 11 个测试函数（§13-23）共 70 用例；总计 **152 PASS, 0 FAIL**
 
-### Phase 3 — 业务页面（待开始）
-- [ ] `pages/01_content_studio.py` 三栏主流程
-- [ ] `pages/02_copy_diagnosis.py` 文案诊断（CTR 入口 B）
-- [ ] `pages/03_batch_evaluation.py` 批量评估（CTR 入口 C）
-- [ ] `pages/04_historical_insights.py` 历史洞察（接 services/analytics/*）
-- [ ] `services/rule_engine.py` + `services/generation_service.py` + SQLite
+### Phase 3 — 业务页面（进行中）
+- [x] `services/rule_engine.py` — 字数 / 必带 / 禁词 / 风险词 / 格式 / 重复 6 类规则，Pass/Warn/Fail 三态
+- [x] `services/generation_service.py` — Demo 模式稳定占位 + LLM 模式（router 注入）
+- [x] `services/ctr_prediction_service.py` — 包 CTRPredictionAdapter
+- [x] `services/similarity_service.py` — 包 find_similar_plans
+- [x] `services/copy_analysis_service.py` — 包 diagnose_score
+- [x] `services/record_service.py` + `repositories/sqlite_repository.py` — SQLite `data/records.db`
+- [x] `prompts/copy_generation.py` + `prompts/copy_rewrite.py` — Prompt 版本管理 v1.0
+- [x] `config/channel_rules.yaml` + `config/brand_rules.yaml` — 渠道字数 / 必带 / 风险 / 禁词
+- [x] `core/schemas.py` 增补 — `TaskInput` / `Candidate` / `RuleItem` / `RuleResult` / `GenerationRecord`
+- [x] `ui/styles.py` 增 6 class — candidate-card / rule-pass/rule-fail/rule-warn / preview-card / kpi-tile / warning-banner
+- [x] `pages/01_content_studio.py` 三栏主流程（PRD §4.1）
+- [x] `pages/02_copy_diagnosis.py` + `03_batch_evaluation.py` + `04_historical_insights.py` Phase 4 占位
+- [x] `app.py` 改 `pages/` 自动发现入口（避 st.Page 自引用递归 bug）
+- [ ] `pages/02_copy_diagnosis.py` 实现（PRD §4.2 入口 B）
+- [ ] `pages/03_batch_evaluation.py` 实现（PRD §4.3 入口 C）
+- [ ] `pages/04_historical_insights.py` 实现（PRD §4.4）
+- [ ] pytest 版测试（CLAUDE.md §4.4 留待 Phase 4 接服务层一起补）
+- [ ] 渠道预览补全：企微 1v1 / 短信 / 站内信 完整版（首版仅 APP Push + 占位）
 
 ### 待业务确认（PRD §26，12 项）
 第一场 Demo 主渠道 / 人群-阶段-场景枚举值 / 字数上限 / 禁用词清单 / 校准状态 / 内网 LLM 接口 / 企微 1v1 预览支持 / 完整文案存储
@@ -164,6 +179,19 @@ Windows 上 WriteAllText+UTF8Encoding($false)。Claude Code Write 工具默认 U
 ### github 推送
 直连 `github.com`，gh-proxy.com 反代已 403。本地分叉用 `--force-with-lease`。
 
+### st.Page("app.py") 自引用递归（2026-08-24 实战）
+`app.py` 用 `st.navigation([st.Page("app.py", ...), ...])` + `pg.run()` → `RecursionError: maximum recursion depth exceeded`。Streamlit 把 app.py 自己也当页面执行，每次 exec 都会再调 pg.run() → 无限递归。
+
+**修法**：app.py 只保留入口配置（`set_page_config` + `inject_base_css`），首页内容挪到 `pages/00_home.py`，用 `pages/` 自动发现（Streamlit 默认行为），**不要在 app.py 调 st.navigation / st.Page**。
+
+### Python 字符串嵌套双引号（2026-08-24 实战）
+LLM prompt 字符串里要嵌"引用"，**别直接 `"...\"X\"..."` 配 `\"` 转义**，Claude Code Write 工具容易错位导致 SyntaxError。
+
+**修法**：用中文「」替代英文双引号——`"突出「专属」+「福利」命中企微 1v1 必带词"`。可读性更好且无转义负担。涉及：`services/generation_service.py:70` + `prompts/copy_rewrite.py:29/33`。
+
+### Candidate.title 允许为空（2026-08-24 实战）
+短信 / 企微 1v1 无独立标题，PRD §8.2 显式允许。`core/schemas.py:265` 校验必须放：`if not self.body.strip()`，**不要带 title 校验**。验证测试也要相应改成"title 空不抛错"。
+
 ---
 
 ## 8. 关键路径速查
@@ -174,6 +202,11 @@ Windows 上 WriteAllText+UTF8Encoding($false)。Claude Code Write 工具默认 U
 | `C:\ideon\mcd-ai-content-platform\PRD.md` | v2.1（1410 行） |
 | `C:\ideon\mcd-ai-content-platform\CLAUDE.md` | 给 AI 看的项目说明 |
 | `C:\ideon\mcd-ai-content-platform\data\ctr_baseline.json` | 7 维度基准（v3.0） |
+| `C:\ideon\mcd-ai-content-platform\data\records.db` | 生成记录 SQLite（自动建） |
+| `C:\ideon\mcd-ai-content-platform\config\channel_rules.yaml` | 4 渠道字数上限 |
+| `C:\ideon\mcd-ai-content-platform\config\brand_rules.yaml` | 必带 / 风险 / 禁词 |
+| `C:\ideon\mcd-ai-content-platform\prompts\copy_generation.py` | 生成候选 prompt v1.0 |
+| `C:\ideon\mcd-ai-content-platform\prompts\copy_rewrite.py` | 改写 prompt v1.0 |
 | `C:\ideon\mcd-ctr-predictor\ctr_predictor.py` | CTR 事实来源 |
 | `C:\ideon\mcd-copy-analyzer\analyzer.py` | 文案分析事实来源 |
 | `C:\ideon\mcd-copy-analyzer\Handoff.md` | 范式参考 |

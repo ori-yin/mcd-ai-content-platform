@@ -1,0 +1,126 @@
+# -*- coding: utf-8 -*-
+r"""
+prompts/copy_generation.py — 生成 3 条候选的 Prompt 模板
+
+PRD §10 Prompt 版本管理：
+- Prompt 放独立目录（prompts/）
+- 每次修改升级 VERSION
+- 保存记录时记 prompt_version（GenerationRecord.candidates[*].prompt_version）
+
+PRD §7.2 三策略（A/B/C 不得重复）：
+- A_核心利益直给：直接说明产品/权益/优惠
+- B_消费场景切入：从具体场景和用户需求进入
+- C_行动号召强化：强化目标动作（不虚构紧迫性）
+
+PRD §3.3 AI 只生成候选 — Prompt 强调"候选不直接投放"。
+"""
+
+from __future__ import annotations
+
+from core.schemas import TaskInput
+
+
+VERSION = "v1.0"
+
+
+SYSTEM_PROMPT = """你是麦当劳企微 1v1 / Push 文案顾问。基于输入的"经营任务"生成 3 条候选内容。
+
+输出 JSON 数组（不要 markdown 围栏、不要解释前缀、不要换行包裹）：
+[
+  {
+    "id": "A",
+    "strategy": "A_核心利益直给",
+    "title": "...",
+    "body": "...",
+    "reason": "为什么这条匹配任务",
+    "risk_flags": [],
+    "used_input_fields": ["product_benefit", "campaign_stage", ...]
+  },
+  {"id": "B", "strategy": "B_消费场景切入", ...},
+  {"id": "C", "strategy": "C_行动号召强化", ...}
+]
+
+硬约束：
+- 严格 3 条，id 必须是 A、B、C
+- 3 条 strategy 文本必须分别为：A_核心利益直给 / B_消费场景切入 / C_行动号召强化（不得重复）
+- title / body 不得为空
+- 不编造未输入的事实（不得虚构价格 / 日期 / 库存）
+- 如有"额外要求"（不得使用某词 / 必须包含某词），必须严格执行
+- 文案是候选，最终由业务人员人工确认后才能投放
+- 真实使用品牌"麦当劳"或产品名时按业务侧确认的输入使用，不要凭空加
+"""
+
+
+def build_user_prompt(task: TaskInput, channel_rules: dict) -> str:
+    """拼装 user prompt。channel_rules 是 config/channel_rules.yaml 加载的 dict。"""
+    rules = channel_rules.get(task.channel, {})
+    title_max = rules.get("title_max", 15)
+    body_max = rules.get("body_max", 60)
+    emoji_max = rules.get("emoji_max", 2)
+
+    parts = [
+        "【经营任务】",
+        f"产品与权益：{task.product_benefit}",
+        f"目标人群：{task.audience}",
+        f"投放渠道：{task.channel}",
+        f"投放目标：{task.objective}",
+        f"活动阶段：{task.stage}",
+        f"消费场景：{task.scene}",
+        f"内容语气：{task.tone}",
+    ]
+    if task.expected_action:
+        parts.append(f"期望动作：{task.expected_action}")
+    if task.plan_type and task.plan_type != "未知":
+        parts.append(f"Plan 类型：{task.plan_type}")
+    if task.coupon and task.coupon != "未知":
+        parts.append(f"是否用券：{task.coupon}")
+    if task.planned_send_date:
+        parts.append(f"计划投放日期：{task.planned_send_date}")
+    if task.extra_requirements:
+        parts.append(f"额外要求：{task.extra_requirements}")
+
+    parts.append("")
+    parts.append("【渠道字数约束】")
+    parts.append(f"标题上限：{title_max} 字（0 表示不需要独立标题）")
+    parts.append(f"正文字数上限：{body_max} 字")
+    parts.append(f"emoji 上限：{emoji_max} 个")
+    parts.append("注意：渠道字数超出会被程序判定为阻断项，请严格控制。")
+    return "\n".join(parts)
+
+
+def parse_response(raw: str) -> list:
+    """从 LLM 原始响应解析 3 条候选 JSON 数组。
+
+    返回：list[dict]，长度 == 3；失败返回 [{"error": "..."}] 单元素 list。
+    注：调用方负责长度对齐。
+    """
+    import json
+    import re
+
+    if not raw:
+        return [{"error": "空响应"}]
+    s = re.sub(r"^```(?:json)?\s*", "", raw.strip())
+    s = re.sub(r"\s*```$", "", s)
+    m = re.search(r"\[.*\]", s, re.DOTALL)
+    if m:
+        s = m.group(0)
+    try:
+        rows = json.loads(s)
+        if isinstance(rows, dict):
+            rows = [rows]
+        if not isinstance(rows, list):
+            return [{"error": "响应不是数组"}]
+        for r in rows:
+            r.setdefault("id", "")
+            r.setdefault("strategy", "")
+            r.setdefault("title", "")
+            r.setdefault("body", "")
+            r.setdefault("reason", "")
+            r.setdefault("risk_flags", [])
+            r.setdefault("used_input_fields", [])
+        return rows
+    except Exception as e:
+        return [{"error": f"JSON失败: {str(e)[:80]}"}]
+
+
+__all__ = ["VERSION", "SYSTEM_PROMPT", "build_user_prompt", "parse_response"]
