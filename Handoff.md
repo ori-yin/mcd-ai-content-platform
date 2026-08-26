@@ -170,8 +170,8 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：Phase 8 pytest 迁移完成（详见 §5 新增条目）
-- **用例**：428 PASS / 0 FAIL（`python tests/verify.py`）= 43 passed（`pytest tests/verify.py`，双路一致）
+- **阶段**：Phase 6 P4 完成（§6.3 纯工程候选 P3 + demo 回灌已扫掉；详见 §5 新增条目）
+- **用例**：473 PASS / 0 FAIL（`python tests/verify.py`）= 45 passed（`pytest tests/verify.py`，双路一致）
 - **首要任务**：第二梯队 #1/#2/#4/#7 待业务确认；L1 LightGBM / P4 签名关联 候选 — 详 §6.2 / §6.3
 - **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿）+ `docs/feedback-ctr.md`
 - **不动**：业务确认前不接真实反馈数据；不启用灰态字段（product_benefit/objective）
@@ -192,6 +192,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 6 P3** simplify 清理（4 agent review） | yaml.safe_load 替手写解析 / v3.1 docstring 缩成 1 行 / 删 PENDING_FIELDS / _to_local 死分支 / notice.py 合并 helper | **418** |
 | **Phase 7** 业务拍板落地（#3 触发 + #6 排序） | docs/ctr-feedback-schedule.md / weekly_calibrate.bat / rank_candidates_by_ctr / UI 调 + 文案微调 / 删 phase6_p1/p2_push.py | **428** |
 | **Phase 8** pytest 迁移（CLAUDE.md §4.4 工程债） | pytest.ini / _RUNNING_UNDER_PYTEST 标志 / _check 失败抛 AssertionError / 双路一致（pytest 43 passed + CLI 428 PASS） | **428（CLI）/ 43（pytest）** |
+| **Phase 6 P4** Handoff §6.3 纯工程候选扫掉 | config/dimension_weights.yaml + train_dimension_weights.py / feedback_lookup.py + 5 文件改动 / §43+§44 共 45 用例 | **473（CLI）/ 45（pytest）** |
 
 ### Phase 1 — CTR Adapter（核心复用层） ✅ 已完成
 - [x] 抽 `get_baseline_ctr` / `get_time_multiplier` / `build_context_for_llm` 等到 `adapters/ctr_predictor_adapter/`
@@ -562,16 +563,16 @@ Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置
 1. 读本 Handoff（项目记忆）
 2. 读 `CLAUDE.md`（架构 + 约束）
 3. 读 `PRD.md §4.0 / §13.5 / §15.A`（三处补充）
-4. 跑 `python tests/verify.py`（**421 PASS / 0 FAIL**）
+4. 跑 `python tests/verify.py`（**473 PASS / 0 FAIL**）
 5. 看 `docs\ctr-kpi-definition-proposal-v0.2.md`（**当前 v3.1 拍板口径**）
-6. 当前是 **Phase 6 P2 完成 · 等第一梯队剩 #3 / #6 拍板**
+6. 当前是 **Phase 6 P4 完成 · §6.3 纯工程候选扫掉 · 等第二梯队 #1/#2/#4/#7 + L1/P4 拍板**
 
 ---
 
 ## 10. Self-check
 
-- [ ] 临时文件全清（`_*.py / *.bak / *.log / *.pyc`）
-- [ ] `python tests/verify.py` 全过
-- [ ] `python -m py_compile $(git ls-files '*.py')` 全过
-- [ ] 关键改动进 commit（如 git 化）
-- [ ] UI 无 emoji，沟通全中文
+- [x] 临时文件全清（`_*.py / *.bak / *.log / *.pyc`）— `tools/_push_phase6p4_once.py` 一次性脚本已删
+- [x] `python tests/verify.py` 全过（473 PASS / 0 FAIL）
+- [x] `python -m py_compile $(git ls-files '*.py')` 全过
+- [x] 关键改动进 commit（如 git 化）
+- [x] UI 无 emoji，沟通全中文
