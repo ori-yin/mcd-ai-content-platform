@@ -30,6 +30,38 @@ from adapters.llm_adapter import call_llm
 from core.llm_gateway import ProviderRouter
 
 
+# ── 反哺影响生成排序（Handoff §6.2 #6 拍板）─────────────────────
+def rank_candidates_by_ctr(
+    candidates: list,
+    ctr_results: list,
+) -> tuple:
+    """按 predicted_ctr 降序重排 candidates + ctr_results（同索引）。
+
+    tie-break：CTR 相同时按 title 长度升序（短标题通常点击率高）。
+    unavailable（pred_ctr is None）排最后，保持"有预测值的优先"。
+
+    返回 (ranked_candidates, ranked_ctr_results) —— 长度不变，仅顺序改变。
+    """
+    if len(candidates) != len(ctr_results):
+        raise ValueError(
+            f"长度不一致：candidates={len(candidates)}, ctr_results={len(ctr_results)}"
+        )
+
+    def _sort_key(idx):
+        ctr = ctr_results[idx].pred_ctr
+        # None 当作 0；自然排到末尾
+        ctr_val = ctr if ctr is not None else 0.0
+        # 标题长度升序（短的优先）
+        title_len = len(candidates[idx].effective_title or "")
+        return (-ctr_val, title_len)
+
+    indices = sorted(range(len(candidates)), key=_sort_key)
+    return (
+        [candidates[i] for i in indices],
+        [ctr_results[i] for i in indices],
+    )
+
+
 class GenerationError(Exception):
     """生成失败（PRD §22 异常处理）。"""
     pass
@@ -229,4 +261,4 @@ def build_record(
     )
 
 
-__all__ = ["GenerationError", "generate", "build_record"]
+__all__ = ["GenerationError", "generate", "build_record", "rank_candidates_by_ctr"]

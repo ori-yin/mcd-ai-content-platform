@@ -2158,6 +2158,78 @@ def test_ctr_definition_v31():
            dw.resolve_bi_dt_window(now=now_cross_month) == "2026-07-30")
 
 
+# §42 Phase 7.2 反哺影响生成排序（决策 #6 拍板）
+# ============================================================
+def test_phase7_rank_candidates_by_ctr():
+    """rank_candidates_by_ctr 按 pred_ctr 降序重排 + title 长度兜底 + unavailable 兜底。"""
+    from services.generation_service import rank_candidates_by_ctr
+    from core.schemas import Candidate, PredictionResult
+
+    # ── 1) 模块暴露 ───────────────────────────────────────────
+    _check("rank_candidates_by_ctr 函数存在",
+           callable(rank_candidates_by_ctr))
+
+    # ── 2) 三个不同 CTR 降序排 ──────────────────────────────
+    cs = [
+        Candidate(id="A", strategy="A_核心利益直给", title="短标", body="正文A"),
+        Candidate(id="B", strategy="B_消费场景切入", title="标题稍长一点", body="正文B"),
+        Candidate(id="C", strategy="C_行动号召强化", title="中标题", body="正文C"),
+    ]
+    rs = [
+        PredictionResult(result_type="demo", pred_ctr=0.02),  # A = 2%
+        PredictionResult(result_type="demo", pred_ctr=0.05),  # B = 5%（最高）
+        PredictionResult(result_type="demo", pred_ctr=0.03),  # C = 3%
+    ]
+    ranked_c, ranked_r = rank_candidates_by_ctr(cs, rs)
+    _check("三候选 CTR 降序：B > C > A",
+           [c.id for c in ranked_c] == ["B", "C", "A"])
+    _check("ctr_results 与 candidates 同序重排",
+           [r.pred_ctr for r in ranked_r] == [0.05, 0.03, 0.02])
+
+    # ── 3) 相同 CTR 按 title 长度升序（短标题优先）───────
+    cs_tie = [
+        Candidate(id="A", strategy="A_核心利益直给", title="标题很长很长很长", body="正文A"),
+        Candidate(id="B", strategy="B_消费场景切入", title="短", body="正文B"),
+    ]
+    rs_tie = [
+        PredictionResult(result_type="demo", pred_ctr=0.04),
+        PredictionResult(result_type="demo", pred_ctr=0.04),
+    ]
+    ranked_c2, _ = rank_candidates_by_ctr(cs_tie, rs_tie)
+    _check("相同 CTR 按 title 长度升序：B（短）在前",
+           [c.id for c in ranked_c2] == ["B", "A"])
+
+    # ── 4) unavailable（pred_ctr=None）排最后 ───────────────
+    cs_un = [
+        Candidate(id="A", strategy="A_核心利益直给", title="短", body="正文A"),
+        Candidate(id="B", strategy="B_消费场景切入", title="标题B", body="正文B"),
+        Candidate(id="C", strategy="C_行动号召强化", title="短", body="正文C"),
+    ]
+    rs_un = [
+        PredictionResult(result_type="demo", pred_ctr=0.02),
+        PredictionResult(result_type="unavailable", pred_ctr=None, error="无数据"),
+        PredictionResult(result_type="demo", pred_ctr=0.05),
+    ]
+    ranked_c3, ranked_r3 = rank_candidates_by_ctr(cs_un, rs_un)
+    _check("unavailable 排最后（与 0.02 同兜底时按 title 长度 B 在前）",
+           ranked_c3[-1].id == "B")
+    _check("unavailable 排在最后位置",
+           ranked_r3[-1].result_type == "unavailable")
+
+    # ── 5) 长度不一致抛 ValueError ──────────────────────────
+    try:
+        rank_candidates_by_ctr(cs[:2], rs_un)  # 2 vs 3 长度不一致
+        _check("长度不一致抛 ValueError", False)
+    except ValueError:
+        _check("长度不一致抛 ValueError", True)
+
+    # ── 6) 返回长度不变，仅顺序改变 ──────────────────────────
+    _check("长度不变（candidates）", len(ranked_c) == len(cs))
+    _check("长度不变（ctr_results）", len(ranked_r) == len(rs))
+    _check("排序后 A/B/C 标签仍完整保留",
+           set(c.id for c in ranked_c) == {"A", "B", "C"})
+
+
 # ============================================================
 # Main
 # ============================================================
@@ -2222,6 +2294,8 @@ def main():
     test_phase6_p1_nav_and_notice()
     # Phase 6 P2: CTR 口径固化 v3.1（业务拍板）
     test_ctr_definition_v31()
+    # Phase 7.2: 反哺影响生成排序（决策 #6 拍板）
+    test_phase7_rank_candidates_by_ctr()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

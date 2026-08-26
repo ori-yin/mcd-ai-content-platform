@@ -39,7 +39,7 @@ from core.schemas import (
     TARGET_AUDIENCE, OBJECTIVES, CHANNELS, STAGES, SCENES,
     TONES, ACTIONS, PLAN_TYPES, COUPON_FLAGS,
 )
-from services.generation_service import generate, build_record, GenerationError
+from services.generation_service import generate, build_record, GenerationError, rank_candidates_by_ctr
 from services.rule_engine import load_rules, check_candidates
 from services.ctr_prediction_service import predict_for_candidates
 from services.similarity_service import find_similar, summarize_similar
@@ -540,7 +540,7 @@ def _render_recommendation(task: TaskInput, c: Candidate, rule: RuleResult):
     objective_part = f" + {task.objective}" if task.objective else ""
     text = (
         f"参考结论：当前版本符合 {task.channel} 基础规则，与「{task.stage}"
-        f"{objective_part}」目标匹配。CTR 结果为历史基准和模型参考，"
+        f"{objective_part}」目标匹配。三条候选已按 CTR 预测降序展示（演示口径），"
         f"不代表正式投放承诺，建议结合业务判断后使用。"
     )
     st.markdown(f'<div class="decision-card">{text}</div>', unsafe_allow_html=True)
@@ -598,9 +598,15 @@ def main():
             candidates, new_task.channel, channel_rules, brand_rules,
         )
         ctr_mode = "demo"  # Phase 3.1 默认 demo；Phase 4 接 LLM 时按环境变量切
-        st.session_state.ctr_results = predict_for_candidates(
+        ctr_results = predict_for_candidates(
             candidates, new_task, mode=ctr_mode,
         )
+        # 反哺影响排序（Phase 7.2 #6 拍板）：按 pred_ctr 降序，title 长度兜底
+        candidates, ctr_results = rank_candidates_by_ctr(candidates, ctr_results)
+        st.session_state.candidates = candidates
+        st.session_state.ctr_results = ctr_results
+        # 默认选中 CTR 最高的那条（rank 后第 1 条）
+        st.session_state.selected_id = candidates[0].id
         # 历史相似（仅第一条候选）
         first = candidates[0]
         sim_df = find_similar(first.effective_title, first.effective_body, new_task.channel)

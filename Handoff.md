@@ -93,6 +93,11 @@
   - **修 E `ui/notice.py`**：抽 `render_notice(prefix, body, css_class)`，2 个 wrapper (`render_advanced_notice` / `render_ctr_feedback_notice`) 调它；保留外部 API 不破坏 pages 调用方
   - **跳过**：建 `core/ctr_definition.py`（altitude F1+F2，改动太大 ROI 不足）/ `CONFIG_DIR` 集中（reuse F3）/ 3 套 CSS 合并（reuse F6）/ banner 路由表（altitude F3）/ JSON 4 字段去重（被 §41 测试守护）/ `00_home` 跳转（Phase 7 候选）
   - working tree clean，9 文件改动未 commit
+- **2026-08-26**：Phase 7 业务拍板落地——第一梯队 #3 + #6 全部 ✅ 拍板；verify 418 → 428 PASS（新增 §42 10 用例）：
+  - **#3 触发条件**：每周一上午手动跑 `tools/weekly_calibrate.bat` → `tools/calibrate_baseline.py --db data/feedback.db`；新文档 `docs/ctr-feedback-schedule.md`（节奏 / 跳过 / 漏周策略 / 看什么）；bat 文件 CRLF 转换走 §7 铁律
+  - **#6 反哺影响排序**：新加 `services/generation_service.rank_candidates_by_ctr(candidates, ctr_results)` 纯函数（pred_ctr 降序 + title 长度兜底 + unavailable 排末尾）；`pages/01_content_studio` 在 `predict_for_candidates` 后调一次，默认 `selected_id` 改 `candidates[0].id`（CTR 最高那条）；`_render_recommendation` 文案加"按 CTR 降序展示（演示口径）"措辞
+  - **顺手清理**：删 `tools/phase6_p1_push.py` + `phase6_p2_push.py`（Handoff §10 self-check "临时文件全清" 闭环）
+  - 12 文件改动未 commit，等推送
 
 ### §5.5 CTR 准确率学习 Roadmap（2026-08-26 · 重要背景）
 
@@ -171,6 +176,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 6 P1** 灰态 + 进阶弱化 + CTR 免责 | 6 维度前端灰态 / 4 附属页 banner / ui/notice + render_ctr_feedback_notice | **395** |
 | **Phase 6 P2** CTR 口径固化 v3.1 | Q1-Q6 拍板 / bi_dt 铁律 / 6 文件落地 / 反哺批量回灌机制 | 421 |
 | **Phase 6 P3** simplify 清理（4 agent review） | yaml.safe_load 替手写解析 / v3.1 docstring 缩成 1 行 / 删 PENDING_FIELDS / _to_local 死分支 / notice.py 合并 helper | **418** |
+| **Phase 7** 业务拍板落地（#3 触发 + #6 排序） | docs/ctr-feedback-schedule.md / weekly_calibrate.bat / rank_candidates_by_ctr / UI 调 + 文案微调 / 删 phase6_p1/p2_push.py | **428** |
 
 ### Phase 1 — CTR Adapter（核心复用层） ✅ 已完成
 - [x] 抽 `get_baseline_ctr` / `get_time_multiplier` / `build_context_for_llm` 等到 `adapters/ctr_predictor_adapter/`
@@ -246,7 +252,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 **第一梯队（高返工 · 现在就该确认）**
 - [x] **#5** CTR **口径定义**（哪个 CTR / 去重规则）—— ✅ Phase 6 P2 已拍板，详 `docs/ctr-kpi-definition-proposal-v0.2.md`
 - [ ] **#6** 反哺是否**影响生成排序**（A/B/C 候选排序）—— 影响主流程逻辑
-- [ ] **#3** CTR 反哺**触发条件**（累计多少 plan / 定时？）
+- [x] **#3** CTR 反哺**触发条件**（累计多少 plan / 定时？）—— ✅ Phase 7.1 拍板：每周一上午手动跑一次，详 `docs/ctr-feedback-schedule.md`
 
 **第二梯队（中低返工 · 可后置）**
 - [ ] **#1** 产品与权益 维度枚举 + 是否参与生成
