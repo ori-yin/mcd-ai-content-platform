@@ -554,7 +554,9 @@ def diagnose_score(title: str, body: str, df: Optional[pd.DataFrame] = None,
         matches = match_frameworks(title, body, target_ch, fw_data.get("frameworks", []))
         bd["框架命中"] = 30 if matches else 0
 
-    score = sum(v for v in bd.values() if v is not None)
+    # P3：维度权重（从 config/dimension_weights.yaml 读，缺维度默认 1.0）
+    weights = load_dimension_weights().get("dimensions", {})
+    score = sum((v or 0) * weights.get(k, 1.0) for k, v in bd.items())
     if score >= 85:
         grade = "优秀"
     elif score >= 70:
@@ -692,6 +694,28 @@ def diagnose_suggestions(diag: dict, problems: list) -> Tuple[list, list]:
     return p1, p2
 
 
+# ── P3 维度权重（来自 config/dimension_weights.yaml） ─────────────
+@functools.lru_cache(maxsize=1)
+def load_dimension_weights() -> dict:
+    """读 config/dimension_weights.yaml；缺失/异常 → 兜底（等权 1.0）。
+
+    返回 {"dimensions": {dim: w, ...}, "baseline_modifiers": {dim: w, ...}, ...}
+    测试 monkey-patch 后需调 load_dimension_weights.cache_clear()（Handoff §7）。
+    """
+    p = Path(__file__).resolve().parent.parent / "config" / "dimension_weights.yaml"
+    if not p.exists():
+        return {"dimensions": {}, "baseline_modifiers": {}}
+    try:
+        import yaml  # PyYAML 已在 services/rule_engine.py:54 使用（Handoff §7）
+        doc = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        # 兜底段缺失时补空 dict，避免 diagnose_score KeyError
+        doc.setdefault("dimensions", {})
+        doc.setdefault("baseline_modifiers", {})
+        return doc
+    except Exception:
+        return {"dimensions": {}, "baseline_modifiers": {}}
+
+
 __all__ = [
     # emoji 工具
     "extract_emojis", "count_emojis", "first_emoji_pos",
@@ -704,6 +728,6 @@ __all__ = [
     # 词频 / 对比
     "word_frequency", "emoji_frequency", "compare_token", "compare_tokens",
     # 诊断 / 评分 / 问题 / 建议
-    "local_diagnose", "load_frameworks", "match_frameworks",
+    "local_diagnose", "load_frameworks", "match_frameworks", "load_dimension_weights",
     "diagnose_score", "diagnose_problems", "diagnose_suggestions",
 ]
