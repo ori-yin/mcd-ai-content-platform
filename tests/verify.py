@@ -1460,6 +1460,363 @@ def test_historical_insights():
 
 
 # ============================================================
+# 34) Phase 5 P0 — record 指纹 + signature 落库
+# ============================================================
+_section("34) Phase 5 P0 — record 指纹")
+
+def test_record_signature():
+    import os
+    import tempfile
+    from core.schemas import TaskInput, Candidate, task_signature
+    from services.generation_service import build_record
+
+    # 1. task_signature 纯函数
+    t = TaskInput(
+        product_benefit="新品小卡", audience="常规大盘", channel="APP Push",
+        objective="建立认知", stage="活动预热", scene="早餐", tone="直接利益型",
+    )
+    cands = [
+        Candidate(id="A", strategy="A_核心利益直给", title="新品小卡来啦", body="新品优惠点击查看"),
+        Candidate(id="B", strategy="B_消费场景切入", title="早安首选", body="早餐 8 折优惠"),
+    ]
+    sig_a = task_signature(t, candidates=cands, selected_id="A")
+    _check("task_signature 返回 12 位 hash", len(sig_a) == 12)
+    _check("task_signature 同输入稳定", sig_a == task_signature(t, candidates=cands, selected_id="A"))
+
+    sig_b = task_signature(t, candidates=cands, selected_id="B")
+    _check("task_signature 选中不同 → 不同", sig_a != sig_b)
+
+    # 2. build_record 填 signature
+    rec = build_record(task=t, candidates=cands, selected_id="A")
+    _check("build_record signature 字段非空", bool(rec.signature))
+    _check("build_record signature 长度 == 12", len(rec.signature) == 12)
+    _check("build_record to_row 含 signature", "signature" in rec.to_row())
+
+    # 3. sqlite_repository 落库 + 读回（独立 db 文件）
+    from repositories import sqlite_repository
+    import gc as _gc
+
+    def _isolated_save_load():
+        tmp = tempfile.mkdtemp(prefix="rec_test_")
+        try:
+            db_path = os.path.join(tmp, "test.db")
+            rid = sqlite_repository.save(rec.to_row(), db_path=db_path)
+            _check("sqlite_repository.save 返回 id", rid > 0)
+            loaded = sqlite_repository.get_by_id(rid, db_path=db_path)
+            _check("sqlite_repository.get_by_id 返回 dict", isinstance(loaded, dict))
+            _check("sqlite_repository 落库 signature 一致",
+                   loaded.get("signature") == rec.signature)
+        finally:
+            _gc.collect()  # 强制释放 Windows 文件句柄
+            import shutil as _sh
+            _sh.rmtree(tmp, ignore_errors=True)
+
+    _isolated_save_load()
+
+    # 4. 老库迁移：手工建一个无 signature 的旧表，再 save 新记录
+    import sqlite3 as _sq
+
+    def _legacy_migration():
+        tmp = tempfile.mkdtemp(prefix="rec_legacy_")
+        try:
+            db_path = os.path.join(tmp, "legacy.db")
+            conn = _sq.connect(db_path)
+            conn.executescript("""
+                CREATE TABLE generation_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_json TEXT NOT NULL,
+                    candidates_json TEXT NOT NULL,
+                    selected_id TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+            """)
+            conn.commit()
+            conn.close()
+            rid2 = sqlite_repository.save(rec.to_row(), db_path=db_path)
+            _check("老库迁移后仍能 save", rid2 > 0)
+            loaded2 = sqlite_repository.get_by_id(rid2, db_path=db_path)
+            _check("老库迁移后 signature 列存在",
+                   loaded2.get("signature") == rec.signature)
+        finally:
+            _gc.collect()
+            import shutil as _sh
+            _sh.rmtree(tmp, ignore_errors=True)
+
+    _legacy_migration()
+
+
+# ============================================================
+# 35) Phase 5 P1 — feedback.db schema + feedback_repository
+# ============================================================
+_section("35) Phase 5 P1 — feedback_repository")
+
+def test_feedback_repository():
+    import gc as _gc
+    import shutil as _sh
+    import tempfile
+    from repositories import feedback_repository
+
+    def _run():
+        tmp = tempfile.mkdtemp(prefix="fb_test_")
+        try:
+            db_path = os.path.join(tmp, "fb.db")
+
+            # 1. save 单条
+            rec = {
+                "task_signature": "abc123def456",
+                "channel": "APP Push",
+                "coupon": "否",
+                "plan_type": "普通 Plan",
+                "sent_date": "2026-08-20",
+                "reach_success": 1000,
+                "click_count": 25,
+                "order_count": 3,
+                "source": "test",
+                "imported_at": "2026-08-26 12:00:00",
+            }
+            rid = feedback_repository.save(rec, db_path=db_path)
+            _check("feedback_repository.save 返回 id", rid > 0)
+
+            # 2. save_batch 批量
+            batch = [
+                {**rec, "task_signature": "sig_a", "channel": "APP Push",
+                 "reach_success": 500, "click_count": 10, "order_count": 1},
+                {**rec, "task_signature": "sig_b", "channel": "企微 1v1",
+                 "reach_success": 800, "click_count": 20, "order_count": 2},
+            ]
+            n = feedback_repository.save_batch(batch, db_path=db_path)
+            _check("feedback_repository.save_batch 插入 2 条", n == 2)
+
+            # 3. list_all
+            rows = feedback_repository.list_all(limit=10, db_path=db_path)
+            _check("feedback_repository.list_all 返回 3 条", len(rows) == 3)
+
+            # 4. count
+            cnt = feedback_repository.count(db_path=db_path)
+            _check("feedback_repository.count == 3", cnt == 3)
+
+            # 5. aggregate_by_signature
+            agg = feedback_repository.aggregate_by_signature(db_path=db_path)
+            _check("aggregate_by_signature 返回 3 个 signature", len(agg) == 3)
+            _check("aggregate_by_signature 加权 CTR 正确",
+                   agg["sig_a"]["ctr"] == round(10 / 500 * 100, 2))
+            _check("aggregate_by_signature 含 channel",
+                   agg["sig_b"]["channel"] == "企微 1v1")
+        finally:
+            _gc.collect()
+            _sh.rmtree(tmp, ignore_errors=True)
+
+    _run()
+
+
+# ============================================================
+# 36) Phase 5 P1 — feedback_service（解析 + 校验 + 写入）
+# ============================================================
+_section("36) Phase 5 P1 — feedback_service")
+
+def test_feedback_service():
+    import tempfile
+    import pandas as pd
+    from services.feedback_service import (
+        parse_feedback_file, to_records, validate_records, import_feedback,
+    )
+
+    # 1. CSV 解析（含别名）
+    csv_bytes = (
+        "签名,渠道,触达成功,点击人次,是否用券,计划类型,发送日期\n"
+        "sig1,APP Push,1000,25,否,普通 Plan,2026-08-20\n"
+        ",企微 1v1,500,10,是,AARR Plan,2026-08-21\n"
+    ).encode("utf-8")
+    df = parse_feedback_file(csv_bytes, "test.csv")
+    _check("parse_feedback_file 返回 DataFrame", isinstance(df, pd.DataFrame))
+    _check("parse_feedback_file 列名标准化", all(c in df.columns for c in (
+        "task_signature", "channel", "reach_success", "click_count",
+    )))
+    _check("parse_feedback_file 别名 签名→task_signature", "签名" not in df.columns)
+    _check("parse_feedback_file 别名 触达成功→reach_success", "触达成功" not in df.columns)
+
+    # 2. to_records + autofill_signature
+    records = to_records(df, source="test")
+    _check("to_records 返回 list", isinstance(records, list) and len(records) == 2)
+    _check("to_records 空 signature 行被兜底生成 12 位 hash",
+           len(records[1]["task_signature"]) == 12)
+    _check("to_records 显式 signature 行保留",
+           records[0]["task_signature"] == "sig1")
+
+    # 3. validate_records
+    valid_recs = [
+        {"task_signature": "s1", "channel": "APP Push", "reach_success": 100, "click_count": 5},
+    ]
+    errs = validate_records(valid_recs)
+    _check("validate_records 合法记录无 error", errs == [])
+
+    bad_recs = [
+        {"task_signature": "", "channel": "APP Push", "reach_success": 100, "click_count": 5},
+        {"task_signature": "s2", "channel": "", "reach_success": 100, "click_count": 5},
+        {"task_signature": "s3", "channel": "APP Push", "reach_success": 0, "click_count": 5},
+        {"task_signature": "s4", "channel": "APP Push", "reach_success": 100, "click_count": -1},
+    ]
+    errs2 = validate_records(bad_recs)
+    _check("validate_records 4 个非法 → 4 条 error", len(errs2) == 4)
+
+    # 4. import_feedback（端到端）
+    import gc as _gc
+    import shutil as _sh
+
+    def _e2e():
+        tmp = tempfile.mkdtemp(prefix="fb_e2e_")
+        try:
+            # 用 monkey patch 临时替换 DB_PATH
+            from repositories import feedback_repository as fr
+            orig_path = fr.DB_PATH
+            fr.DB_PATH = __import__("pathlib").Path(tmp) / "fb.db"
+            try:
+                result = import_feedback(csv_bytes, "test.csv", source_label="test")
+                _check("import_feedback 合法 → n=2", result["n"] == 2)
+                _check("import_feedback 合法 → errors=[]", result["errors"] == [])
+            finally:
+                fr.DB_PATH = orig_path
+        finally:
+            _gc.collect()
+            _sh.rmtree(tmp, ignore_errors=True)
+
+    _e2e()
+
+    # 5. import_feedback 非法拒收
+    bad_csv = "签名,渠道,触达成功,点击人次\n,APP Push,0,5\n".encode("utf-8")
+
+    def _reject():
+        tmp = tempfile.mkdtemp(prefix="fb_rej_")
+        try:
+            from repositories import feedback_repository as fr
+            orig_path = fr.DB_PATH
+            fr.DB_PATH = __import__("pathlib").Path(tmp) / "fb.db"
+            try:
+                result = import_feedback(bad_csv, "bad.csv")
+                _check("import_feedback 非法 → n=0", result["n"] == 0)
+                _check("import_feedback 非法 → errors 非空", len(result["errors"]) > 0)
+            finally:
+                fr.DB_PATH = orig_path
+        finally:
+            _gc.collect()
+            _sh.rmtree(tmp, ignore_errors=True)
+
+    _reject()
+
+
+# ============================================================
+# 37) Phase 5 P2 — calibrate_baseline 自动化
+# ============================================================
+_section("37) Phase 5 P2 — calibrate_baseline")
+
+def test_calibrate_baseline():
+    import importlib
+    import shutil as _sh
+    import gc as _gc
+    import tempfile
+    cb = importlib.import_module("tools.calibrate_baseline")
+
+    # 1. _bump_version
+    _check("bump_version v3.0 → v3.1", cb._bump_version("v3.0") == "v3.1")
+    _check("bump_version v3.5 → v3.6", cb._bump_version("v3.5") == "v3.6")
+    _check("bump_version 非法 → v3.1 fallback", cb._bump_version("xxx") == "v3.1")
+
+    # 2. _calibrate_value 三个分支
+    new, note = cb._calibrate_value(0.005, 0.003, 3)
+    _check("n_plans<5 跳过（保留旧值）", new == 0.003 and "跳过" in note)
+
+    new, note = cb._calibrate_value(0.005, 0.003, 10)
+    expected = 0.3 * 0.005 + 0.7 * 0.003
+    _check("5≤n_plans<20 指数滑动", abs(new - expected) < 1e-6 and "0.3" in note)
+
+    new, note = cb._calibrate_value(0.005, 0.003, 50)
+    _check("n_plans≥20 全量覆盖", new == 0.005 and "全量" in note)
+
+    # 3. aggregate_feedback（端到端：先造 feedback.db + 跑聚合）
+    def _aggregate():
+        tmp = tempfile.mkdtemp(prefix="cal_test_")
+        try:
+            from repositories import feedback_repository as fr
+            from repositories import feedback_repository as fb  # 别名
+            # 写一份假 baseline 到 tmp 用于 isolate calibrate()
+            base_path = __import__("pathlib").Path(tmp) / "ctr_baseline.json"
+            sample = {
+                "version": "v3.0",
+                "last_updated": "2026-08-01",
+                "dimensions": {
+                    "渠道": {"data": {"APP Push": 0.002, "企微 1v1": 0.005}},
+                    "渠道_x_是否用券": {
+                        "data": {"APP Push_否": 0.001, "企微 1v1_是": 0.01},
+                    },
+                },
+            }
+            base_path.write_text(__import__("json").dumps(sample, ensure_ascii=False),
+                                 encoding="utf-8")
+
+            # 写 feedback.db
+            fr.DB_PATH = __import__("pathlib").Path(tmp) / "fb.db"
+            records = [
+                # APP Push × 否：30 个签名（≥20 → 全量覆盖）
+                *[{
+                    "task_signature": f"sig_a_{i}", "channel": "APP Push",
+                    "coupon": "否", "reach_success": 1000, "click_count": 30,
+                } for i in range(30)],
+                # 企微 1v1 × 是：10 个签名（5-20 → 指数滑动）
+                *[{
+                    "task_signature": f"sig_b_{i}", "channel": "企微 1v1",
+                    "coupon": "是", "reach_success": 800, "click_count": 20,
+                } for i in range(10)],
+                # APP Push × 是：3 个签名（<5 → 跳过）
+                *[{
+                    "task_signature": f"sig_c_{i}", "channel": "APP Push",
+                    "coupon": "是", "reach_success": 500, "click_count": 5,
+                } for i in range(3)],
+            ]
+            fr.save_batch(records)
+
+            by_cp, by_ch = cb.aggregate_feedback(str(fr.DB_PATH))
+            _check("aggregate 返回 3 个 (channel, coupon)", len(by_cp) == 3)
+            _check("aggregate APP Push 触达 = 30000",
+                   by_cp[("APP Push", "否")]["reach"] == 30000)
+            _check("aggregate APP Push × 否 CTR = 3%",
+                   abs(by_cp[("APP Push", "否")]["ctr"] - 0.03) < 1e-6)
+            _check("aggregate APP Push × 否 n_plans = 30",
+                   by_cp[("APP Push", "否")]["n_plans"] == 30)
+
+            # 跑 calibrate（dry-run 不写文件）
+            new_base, changes = cb.calibrate(sample, by_cp, by_ch, min_reach=1000)
+            _check("calibrate 版本号升级", new_base["version"] == "v3.1")
+            # APP Push 渠道（含 ×否 30 plan + ×是 3 plan）：
+            #   reach = 30000+1500 = 31500, click = 900+15 = 915
+            #   CTR = 915/31500 = 0.02905
+            expected_app_push_ctr = 915 / 31500
+            _check("calibrate APP Push 全量覆盖（合并两 coupon）",
+                   abs(new_base["dimensions"]["渠道"]["data"]["APP Push"] - expected_app_push_ctr) < 1e-6)
+            _check("calibrate 企微 1v1 指数滑动（0.3×新+0.7×旧）",
+                   abs(new_base["dimensions"]["渠道"]["data"]["企微 1v1"] - (0.3 * (200/8000) + 0.7 * 0.005)) < 1e-6)
+            _check("calibrate APP Push × 否 全量覆盖",
+                   abs(new_base["dimensions"]["渠道_x_是否用券"]["data"]["APP Push_否"] - 0.03) < 1e-6)
+            _check("calibrate APP Push × 是 跳过（保留旧 0）",
+                   new_base["dimensions"]["渠道_x_是否用券"]["data"].get("APP Push_是", 0.0) == 0.0)
+            _check("calibrate changes ≥ 3 条", len(changes) >= 3)
+
+            # write 验证
+            fr.DB_PATH = __import__("pathlib").Path(tmp) / "fb.db"  # ensure
+            out_path = __import__("pathlib").Path(tmp) / f"ctr_baseline_{new_base['version']}.json"
+            out_path.write_text(__import__("json").dumps(new_base, ensure_ascii=False, indent=2),
+                                encoding="utf-8")
+            _check("写出 baseline_v3.1.json 存在", out_path.exists())
+
+            # 备份验证：原文件还存在（calibrate 不动原文件）
+            _check("原 ctr_baseline.json 仍在", base_path.exists())
+        finally:
+            _gc.collect()
+            _sh.rmtree(tmp, ignore_errors=True)
+
+    _aggregate()
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -1508,6 +1865,13 @@ def main():
     test_batch_evaluation()
     # Phase 4.3: 04 历史洞察
     test_historical_insights()
+    # Phase 5 P0: record 指纹 + signature
+    test_record_signature()
+    # Phase 5 P1: feedback.db schema + 上传页
+    test_feedback_repository()
+    test_feedback_service()
+    # Phase 5 P2: calibrate_baseline 自动化
+    test_calibrate_baseline()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

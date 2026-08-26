@@ -351,6 +351,7 @@ class GenerationRecord:
     ctr_results: list = field(default_factory=list)    # list[PredictionResult]
     similar_summary: dict = field(default_factory=dict)  # {"count": N, "avg_ctr": ..., "top_terms": [...]}
     created_at: str = ""        # ISO 时间戳
+    signature: str = ""         # 任务指纹（PRD §回流闭环）：人群-阶段-场景-渠道-字数-必带词
 
     def to_row(self) -> dict:
         """转 SQLite 入库 dict。"""
@@ -366,4 +367,33 @@ class GenerationRecord:
             "similar_summary_json": json.dumps(self.similar_summary, ensure_ascii=False),
             "selected_id":         self.selected_id,
             "created_at":          self.created_at,
+            "signature":           self.signature,
         }
+
+
+def task_signature(task: TaskInput, candidates: Optional[list] = None,
+                   selected_id: str = "") -> str:
+    """任务指纹：用于回流数据 join 锚点（docs/feedback-ctr.md §2.1）。
+
+    字段：channel / coupon / plan_type / audience / stage / scene +
+          选中候选的 title_len 桶 + body_len 桶。
+    用 SHA1 截前 12 位（不变即可逆少，但回流 join 够用）。
+    """
+    import hashlib
+
+    # 字数桶
+    title_len_bucket = "na"
+    body_len_bucket = "na"
+    if candidates and selected_id:
+        sel = next((c for c in candidates if getattr(c, "id", None) == selected_id), None)
+        if sel is not None:
+            tl = len(getattr(sel, "effective_title", "") or "")
+            bl = len(getattr(sel, "effective_body", "") or "")
+            title_len_bucket = f"{(tl // 5) * 5}"  # 0/5/10/15/20...
+            body_len_bucket = f"{(bl // 10) * 10}"
+
+    raw = (
+        f"{task.channel}|{task.coupon}|{task.plan_type}|{task.audience}|"
+        f"{task.stage}|{task.scene}|{title_len_bucket}|{body_len_bucket}"
+    )
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]

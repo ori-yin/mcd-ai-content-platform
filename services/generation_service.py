@@ -215,7 +215,8 @@ def build_record(
     ctr_results: Optional[list] = None,
     similar_summary: Optional[dict] = None,
 ) -> GenerationRecord:
-    """构造 GenerationRecord（含 created_at）。"""
+    """构造 GenerationRecord（含 created_at + signature）。"""
+    from core.schemas import task_signature
     return GenerationRecord(
         task=task,
         candidates=candidates,
@@ -224,6 +225,7 @@ def build_record(
         ctr_results=ctr_results or [],
         similar_summary=similar_summary or {},
         created_at=datetime.now().isoformat(timespec="seconds"),
+        signature=task_signature(task, candidates=candidates, selected_id=selected_id),
     )
 
 

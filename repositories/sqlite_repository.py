@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS generation_records (
     ctr_results_json TEXT,
     similar_summary_json TEXT,
     selected_id TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    signature TEXT DEFAULT ''
 );
 """
 
@@ -45,13 +46,35 @@ def _ensure_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    """老库升级：缺任意必需列时补上 + 建索引。"""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(generation_records)").fetchall()}
+    required = {
+        "task_json": "TEXT NOT NULL DEFAULT ''",
+        "candidates_json": "TEXT NOT NULL DEFAULT ''",
+        "rule_results_json": "TEXT",
+        "ctr_results_json": "TEXT",
+        "similar_summary_json": "TEXT",
+        "selected_id": "TEXT NOT NULL DEFAULT ''",
+        "created_at": "TEXT NOT NULL DEFAULT ''",
+        "signature": "TEXT DEFAULT ''",
+    }
+    for col, decl in required.items():
+        if col not in cols:
+            conn.execute(f"ALTER TABLE generation_records ADD COLUMN {col} {decl}")
+            conn.commit()
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_records_sig ON generation_records(signature)")
+    conn.commit()
+
+
 def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
-    """获取连接（自动建表）。"""
+    """获取连接（自动建表 + 老库迁移）。"""
     _ensure_dir()
     p = db_path or str(DB_PATH)
     conn = sqlite3.connect(p)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.commit()
     return conn
 
@@ -74,8 +97,8 @@ def save(record: dict, db_path: Optional[str] = None) -> int:
             INSERT INTO generation_records
                 (task_json, candidates_json, rule_results_json,
                  ctr_results_json, similar_summary_json,
-                 selected_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                 selected_id, created_at, signature)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record["task_json"],
@@ -85,6 +108,7 @@ def save(record: dict, db_path: Optional[str] = None) -> int:
                 record.get("similar_summary_json"),
                 record["selected_id"],
                 record["created_at"],
+                record.get("signature", ""),
             ),
         )
         conn.commit()
