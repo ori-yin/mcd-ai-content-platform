@@ -166,17 +166,18 @@ COUPON_FLAGS    = ("是", "否", "未知")
 class TaskInput:
     """左栏"定义经营任务"输入（PRD §6.2）。
 
-    必填 7 项：product_benefit / audience / channel / objective /
-              stage / scene / tone
+    必填 5 项：audience / channel / stage / scene / tone
+    可选 4 项（Demo 阶段·灰态）：product_benefit / objective
+              ↑ 这两个前端 disabled，后端空字符串兜底，
+                generation_service 在缺失时走 Demo 默认占位，
+                不报错、不阻塞。等领导 demo 后业务确认枚举值再启用（PRD §26 #1/#2）。
     可选 4 项：expected_action / plan_type / coupon / planned_send_date
     附加：extra_requirements
 
     字段名沿用 PRD §9.1 输入 schema（snake_case），便于未来落库 JSON。
     """
-    product_benefit: str
     audience: str
     channel: str
-    objective: str
     stage: str
     scene: str
     tone: str
@@ -185,10 +186,15 @@ class TaskInput:
     coupon: str = "未知"
     planned_send_date: Optional[str] = None   # ISO 日期字符串，未填为 None
     extra_requirements: str = ""
+    # Demo 阶段灰态字段必须在尾部（dataclass 要求：no-default 字段在前）
+    product_benefit: str = ""     # 前端 disabled，后端空串兜底
+    objective: str = ""           # 前端 disabled，后端空串兜底
 
     REQUIRED_FIELDS: tuple = (
-        "product_benefit", "audience", "channel", "objective", "stage", "scene", "tone",
+        "audience", "channel", "stage", "scene", "tone",
     )
+    # Demo 阶段灰态字段：前端 disabled，后端不参与必填校验
+    PENDING_FIELDS: tuple = ("product_benefit", "objective")
 
     def __post_init__(self):
         # 必填校验（页面层也校验，这里兜底）

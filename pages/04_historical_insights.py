@@ -35,6 +35,7 @@ from services.analytics.high_effort_plans import rank_plans
 from services.analytics.similarity import find_similar_plans
 from services.analytics.daily_trend import daily_aggregate, daily_summary
 from services.analytics.owner_compare import owner_compare
+from ui.notice import render_advanced_notice, render_ctr_feedback_notice
 from ui.plotly_helpers import rate_value
 from ui.styles import inject_base_css
 
@@ -51,6 +52,10 @@ st.set_page_config(
 )
 
 inject_base_css()
+
+# 进阶能力 + CTR 反哺 banner（决策文档 Demo 范围 §2 / §3）
+render_advanced_notice()
+render_ctr_feedback_notice()
 
 st.markdown(
     """

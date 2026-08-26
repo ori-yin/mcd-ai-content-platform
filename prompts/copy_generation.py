@@ -60,14 +60,17 @@ def build_user_prompt(task: TaskInput, channel_rules: dict) -> str:
 
     parts = [
         "【经营任务】",
-        f"产品与权益：{task.product_benefit}",
+        # Demo 阶段·灰态字段：空时整行不拼（避免 prompt 里出现"产品与权益："空值）
         f"目标人群：{task.audience}",
         f"投放渠道：{task.channel}",
-        f"投放目标：{task.objective}",
         f"活动阶段：{task.stage}",
         f"消费场景：{task.scene}",
         f"内容语气：{task.tone}",
     ]
+    if task.product_benefit:
+        parts.append(f"产品与权益：{task.product_benefit}")
+    if task.objective:
+        parts.append(f"投放目标：{task.objective}")
     if task.expected_action:
         parts.append(f"期望动作：{task.expected_action}")
     if task.plan_type and task.plan_type != "未知":

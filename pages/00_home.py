@@ -4,6 +4,9 @@ pages/00_home.py — 首页（项目状态总览）
 
 由 Streamlit pages/ 自动发现进入侧边栏导航。
 启动顺序：app.py → pages/00_home.py / 01-04_*.py
+
+Phase 6 P1（决策文档 Demo 范围 §2）改造：
+首页入口分两组「核心 · 内容生成」/「进阶能力」视觉权重，引导 demo 主流程。
 """
 
 from __future__ import annotations
@@ -24,6 +27,42 @@ st.markdown(
         <p style="margin:0; opacity:0.85;">
             历史洞察 · AI 文案生成 · CTR 预测 · 人工决策
         </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ============================================================
+# 分组入口（决策文档 Demo 范围 §2）：核心大卡 / 进阶小卡
+# ============================================================
+st.markdown(
+    """
+    <div class="home-section home-section-core">
+        <h2>🚀 核心 · 内容生成</h2>
+        <p style="margin:0; opacity:0.95;">
+            领导 Demo 主流程：定义经营任务 → 生成 3 条候选 → 渠道预览 → 人工选择。
+        </p>
+        <p style="margin:0.4rem 0 0 0;">
+            <a href="01_content_studio">→ 进入 01 内容创作（主流程）</a>
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    """
+    <div class="home-section home-section-advanced">
+        <h2>进阶能力</h2>
+        <p style="margin:0; color:#666;">
+            面向运营 / 内容的扩展工具，非本次 demo 主线。可随时进入。
+        </p>
+        <ul>
+            <li><a href="02_copy_diagnosis">02 文案诊断</a> · 单条规则 + 词语 + CTR + AI 改写</li>
+            <li><a href="03_batch_evaluation">03 批量评估</a> · CSV/Excel 上传 + 批量规则 + CTR + 导出</li>
+            <li><a href="04_historical_insights">04 历史洞察</a> · 七 Tab 排名/词频/Emoji/趋势/Owner</li>
+            <li><a href="05_feedback">05 真实结果回流</a> · CTR 反哺闭环数据源（演示口径，业务确认前不接真实数据）</li>
+        </ul>
     </div>
     """,
     unsafe_allow_html=True,

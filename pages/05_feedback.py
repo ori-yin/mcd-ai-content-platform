@@ -23,6 +23,7 @@ import streamlit as st
 
 from services.feedback_service import import_feedback
 from repositories import feedback_repository
+from ui.notice import render_advanced_notice, render_ctr_feedback_notice
 from ui.plotly_helpers import rate_value
 from ui.styles import inject_base_css
 
@@ -39,6 +40,10 @@ st.set_page_config(
 )
 
 inject_base_css()
+
+# 进阶能力 + CTR 反哺 banner（决策文档 Demo 范围 §2 / §3）
+render_advanced_notice()
+render_ctr_feedback_notice()
 
 st.markdown(
     """

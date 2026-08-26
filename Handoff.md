@@ -88,7 +88,13 @@
   - **企微 1v1 预览**：`ui/styles.py` 新增 `.wechat-bubble-wrap`（40×40 红底 M 头像 + 白色气泡卡片 + 时间戳"今天 HH:MM · 已送达"），`pages/01_content_studio` 替换占位实现
   - **LLM 留空 banner**：新增 `config/llm_settings.yaml`（provider/base_url/model/api_key 4 字段全空占位）+ `ui/llm_status.py` 检测器（极简 yaml 解析，无 PyYAML 依赖）+ `.llm-warning` 样式（黄色左边框 banner），00_home/01/02/03 入口全加；banner 文案分两态（全空"未配置" vs 部分空"缺字段"）
   - 验证：verify.py 339 → **349 PASS, 0 FAIL**（新增 §38 llm_status 10 用例）
-- **下一步**：Phase 6 候选——P3 维度权重动态 yaml / P4 历史洞察签名关联 / demo 数据回灌（详见 docs/feedback-ctr.md §9）
+- **2026-08-26**：Phase 6 P1 完成——按 `Downloads/Demo范围决策与待确认_2026-08-26.md` 三件事：
+  - **决策 1（6 维度前端灰态）**：`core/schemas.py` `TaskInput` 必填 7→5，把 `product_benefit` / `objective` 加默认空串挪到所有无默认字段之后（dataclass 排序铁律，见 §7 教训），加 `PENDING_FIELDS` 元组；`pages/01_content_studio` 两控件 `disabled=True` + label 加「待开发·二期接入」+ `help=` tooltip；`prompts/copy_generation.build_user_prompt` 空时不拼这两行（避免 prompt 里出现空值"产品与权益："）
+  - **决策 2（4 附属页面弱化）**：新建 `ui/notice.py`（`render_advanced_notice` / `render_ctr_feedback_notice` 两个 helper）；`ui/styles.py` 加 `.advanced-notice` / `.home-section-core` / `.home-section-advanced` 三个 CSS 类；02/03 顶部仅 advanced banner；04/05 顶部 advanced + ctr 双 banner；`pages/00_home.py` 重排分组入口卡（核心大卡红底链 01 + 进阶小卡灰底链 02-05）
+  - **决策 3（CTR 反哺免责）**：`render_ctr_feedback_notice` 顶部 04/05 + 00_home 进阶区明示"演示口径·业务确认前不接真实数据"；01 推荐结论原有"不代表正式投放承诺"免责话术保留（Handoff §7 教训录过）
+  - **不动**：app.py（避开 st.Page 自引用递归铁律）；后端反哺逻辑（baseline 校准 / fingerprint / feedback.db 保持演示口径，等业务确认）；任何页面删除（02-05 弱化不剔除）
+  - verify.py 349 → **395 PASS, 0 FAIL**（新增 §39 决策1 灰态 17 用例 + §40 决策2/3 综合 29 用例）
+- **下一步**：等业务确认（决策文档 §五 7 项清单），Phase 6 候选（P3/P4/demo 回灌/pytest 迁移）暂缓
 
 ---
 
@@ -147,7 +153,24 @@
 - [x] **LLM 配置留空**：`config/llm_settings.yaml`（provider/base_url/model/api_key 全空占位）+ `ui/llm_status.py` 检测器 + `.llm-warning` 样式，00_home/01/02/03 入口全加 banner
 - [x] verify.py 349 PASS, 0 FAIL（新增 §38 llm_status 10 用例）
 
-### Phase 6 候选（详见 docs/feedback-ctr.md §9）
+### Phase 6 P1 — 6 维度灰态 + 进阶弱化 + CTR 反哺免责 ✅ 已完成（2026-08-26）
+- [x] **决策 1**：6 维度前端灰态 — `product_benefit` + `objective` 控件 `disabled=True` + label「待开发·二期接入」+ help tooltip；TaskInput 必填 7→5（+ `PENDING_FIELDS`）；prompt 空时不拼这两行
+- [x] **决策 2**：4 附属页面弱化 — `ui/notice.render_advanced_notice` + `.advanced-notice` CSS；02/03/04/05 顶部 banner；`00_home` 重排核心/进阶两组卡片
+- [x] **决策 3**：CTR 反哺免责 — `ui/notice.render_ctr_feedback_notice` + 04/05 顶部 + 00_home 进阶区"演示口径"文案
+- [x] **不动**：app.py（避 st.Page 递归铁律）/ 后端反哺逻辑 / 任何页面删除（02-05 全弱化不剔除）
+- [x] verify.py 395 PASS, 0 FAIL（新增 §39 灰态 17 用例 + §40 弱化+免责 29 用例）
+
+### 待业务确认（决策文档 §五 · 7 项清单） ⏳ 2026-08-26 待过
+按 `Downloads\Demo范围决策与待确认_2026-08-26.md` 防返工清单——**业务确认前不要动后端反哺 / 灰态字段启用**：
+- [ ] **#1** 产品与权益 维度枚举值 + 是否参与生成（中返工）
+- [ ] **#2** 投放目标 维度枚举值 + 是否参与生成（中返工）
+- [ ] **#3** CTR 反哺**触发条件**（累计多少 plan / 定时？高返工）
+- [ ] **#4** CTR **校准频率**（手动 / T+1 / 周 · 中返工）
+- [ ] **#5** CTR **口径定义**（哪个 CTR / 去重规则 · 高返工）
+- [ ] **#6** 反哺是否**影响生成排序**（A/B/C 候选排序 · 高返工）
+- [ ] **#7** 02-05 附属页面**是否纳入正式版**（还是永久隐藏 · 低返工）
+
+### Phase 6 候选（详见 docs/feedback-ctr.md §9） ⏸ 业务确认后再启
 - [ ] **P3 维度权重动态**：`config/dimension_weights.yaml` + `train_dimension_weights.py`
 - [ ] **P4 历史洞察签名关联**：04 七 Tab 加 signature 视角（"这个 Plan 的回流 CTR 是多少 / 历史相似文案平均 CTR"）
 - [ ] **demo 数据回灌**：feedback.db 累计 ≥ 50 plan 后，`_demo_pred` 优先用本地聚合 CTR 而不是写死 2%
@@ -265,6 +288,30 @@ LLM prompt 字符串里要嵌"引用"，**别直接 `"...\"X\"..."` 配 `\"` 转
 
 ### Candidate.title 允许为空（2026-08-24 实战）
 短信 / 企微 1v1 无独立标题，PRD §8.2 显式允许。`core/schemas.py:265` 校验必须放：`if not self.body.strip()`，**不要带 title 校验**。验证测试也要相应改成"title 空不抛错"。
+
+### dataclass 字段顺序铁律（2026-08-26 实战 · Phase 6 P1）
+Python dataclass 强约束：**所有带默认值的字段必须在所有无默认值的字段之后**。
+Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置，结果 `raise TypeError: non-default argument 'audience' follows default argument 'product_benefit'`，整页报错回不去。
+- **修法**：`TaskInput` 改为 `[audience/channel/stage/scene/tone (no-default) + expected_action/plan_type/coupon/planned_send_date/extra_requirements (有默认) + product_benefit/objective (灰态有默认)]`——所有灰态字段挪到末尾
+- **副作用 1**：`from_form` 仍然按 dict 关键字传，**参数顺序不影响**（只影响位置传参）
+- **副作用 2**：用 `try TaskInput.from_form(空 form) except ValueError` 校验必填——直接抛错就够，不必绕一圈
+- **铁律**：改 dataclass 字段默认值前 (1) 看字段顺序、(2) 不要默认空串和 no-default 混、(3) 改完跑全套 verify.py 别靠肉眼
+
+### Streamlit widget 灰态实战（2026-08-26 · Phase 6 P1）
+决策文档说视觉："整体降透明度（如 opacity 0.5）+ 右上角小角标 + hover tooltip"——Streamlit 没暴露 widget 级 opacity 钩子。
+**实用近似**：
+1. `disabled=True`（Streamlit 自己会灰化控件，符合预期）
+2. label 加「待开发·二期接入」（文字角标代替 CSS 角标）
+3. `help="后续开放，敬请期待"`（自动 hover tooltip）
+
+三层叠加视觉差异足够清晰。剩下 10% 视觉差用顶部 banner（`.advanced-notice`）+ 00_home 卡片分组补。
+**铁律**：Streamlit 控件别追 100% CSS 还原；用 disabled / label / help / banner 四件套覆盖 > 90% 场景。
+
+### 决策文档驱动开发（2026-08-26 · Phase 6 P1）
+另一个 AI 提醒的 `Downloads\Demo范围决策与待确认_2026-08-26.md` 定义了"本轮只动 6 维度灰态 + 4 页面弱化 + CTR 反哺免责，不动后端反哺 / 不删任何页面 / 不接真实数据"。
+**严格按文档边界执行**——本轮没碰 P3/P4/demo 回灌/pytest 候选（虽然看着诱人），等业务确认 7 项清单再说。
+**启示**：用户或另一个 AI 留的"范围/边界/决策"文档 = 当前轮的 scope-control，**不要按"全局规划"自己加码**。
+**铁律**：接活前先 grep `/c/Users/a952462/Downloads/` 找决策/范围/边界 md 文件；找到了就以它为准，无就走 PRD / Handoff 默认。
 
 ---
 

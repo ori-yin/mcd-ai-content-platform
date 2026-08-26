@@ -888,11 +888,13 @@ def test_schemas_phase3():
     _check("TaskInput 必填齐 is_complete=True", t.is_complete is True)
     _check("TaskInput.to_dict 含 product_benefit", "product_benefit" in t.to_dict())
     try:
-        TaskInput(product_benefit="", audience="常规大盘", channel="APP Push",
-                  objective="建立认知", stage="活动预热", scene="早餐", tone="直接利益型")
-        _check("TaskInput product_benefit 空 抛错", False, "未抛错")
+        t_empty_pending = TaskInput(product_benefit="", audience="常规大盘",
+                                    channel="APP Push", objective="",
+                                    stage="活动预热", scene="早餐", tone="直接利益型")
+        _check("TaskInput 灰态字段空 不抛错（Phase 6 P1）",
+               t_empty_pending.product_benefit == "" and t_empty_pending.objective == "")
     except ValueError:
-        _check("TaskInput product_benefit 空 抛错", True)
+        _check("TaskInput 灰态字段空 不抛错（Phase 6 P1）", False, "误抛错")
 
     # Candidate
     c = Candidate(id="A", strategy="A_核心利益直给", title="新品限时", body="点击查看详情")
@@ -1031,14 +1033,14 @@ def test_generation_service_demo():
                ("A_核心利益直给", "B_消费场景切入", "C_行动号召强化")))
     _check("Demo 候选 provider='demo'", all(c.provider == "demo" for c in cands))
 
-    # 必填字段缺失抛错（schema 层 ValueError 或 service 层 GenerationError 都算）
+    # 必填字段缺失抛错（5 必填缺一即拒，灰态字段空不算缺）—— schema ValueError
     try:
-        bad_task = TaskInput(product_benefit="", audience="x", channel="APP Push",
-                             objective="x", stage="x", scene="x", tone="x")
-        generate(bad_task)
-        _check("缺 product_benefit 抛错", False, "未抛错")
+        bad_task = TaskInput(product_benefit="", objective="",
+                             audience="", channel="APP Push",
+                             stage="x", scene="x", tone="x")
+        _check("缺 5 必填抛错", False, "未抛错")
     except (GenerationError, ValueError):
-        _check("缺 product_benefit 抛错", True)
+        _check("缺 5 必填抛错", True)
 
     # 短信渠道
     sms_task = TaskInput(
@@ -1880,6 +1882,165 @@ def test_llm_status():
         _sh.rmtree(tmp, ignore_errors=True)
 
 
+# §39 决策 1 灰态字段（产品与权益 / 投放目标 · Demo 阶段占位）
+# ============================================================
+def test_phase6_p1_pending_fields():
+    """验证 6 维度前端的"产品与权益"+"投放目标"灰态：
+
+    - core.schemas.TaskInput 不再把这两个列为必填，PENDING_FIELDS 元组存在
+    - prompts.copy_generation 空时不拼接这两行（避免 prompt 出现空值）
+    - pages/01_content_studio 控件 disabled + label 标识 + help 提示
+    - services.generation_service.demo 模式 product_benefit="" 走默认值兜底
+    """
+    import sys, re, inspect
+
+    # ── 1) core.schemas.TaskInput ────────────────────────────
+    from core.schemas import TaskInput
+    _check("PENDING_FIELDS 元组存在",
+           hasattr(TaskInput, "PENDING_FIELDS") and isinstance(TaskInput.PENDING_FIELDS, tuple))
+    _check("PENDING_FIELDS 含 product_benefit",
+           "product_benefit" in TaskInput.PENDING_FIELDS)
+    _check("PENDING_FIELDS 含 objective",
+           "objective" in TaskInput.PENDING_FIELDS)
+    _check("REQUIRED_FIELDS 不再含 product_benefit",
+           "product_benefit" not in TaskInput.REQUIRED_FIELDS)
+    _check("REQUIRED_FIELDS 不再含 objective",
+           "objective" not in TaskInput.REQUIRED_FIELDS)
+    _check("REQUIRED_FIELDS 含 audience/channel/stage/scene/tone 5 项",
+           set(TaskInput.REQUIRED_FIELDS) == {"audience", "channel", "stage", "scene", "tone"})
+
+    # from_form 接受 product_benefit="" + objective="" 不抛错
+    form_empty_pending = {
+        "product_benefit": "",
+        "audience": "常规大盘",
+        "channel": "APP Push",
+        "objective": "",
+        "stage": "活动预热",
+        "scene": "早餐",
+        "tone": "直接利益型",
+    }
+    task = TaskInput.from_form(form_empty_pending)
+    _check("空灰态字段 TaskInput.from_form 不抛错",
+           task.product_benefit == "" and task.objective == "")
+    _check("空灰态字段 is_complete() == True（其他 5 必填已填）",
+           task.is_complete is True)
+
+    # is_complete False 时（5 必填缺一个）—— __post_init__ 必拦，不让绕过
+    form_missing_audience = {**form_empty_pending, "audience": ""}
+    try:
+        TaskInput.from_form(form_missing_audience)
+        _check("缺 5 必填抛 ValueError", False)  # 不该走到这
+    except ValueError as e:
+        _check("缺 5 必填抛 ValueError（兜底不被绕过）",
+               "audience" in str(e))
+
+    # ── 2) prompts.copy_generation.build_user_prompt ─────────
+    from prompts.copy_generation import build_user_prompt
+    out_empty = build_user_prompt(task, {"APP Push": {"title_max": 15, "body_max": 60, "emoji_max": 2}})
+    _check("空灰态字段 prompt 不拼「产品与权益：」行",
+           "产品与权益：" not in out_empty)
+    _check("空灰态字段 prompt 不拼「投放目标：」行",
+           "投放目标：" not in out_empty)
+
+    # 当灰态字段非空时，要拼出来（业务确认后启用场景）
+    task_with = TaskInput.from_form({**form_empty_pending,
+                                     "product_benefit": "Chiikawa 联名小卡",
+                                     "objective": "促进转化"})
+    out_filled = build_user_prompt(task_with, {"APP Push": {"title_max": 15, "body_max": 60, "emoji_max": 2}})
+    _check("非空时拼「产品与权益：Chiikawa 联名小卡」",
+           "产品与权益：Chiikawa 联名小卡" in out_filled)
+    _check("非空时拼「投放目标：促进转化」",
+           "投放目标：促进转化" in out_filled)
+
+    # ── 3) pages/01_content_studio 控件源码标注 ─────────────
+    src_studio = open("pages/01_content_studio.py", encoding="utf-8").read()
+    _check("product_benefit text_area 已加 disabled=True",
+           re.search(r'st\.text_area\([\s\S]*?产品与权益[\s\S]*?disabled\s*=\s*True', src_studio) is not None)
+    _check("objective selectbox 已加 disabled=True",
+           re.search(r'st\.selectbox\([\s\S]*?投放目标[\s\S]*?disabled\s*=\s*True', src_studio) is not None)
+    _check("两控件 label 含「待开发·二期接入」",
+           "待开发·二期接入" in src_studio)
+    _check("两控件有 help= tooltip 提示",
+           src_studio.count('help="后续开放，敬请期待') >= 2)
+    _check("副标题已说明 5 必填 + 二期接入",
+           "必填 5 项" in src_studio and "二期接入" in src_studio)
+
+    # ── 4) generation_service.demo 模式 product_benefit="" 走兜底 ──
+    from services.generation_service import _demo_candidates
+    cs = _demo_candidates(task)  # product_benefit="" + objective=""
+    _check("Demo 模式 product_benefit='' 仍生成 3 条候选，不报错",
+           len(cs) == 3 and all(c.body for c in cs))
+    _check("Demo 模式 3 条候选 id == A/B/C（PRD §9.2 schema）",
+           [c.id for c in cs] == ["A", "B", "C"])
+
+
+# §40 决策 2 进阶能力弱化 + 决策 3 CTR 反哺免责（Demo 范围 §2 / §3）
+# ============================================================
+def test_phase6_p1_nav_and_notice():
+    """验证决策文档两件事：
+
+    - 决策 2（导航分组）：ui/notice 渲染 .advanced-notice；4 个进阶页顶部调用；
+      00_home 含"核心 / 进阶"两组 home-section 卡
+    - 决策 3（CTR 反哺免责）：ui/notice 含 render_ctr_feedback_notice；
+      04/05 顶部调用；00_home 进阶区提"演示口径"明示不接真实数据
+    """
+    import importlib, re
+
+    # ── 1) ui/notice 模块 + 两个函数存在 ────────────────────
+    from ui import notice
+    _check("ui/notice 模块存在", notice is not None)
+    _check("render_advanced_notice 函数存在",
+           hasattr(notice, "render_advanced_notice") and callable(notice.render_advanced_notice))
+    _check("render_ctr_feedback_notice 函数存在",
+           hasattr(notice, "render_ctr_feedback_notice") and callable(notice.render_ctr_feedback_notice))
+
+    # ── 2) ui/styles CSS 类已注入 ──────────────────────────
+    styles_src = open("ui/styles.py", encoding="utf-8").read()
+    _check(".advanced-notice CSS 已加", ".advanced-notice" in styles_src)
+    _check(".home-section-core CSS 已加", ".home-section-core" in styles_src)
+    _check(".home-section-advanced CSS 已加", ".home-section-advanced" in styles_src)
+
+    # ── 3) 4 个进阶页：02/03 顶部仅 advanced, 04/05 顶部 advanced + ctr ─
+    src02 = open("pages/02_copy_diagnosis.py", encoding="utf-8").read()
+    src03 = open("pages/03_batch_evaluation.py", encoding="utf-8").read()
+    src04 = open("pages/04_historical_insights.py", encoding="utf-8").read()
+    src05 = open("pages/05_feedback.py", encoding="utf-8").read()
+    home  = open("pages/00_home.py", encoding="utf-8").read()
+
+    for name, src in [("02", src02), ("03", src03), ("04", src04), ("05", src05)]:
+        _check(f"{name} import render_advanced_notice",
+               "from ui.notice import render_advanced_notice" in src)
+        _check(f"{name} 顶部调用 render_advanced_notice()",
+               re.search(r'#\s*进阶能力[^\n]*\n\s*render_advanced_notice\(\)', src) is not None)
+        _check(f"{name} 含「进阶能力」banner 文案关键字",
+               "进阶能力" in src or "面向运营" in src)
+
+    _check("04 顶部调用 render_ctr_feedback_notice()",
+           re.search(r'render_ctr_feedback_notice\(\)', src04) is not None)
+    _check("05 顶部调用 render_ctr_feedback_notice()",
+           re.search(r'render_ctr_feedback_notice\(\)', src05) is not None)
+
+    # ── 4) 00_home 含分组卡片 + 进阶区文案 ─────────────────
+    _check("00_home 核心卡 home-section-core",
+           re.search(r'home-section[\s\S]*home-section-core', home) is not None)
+    _check("00_home 进阶卡 home-section-advanced",
+           re.search(r'home-section[\s\S]*home-section-advanced', home) is not None)
+    _check("00_home 进阶区含「演示口径」明示（决策 3 文案）",
+           "演示口径" in home and "业务确认前不接真实数据" in home)
+    _check("00_home 核心卡引导到 01_content_studio",
+           "01_content_studio" in home)
+
+    # ── 5) 01_content_studio 推荐结论已有免责话术（保留原有）──
+    src01 = open("pages/01_content_studio.py", encoding="utf-8").read()
+    _check("01 推荐结论含「不代表正式投放承诺」免责话术",
+           "不代表正式投放承诺" in src01)
+
+    # ── 6) 反哺库不入真实数据：feedback_repository 是演示用的 ─
+    from repositories import feedback_repository as fbr
+    _check("feedback_repository 模块存在（Phase 5 P1 已建）",
+           fbr is not None)
+
+
 # ============================================================
 # Main
 # ============================================================
@@ -1938,6 +2099,10 @@ def main():
     test_calibrate_baseline()
     # Phase 6 P0: LLM 配置状态检测（业务确认 #10）
     test_llm_status()
+    # Phase 6 P1: 6 维度前端灰态（决策文档 Demo 范围 §1）
+    test_phase6_p1_pending_fields()
+    # Phase 6 P1: 进阶能力弱化 + CTR 反哺免责（决策文档 Demo 范围 §2 / §3）
+    test_phase6_p1_nav_and_notice()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

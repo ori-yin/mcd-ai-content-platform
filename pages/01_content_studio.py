@@ -114,16 +114,22 @@ def _task_signature(t: dict) -> str:
 def _render_left_column(channel_rules: dict) -> Optional[TaskInput]:
     """左栏 form。提交后返回 TaskInput。"""
     st.markdown("### 1 定义经营任务")
-    st.caption("必填 7 项；其余按需。AI 结果仅作为候选，投放前人工确认。")
+    st.caption(
+        "必填 5 项（人群/渠道/阶段/场景/语气）；产品与权益 + 投放目标 为 Demo 阶段占位，"
+        "二期接入。AI 结果仅作为候选，投放前人工确认。"
+    )
 
     cur = st.session_state.task_input or {}
 
     with st.form("task_form", clear_on_submit=False):
+        # 产品与权益：Demo 阶段灰态（PRD §26 业务确认 + 演示口径决策）
         product_benefit = st.text_area(
-            "产品与权益 *",
+            "产品与权益（待开发·二期接入）",
             value=cur.get("product_benefit", ""),
             height=80,
-            placeholder="例：Chiikawa 合作款 + 限定小卡（无券）",
+            disabled=True,
+            help="后续开放，敬请期待。本期不参与生成（决策文档 Demo 范围 §1）。",
+            placeholder="二期接入后可填写（如：Chiikawa 合作款 + 限定小卡）",
         )
         c1, c2 = st.columns(2)
         with c1:
@@ -132,10 +138,13 @@ def _render_left_column(channel_rules: dict) -> Optional[TaskInput]:
                 index=TARGET_AUDIENCE.index(cur.get("audience", "常规大盘"))
                 if cur.get("audience") in TARGET_AUDIENCE else 0,
             )
+            # 投放目标：Demo 阶段灰态
             objective = st.selectbox(
-                "投放目标 *", OBJECTIVES,
+                "投放目标（待开发·二期接入）", OBJECTIVES,
                 index=OBJECTIVES.index(cur.get("objective", "建立认知"))
                 if cur.get("objective") in OBJECTIVES else 0,
+                disabled=True,
+                help="后续开放，敬请期待。本期不参与生成（决策文档 Demo 范围 §1）。",
             )
             stage = st.selectbox(
                 "活动阶段 *", STAGES,
@@ -449,7 +458,7 @@ def _render_reason_card(task: TaskInput, c: Candidate, rule: RuleResult):
         reasons.append(f"规则通过 {len(rule.passes)} 项")
     if c.reason:
         reasons.append(c.reason)
-    reasons.append(f"匹配 {task.objective} + {task.stage} 目标")
+    reasons.append(f"匹配 {task.objective} + {task.stage} 目标" if task.objective else f"匹配 {task.stage} 目标")
     if task.scene and task.scene != "其他":
         reasons.append(f"场景：{task.scene}")
     if not reasons:
@@ -528,9 +537,10 @@ def _render_recommendation(task: TaskInput, c: Candidate, rule: RuleResult):
             unsafe_allow_html=True,
         )
         return
+    objective_part = f" + {task.objective}" if task.objective else ""
     text = (
-        f"参考结论：当前版本符合 {task.channel} 基础规则，与「{task.stage} + "
-        f"{task.objective}」目标匹配。CTR 结果为历史基准和模型参考，"
+        f"参考结论：当前版本符合 {task.channel} 基础规则，与「{task.stage}"
+        f"{objective_part}」目标匹配。CTR 结果为历史基准和模型参考，"
         f"不代表正式投放承诺，建议结合业务判断后使用。"
     )
     st.markdown(f'<div class="decision-card">{text}</div>', unsafe_allow_html=True)

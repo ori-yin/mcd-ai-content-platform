@@ -33,6 +33,7 @@ from services.batch_evaluation_service import (
     parse_batch_file, evaluate_batch, rows_to_dataframe, rows_to_csv_bytes,
 )
 from ui.llm_status import render_banner
+from ui.notice import render_advanced_notice
 from ui.plotly_helpers import rate_value
 from ui.styles import inject_base_css
 
@@ -49,6 +50,9 @@ st.set_page_config(
 )
 
 inject_base_css()
+
+# 进阶能力 banner（决策文档 Demo 范围 §2）
+render_advanced_notice()
 
 # LLM 未配置提示（业务确认 #10）
 render_banner()

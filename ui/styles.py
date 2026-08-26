@@ -281,6 +281,40 @@ def inject_base_css() -> None:
             color: #856404;
         }}
         .llm-warning b {{ color: #664d03; }}
+
+        /* ====== 进阶能力 banner（弱化提示，对应决策文档 Demo 范围 §2） ====== */
+        .advanced-notice {{
+            background: #F5F5F5;
+            border-left: 3px solid #999;
+            border-radius: {RADIUS_SM};
+            padding: 0.5rem 0.9rem;
+            margin: 0.4rem 0 1rem 0;
+            font-size: 0.85em;
+            color: #555;
+        }}
+        .advanced-notice b {{ color: #333; }}
+
+        /* ====== 首页分组卡（核心大 / 进阶小） ====== */
+        .home-section {{
+            padding: 1rem 1.2rem;
+            border-radius: {RADIUS_LG};
+            margin: 0.8rem 0 1.2rem 0;
+        }}
+        .home-section-core {{
+            background: linear-gradient(135deg, {MCD_RED} 0%, {MCD_DARK_RED} 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(218, 41, 28, 0.15);
+        }}
+        .home-section-core h2 {{ color: white !important; margin: 0 0 0.4rem 0; }}
+        .home-section-core a {{ color: {MCD_GOLD}; font-weight: 600; }}
+        .home-section-advanced {{
+            background: {MCD_LIGHT_GRAY};
+            border: 1px solid {MCD_BORDER};
+        }}
+        .home-section-advanced h2 {{ color: #444; margin: 0 0 0.4rem 0; font-size: 1.15em; }}
+        .home-section-advanced a {{ color: {MCD_DARK_RED}; text-decoration: none; }}
+        .home-section-advanced ul {{ margin: 0.4rem 0 0 1.2rem; padding: 0; }}
+        .home-section-advanced li {{ margin: 0.25rem 0; }}
         </style>
         """,
         unsafe_allow_html=True,
