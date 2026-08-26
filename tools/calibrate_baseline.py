@@ -15,10 +15,12 @@ CLI 用法：
     python tools/calibrate_baseline.py                # 校准（写文件）
     python tools/calibrate_baseline.py --dry-run      # 看 diff 不写
     python tools/calibrate_baseline.py --min-reach 1000  # 触达过滤阈值
+    python tools/calibrate_baseline.py --definition v3.1  # 校准口径版本标注
 
 约束：
 - 只覆盖"渠道"和"渠道_x_是否用券"两个核心维度（避免 schema 破坏）
 - 其它维度保持 v3.0 不动；扩展维度在 Phase 6 单独做
+- --definition 默认 v3.1（2026-08-26 业务拍板口径，详 docs/ctr-kpi-definition-proposal-v0.2.md）
 """
 
 from __future__ import annotations
@@ -39,10 +41,11 @@ BACKUP_PATH = ROOT / "data" / "ctr_baseline.bak.json"
 
 
 # ── 校准参数 ────────────────────────────────────────────────────
-MIN_REACH_DEFAULT = 1000     # 单维度总触达 < 该值跳过
+MIN_REACH_DEFAULT = 1000     # 单维度总触达 < 该值跳过（v3.1 Q5 兜底阈值）
 MIN_PLANS_DEFAULT = 5        # n_plans < 该值用旧 baseline
 ALPHA_LOW = 0.3              # 5 ≤ n_plans < 20 时滑动系数
 ALPHA_HIGH = 1.0             # n_plans ≥ 20 时
+DEFINITION_DEFAULT = "v3.1"  # 校准口径版本（详 docs/ctr-kpi-definition-proposal-v0.2.md）
 
 
 # ── 回流数据聚合 ────────────────────────────────────────────────
@@ -132,8 +135,12 @@ def _calibrate_value(new: float, old: float, n_plans: int) -> Tuple[float, str]:
 
 
 def calibrate(baseline: dict, by_cp: dict, by_ch: dict,
-              min_reach: int) -> Tuple[dict, list]:
-    """返回 (new_baseline, changes) — changes 是 diff 列表。"""
+              min_reach: int, definition: str = DEFINITION_DEFAULT) -> Tuple[dict, list]:
+    """返回 (new_baseline, changes) — changes 是 diff 列表。
+
+    definition: 校准口径版本标注（默认 v3.1），写入 json 的 _definition_version
+    与 _definition_ref 字段，便于校准溯源（详 docs/ctr-kpi-definition-proposal-v0.2.md）。
+    """
     new_baseline = json.loads(json.dumps(baseline))  # 深拷贝
     changes: list = []
 
@@ -168,6 +175,9 @@ def calibrate(baseline: dict, by_cp: dict, by_ch: dict,
     new_baseline["last_refreshed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     new_baseline["last_refreshed_by"] = "tools/calibrate_baseline.py"
     new_baseline["_calibration_log"] = changes
+    # v3.1 口径标注（Phase 6 P2 落）：溯源用，baseline_lookup 不读这两个字段
+    new_baseline["_definition_version"] = definition
+    new_baseline["_definition_ref"] = "docs/ctr-kpi-definition-proposal-v0.2.md"
     return new_baseline, changes
 
 
@@ -192,6 +202,8 @@ def main():
                         help="feedback.db 路径")
     parser.add_argument("--baseline", type=str, default=str(BASELINE_PATH),
                         help="baseline JSON 路径")
+    parser.add_argument("--definition", type=str, default=DEFINITION_DEFAULT,
+                        help=f"校准口径版本标注（默认 {DEFINITION_DEFAULT}）")
     args = parser.parse_args()
 
     db_path = Path(args.db)
@@ -204,6 +216,7 @@ def main():
     with baseline_path.open("r", encoding="utf-8") as f:
         baseline = json.load(f)
     print(f"[INFO] 读取 baseline {baseline.get('version', '?')} ({baseline_path})")
+    print(f"[INFO] 校准口径 {args.definition}（详 docs/ctr-kpi-definition-proposal-v0.2.md）")
 
     # 读 feedback.db
     if not db_path.exists():
@@ -216,7 +229,7 @@ def main():
     total_reach = sum(v["reach"] for v in by_ch.values())
     print(f"[INFO] 回流数据：{n_ch} 渠道 / {n_cp} 渠道×用券组合 / 总触达 {total_reach:,}")
 
-    new_baseline, changes = calibrate(baseline, by_cp, by_ch, args.min_reach)
+    new_baseline, changes = calibrate(baseline, by_cp, by_ch, args.min_reach, args.definition)
 
     print(f"\n[CHANGES] {len(changes)} 条（按 n_plans 阈值 {MIN_PLANS_DEFAULT} / 20）")
     for c in changes:

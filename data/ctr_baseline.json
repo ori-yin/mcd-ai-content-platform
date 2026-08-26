@@ -1,8 +1,8 @@
 {
-  "version": "v3.0",
-  "last_updated": "2026-08-18",
-  "last_refreshed_at": "2026-08-18",
-  "last_refreshed_by": "claude-session-2026-08-18",
+  "version": "v3.1",
+  "last_updated": "2026-08-26",
+  "last_refreshed_at": "2026-08-26",
+  "last_refreshed_by": "claude-session-2026-08-26",
   "data_window_start": "2024-10-15",
   "data_window_end": "2026-08-16",
   "calibration_lambda": 0.01,
@@ -10,6 +10,10 @@
   "weighted_method": "exponential_decay",
   "source": "CNN历史备份.xlsx (2024-10-15 ~ 2026-08-16, 加权聚合, λ=0.01, 半衰期≈69.3天)",
   "_note": "CTR 值均为小数形式。v3 改用指数衰减加权，半衰期 69.3 天，越靠近 2026-08-16 的数据权重越高。微信订阅渠道本期无新样本，保留 v2 旧值。",
+  "_definition_note": "v3.1（2026-08-26 业务拍板口径，见 docs/ctr-kpi-definition-proposal-v0.2.md）：分子=去重点击人次(Q1)，分母=触达成功(Q2)，时间窗口=plan 全周期不截断(Q3)，跨渠道=不聚合保留为维度(Q4)，异常处理=暂回退到 min_reach>=1000 兜底(Q5 待标注机制就位后再切 A)，取数时间基准=bi_dt T-1 快照 12 点前用 INTERVAL 2(Q3 衍生铁律)。本 JSON 只覆盖数据值，definition 注释不参与 baseline_lookup 查询逻辑。",
+  "_min_reach_threshold": 1000,
+  "_definition_version": "v3.1",
+  "_definition_ref": "docs/ctr-kpi-definition-proposal-v0.2.md",
   "optimal_chars": {
     "APP Push": "5-12字",
     "企微1v1": "13-18字",

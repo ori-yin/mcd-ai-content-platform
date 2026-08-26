@@ -75,6 +75,19 @@
   - **决策 3（CTR 反哺免责）**：`render_ctr_feedback_notice` 顶部 04/05 + 00_home 进阶区明示"演示口径·业务确认前不接真实数据"；01 推荐结论原有"不代表正式投放承诺"免责话术保留（Handoff §7 教训录过）
   - **不动**：app.py（避开 st.Page 自引用递归铁律）；后端反哺逻辑（baseline 校准 / fingerprint / feedback.db 保持演示口径，等业务确认）；任何页面删除（02-05 弱化不剔除）
   - verify.py 349 → **395 PASS, 0 FAIL**（新增 §39 决策1 灰态 17 用例 + §40 决策2/3 综合 29 用例）
+- **2026-08-26**：Phase 6 P2 完成——**CTR 口径固化 v3.1（业务拍板）**：
+  - **Q1-Q6 拍板**：Q1 去重点击人次 / Q2 触达成功 / Q3 plan 全周期不截断 / Q4 不跨渠道聚合 / Q5 暂回退 B（min_reach>=1000 兜底，等业务标注机制就位再切 A）/ Q6 业务确认前不接真实数据
+  - **取数时间基准铁律**：bi_dt T-1 快照，12 点前用 INTERVAL 2（前天），新增 `core/data_window.py` 的 `resolve_bi_dt_window()` 函数
+  - **落地 6 文件**：`data/ctr_baseline.json`（v3.0 → v3.1 + `_definition_note` / `_min_reach_threshold` / `_definition_version` / `_definition_ref`）+ `adapters/ctr_predictor_adapter/baseline_lookup.py`（顶部口径注释）+ `services/ctr_prediction_service.py`（同步口径）+ `repositories/feedback_repository.py`（标注 Q1/Q2 + bi_dt）+ `tools/calibrate_baseline.py`（加 `--definition` flag 默认 v3.1，写出 `_definition_version`）+ `docs/ctr-kpi-definition-proposal-v0.2.md`（拍板稿，v0.1 保留作历史）
+  - **反哺批量回灌机制**：沿用 Phase 5 管道，不做实时对接；pages/05_feedback 上传 CSV/Excel → feedback.db → signature 配对算 MAE/MAPE → calibrate_baseline 重算（L0 EMA）；样本 ≥ 1000 后切 L1 GBDT
+  - **关键前提**（写入 v0.2 §5）：导出表口径必须与 Q1-Q6 完全一致，否则"真实值"是另一套定义，模型越学越歪
+  - verify.py 395 → **421 PASS, 0 FAIL**（新增 §41 v3.1 口径 26 用例：basline 元数据 + 5 文件注释 + calibrate --definition + plan/record/median 三种聚合数值对比 + 4 个 bi_dt 边界场景）
+  - **下一步**：第一梯队还剩 #3 / #6 待业务拍板；走完启 P0/P1 反哺 demo 数据回灌（业务确认前仅 demo 走通流程）
+  - **决策 1（6 维度前端灰态）**：`core/schemas.py` `TaskInput` 必填 7→5，把 `product_benefit` / `objective` 加默认空串挪到所有无默认字段之后（dataclass 排序铁律，见 §7 教训），加 `PENDING_FIELDS` 元组；`pages/01_content_studio` 两控件 `disabled=True` + label 加「待开发·二期接入」+ `help=` tooltip；`prompts/copy_generation.build_user_prompt` 空时不拼这两行（避免 prompt 里出现空值"产品与权益："）
+  - **决策 2（4 附属页面弱化）**：新建 `ui/notice.py`（`render_advanced_notice` / `render_ctr_feedback_notice` 两个 helper）；`ui/styles.py` 加 `.advanced-notice` / `.home-section-core` / `.home-section-advanced` 三个 CSS 类；02/03 顶部仅 advanced banner；04/05 顶部 advanced + ctr 双 banner；`pages/00_home.py` 重排分组入口卡（核心大卡红底链 01 + 进阶小卡灰底链 02-05）
+  - **决策 3（CTR 反哺免责）**：`render_ctr_feedback_notice` 顶部 04/05 + 00_home 进阶区明示"演示口径·业务确认前不接真实数据"；01 推荐结论原有"不代表正式投放承诺"免责话术保留（Handoff §7 教训录过）
+  - **不动**：app.py（避开 st.Page 自引用递归铁律）；后端反哺逻辑（baseline 校准 / fingerprint / feedback.db 保持演示口径，等业务确认）；任何页面删除（02-05 弱化不剔除）
+  - verify.py 349 → **395 PASS, 0 FAIL**（新增 §39 决策1 灰态 17 用例 + §40 决策2/3 综合 29 用例）
 - **下一步**：等业务确认（决策文档 §五 7 项清单），Phase 6 候选（P3/P4/demo 回灌/pytest 迁移）暂缓
 
 ### §5.5 CTR 准确率学习 Roadmap（2026-08-26 · 重要背景）
@@ -134,11 +147,12 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：Phase 6 P1 完成（业务确认 7 项**待过**）
-- **用例**：395 PASS / 0 FAIL（`python tests/verify.py`）
-- **首要任务**：走业务确认 #5（CTR 口径）— 草稿见 `docs/ctr-kpi-definition-proposal-v0.1.md`
-- **不动后端反哺 / 不启用灰态字段**直到拍板
-- 详情：§5 决策记录 / §6.1 Phase 历史 / §6.2 候选 / §6.3 业务确认
+- **阶段**：Phase 6 P2 完成（CTR 口径固化 v3.1 拍板完成）
+- **用例**：421 PASS / 0 FAIL（`python tests/verify.py`）
+- **首要任务**：第一梯队剩 #3 反哺触发条件 / #6 反哺是否影响生成排序 — 详 §6.2
+- **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿）+ `docs/feedback-ctr.md`
+- **不动**：业务确认前不接真实反馈数据；不启用灰态字段（product_benefit/objective）
+- 详情：§5 决策记录 / §6.1 Phase 历史 / §6.2 待业务确认 / §6.3 候选
 
 ### 6.1 Phase 历史（已完成）
 
@@ -151,6 +165,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 5** CTR 反哺闭环 P0+P1+P2 | record signature 指纹 / feedback 库 / baseline 自动校准 | 339 |
 | **Phase 6 P0** 业务确认 + 企微 1v1 + LLM 留空 | PRD §26 12 项拍板 / wechat-bubble-wrap / llm_status.yaml + banner | 349 |
 | **Phase 6 P1** 灰态 + 进阶弱化 + CTR 免责 | 6 维度前端灰态 / 4 附属页 banner / ui/notice + render_ctr_feedback_notice | **395** |
+| **Phase 6 P2** CTR 口径固化 v3.1 | Q1-Q6 拍板 / bi_dt 铁律 / 6 文件落地 / 反哺批量回灌机制 | **421** |
 
 ### Phase 1 — CTR Adapter（核心复用层） ✅ 已完成
 - [x] 抽 `get_baseline_ctr` / `get_time_multiplier` / `build_context_for_llm` 等到 `adapters/ctr_predictor_adapter/`
@@ -212,12 +227,19 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 - [x] **不动**：app.py（避 st.Page 递归铁律）/ 后端反哺逻辑 / 任何页面删除（02-05 全弱化不剔除）
 - [x] verify.py 395 PASS, 0 FAIL（新增 §39 灰态 17 用例 + §40 弱化+免责 29 用例）
 
+### Phase 6 P2 — CTR 口径固化 v3.1（业务拍板） ✅ 已完成（2026-08-26）
+- [x] **Q1-Q6 拍板** — 详 `docs/ctr-kpi-definition-proposal-v0.2.md` §2
+- [x] **取数铁律** — `core/data_window.resolve_bi_dt_window()` 12 点前 INTERVAL 2 兜底
+- [x] **6 文件落地**：`ctr_baseline.json`（v3.0 → v3.1 + definition 注释）/ `baseline_lookup.py` / `ctr_prediction_service.py` / `feedback_repository.py` / `calibrate_baseline.py`（加 `--definition` flag）/ `docs/ctr-kpi-definition-proposal-v0.2.md`（新写，v0.1 保留作历史）
+- [x] **反哺批量回灌机制** — 沿用 Phase 5 管道，详 v0.2 §5
+- [x] verify.py 395 → **421 PASS, 0 FAIL**（新增 §41 口径固化 26 用例）
+
 ### 6.2 待业务确认（按返工风险梯队）
 
 > 防返工背景见 `Downloads\Demo范围决策与待确认_2026-08-26.md`。**拍板前不动后端反哺 / 不启用灰态字段**。
 
 **第一梯队（高返工 · 现在就该确认）**
-- [ ] **#5** CTR **口径定义**（哪个 CTR / 去重规则）—— 地基中的地基；不定 → 反哺存的就是错的。**草稿见 `docs/ctr-kpi-definition-proposal-v0.1.md`**
+- [x] **#5** CTR **口径定义**（哪个 CTR / 去重规则）—— ✅ Phase 6 P2 已拍板，详 `docs/ctr-kpi-definition-proposal-v0.2.md`
 - [ ] **#6** 反哺是否**影响生成排序**（A/B/C 候选排序）—— 影响主流程逻辑
 - [ ] **#3** CTR 反哺**触发条件**（累计多少 plan / 定时？）
 
@@ -396,7 +418,8 @@ Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置
 | `C:\ideon\mcd-ai-content-platform\data\records.db` | 生成记录 SQLite（自动建） |
 | `C:\ideon\mcd-ai-content-platform\data\feedback.db` | 真实 CTR 回流 SQLite（Phase 5 P1） |
 | `C:\ideon\mcd-ai-content-platform\config\llm_settings.yaml` | LLM Provider 留空配置（Phase 6 P0） |
-| `C:\ideon\mcd-ai-content-platform\docs\ctr-kpi-definition-proposal-v0.1.md` | **CTR 口径倾向稿（待业务对齐）** |
+| `C:\ideon\mcd-ai-content-platform\docs\ctr-kpi-definition-proposal-v0.2.md` | **CTR 口径拍板稿 v3.1（业务已对齐）** |
+| `C:\ideon\mcd-ai-content-platform\core\data_window.py` | **bi_dt 取数时间基准（12 点前 INTERVAL 2 兜底）** |
 | `C:\ideon\mcd-ai-content-platform\config\channel_rules.yaml` | 4 渠道字数上限 |
 | `C:\ideon\mcd-ai-content-platform\config\brand_rules.yaml` | 必带 / 风险 / 禁词 |
 | `C:\ideon\mcd-ai-content-platform\prompts\copy_generation.py` | 生成候选 prompt v1.0 |
@@ -412,9 +435,9 @@ Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置
 1. 读本 Handoff（项目记忆）
 2. 读 `CLAUDE.md`（架构 + 约束）
 3. 读 `PRD.md §4.0 / §13.5 / §15.A`（三处补充）
-4. 跑 `python tests/verify.py`（**395 PASS / 0 FAIL**）
-5. 看 `Downloads\Demo范围决策与待确认_2026-08-26.md`（**当前轮边界**）
-6. 当前是 **Phase 6 P1 完成 · 等业务确认 7 项（按 §6.2 梯队，先 #5 口径）**
+4. 跑 `python tests/verify.py`（**421 PASS / 0 FAIL**）
+5. 看 `docs\ctr-kpi-definition-proposal-v0.2.md`（**当前 v3.1 拍板口径**）
+6. 当前是 **Phase 6 P2 完成 · 等第一梯队剩 #3 / #6 拍板**
 
 ---
 

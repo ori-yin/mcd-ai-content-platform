@@ -8,6 +8,17 @@ Phase 1a 约束：
 - 移除 @st.cache_data（CLAUDE.md §3 架构：cache_adapter 替 Streamlit 缓存）
 - baseline dict 通过参数注入，避免模块级全局读取
 - lazy load 单进程内 lru_cache 仅作性能优化，可被注入 baseline 覆盖
+
+v3.1 口径注释（2026-08-26 业务拍板，见 docs/ctr-kpi-definition-proposal-v0.2.md）：
+- Q1 分子 = 去重点击人次（同一人重复点同一条 plan 只算 1 次；不同 plan 不受影响）
+- Q2 分母 = 触达成功（发送系统报的送达数）
+- Q3 时间窗口 = plan 全周期不截断（点击持续累加，CTR 滚动更新）
+- Q4 跨渠道 = 不聚合（渠道保持 baseline 维度之一）
+- Q5 异常处理 = 暂回退 min_reach>=1000 兜底（等标注机制就位后再切 A）
+- 取数时间基准 = bi_dt T-1 快照，12 点前用 INTERVAL 2
+
+本模块只读 baseline JSON 的数值字段；definition 注释在 data/ctr_baseline.json
+"_definition_note" 字段，**不参与** get_baseline_ctr 查询逻辑（避免硬编码口径）。
 """
 
 from __future__ import annotations

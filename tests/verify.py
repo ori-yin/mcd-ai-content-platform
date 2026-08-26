@@ -2041,6 +2041,125 @@ def test_phase6_p1_nav_and_notice():
            fbr is not None)
 
 
+# §41 CTR v3.1 口径固化（业务拍板 · docs/ctr-kpi-definition-proposal-v0.2.md）
+# ============================================================
+def test_ctr_definition_v31():
+    """v3.1 口径落地三件事：
+
+    1) data/ctr_baseline.json 加 v3.1 definition 字段
+    2) baseline_lookup.py / ctr_prediction_service.py / feedback_repository.py
+       顶部 docstring 含 v3.1 口径注释
+    3) plan 加权 vs record 加权 vs 中位数 数值对比 + bi_dt 取数边界
+       （核心：v3.1 选 plan 加权，数值上要可验证）
+    """
+    import importlib
+    import statistics
+    from datetime import datetime
+
+    # ── 1) ctr_baseline.json 元数据升级 ──────────────────────
+    base_path = ROOT / "data" / "ctr_baseline.json"
+    base = __import__("json").loads(base_path.read_text(encoding="utf-8"))
+    _check("baseline version == v3.1", base.get("version") == "v3.1")
+    _check("baseline 含 _definition_note",
+           isinstance(base.get("_definition_note"), str) and len(base["_definition_note"]) > 50)
+    _check("baseline _definition_note 提及 Q1 去重点击",
+           "Q1" in base["_definition_note"] and "去重" in base["_definition_note"])
+    _check("baseline _definition_note 提及 Q2 触达成功",
+           "Q2" in base["_definition_note"] and "触达成功" in base["_definition_note"])
+    _check("baseline _definition_note 提及 Q3 全周期不截断",
+           "Q3" in base["_definition_note"] and "不截断" in base["_definition_note"])
+    _check("baseline _definition_note 提及 Q4 不聚合",
+           "Q4" in base["_definition_note"] and "不聚合" in base["_definition_note"])
+    _check("baseline _definition_note 提及 Q5 min_reach 兜底",
+           "Q5" in base["_definition_note"] and "min_reach" in base["_definition_note"])
+    _check("baseline _definition_note 提及 bi_dt T-1 + INTERVAL 2",
+           "bi_dt" in base["_definition_note"] and "INTERVAL 2" in base["_definition_note"])
+    _check("baseline _min_reach_threshold == 1000",
+           base.get("_min_reach_threshold") == 1000)
+    _check("baseline _definition_version == v3.1",
+           base.get("_definition_version") == "v3.1")
+    _check("baseline _definition_ref == docs/ctr-kpi-definition-proposal-v0.2.md",
+           base.get("_definition_ref") == "docs/ctr-kpi-definition-proposal-v0.2.md")
+
+    # ── 2) baseline_lookup.py 顶部 docstring 含 v3.1 ──────────
+    bl_src = open("adapters/ctr_predictor_adapter/baseline_lookup.py", encoding="utf-8").read()
+    _check("baseline_lookup 顶部含 v3.1 口径注释",
+           "v3.1" in bl_src and "Q1" in bl_src and "Q2" in bl_src)
+    _check("baseline_lookup 注释引用 v0.2 文档",
+           "ctr-kpi-definition-proposal-v0.2.md" in bl_src)
+
+    # ── 3) ctr_prediction_service.py 顶部 docstring 含 v3.1 ──
+    cps_src = open("services/ctr_prediction_service.py", encoding="utf-8").read()
+    _check("ctr_prediction_service 顶部含 v3.1 口径注释",
+           "v3.1" in cps_src and "Q1" in cps_src and "bi_dt" in cps_src)
+
+    # ── 4) feedback_repository.py 注释含 v3.1 ────────────────
+    fr_src = open("repositories/feedback_repository.py", encoding="utf-8").read()
+    _check("feedback_repository 注释含 v3.1 + Q1/Q2 + bi_dt",
+           "v3.1" in fr_src and "Q1" in fr_src and "Q2" in fr_src
+           and "bi_dt" in fr_src and "INTERVAL 2" in fr_src)
+
+    # ── 5) calibrate_baseline.py 加 --definition flag ─────────
+    cb = importlib.import_module("tools.calibrate_baseline")
+    _check("calibrate_baseline DEFINITION_DEFAULT == v3.1",
+           getattr(cb, "DEFINITION_DEFAULT", None) == "v3.1")
+    cb_src = open("tools/calibrate_baseline.py", encoding="utf-8").read()
+    _check("calibrate_baseline 顶层注释含 --definition 用法",
+           "--definition" in cb_src)
+    _check("calibrate_baseline 写入 _definition_version 字段",
+           "_definition_version" in cb_src and "_definition_ref" in cb_src)
+
+    # ── 6) plan 加权 vs record 加权 vs 中位数 数值对比 ──────
+    # 构造 5 个 plan：故意设大 plan CTR 低、小 plan CTR 高
+    # 验证三种聚合方式数值明显不同 → v3.1 选 plan 加权有意义
+    plan_data = [
+        {"plan_id": "p0", "reach": 1000, "clicks": 50},   # CTR 5%
+        {"plan_id": "p1", "reach": 500, "clicks": 50},    # CTR 10%
+        {"plan_id": "p2", "reach": 100, "clicks": 10},    # CTR 10%
+        {"plan_id": "p3", "reach": 500, "clicks": 10},    # CTR 2%
+        {"plan_id": "p4", "reach": 100, "clicks": 10},    # CTR 10%
+    ]
+    total_reach = sum(p["reach"] for p in plan_data)
+    total_click = sum(p["clicks"] for p in plan_data)
+    plan_weighted_ctr = total_click / total_reach  # = 130 / 2200 ≈ 5.91%
+    record_weighted_ctr = sum(p["clicks"] / p["reach"] for p in plan_data) / len(plan_data)
+    median_ctr = statistics.median([p["clicks"] / p["reach"] for p in plan_data])
+
+    _check("plan 加权 CTR ≈ 5.91%（v3.1 选这个）",
+           abs(plan_weighted_ctr - 130 / 2200) < 1e-6)
+    _check("record 加权 CTR ≈ 7.4%（v3.1 不选，会被大 plan 拉偏）",
+           abs(record_weighted_ctr - 7.4 / 100) < 1e-6)
+    _check("中位数 CTR = 10%（v3.1 不选）",
+           abs(median_ctr - 0.10) < 1e-6)
+    _check("plan 加权 ≠ record 加权 ≠ 中位数（口径选择有区分度）",
+           len({round(plan_weighted_ctr, 4),
+                round(record_weighted_ctr, 4),
+                round(median_ctr, 4)}) == 3)
+
+    # ── 7) bi_dt 取数边界（12 点前后）───────────────────────
+    from core import data_window as dw
+
+    # 场景 A：13:00（已过 12 点）→ T-1（昨天）
+    now_after = datetime(2026, 8, 26, 13, 0, 0)
+    _check("13:00 取数 → bi_dt = 昨天（2026-08-25）",
+           dw.resolve_bi_dt_window(now=now_after) == "2026-08-25")
+
+    # 场景 B：11:30（未到 12 点）→ T-2（前天，INTERVAL 2）
+    now_before = datetime(2026, 8, 26, 11, 30, 0)
+    _check("11:30 取数 → bi_dt = 前天（2026-08-24, INTERVAL 2）",
+           dw.resolve_bi_dt_window(now=now_before) == "2026-08-24")
+
+    # 场景 C：边界 12:00 整点 → T-1（>= 走 T-1 分支）
+    now_edge = datetime(2026, 8, 26, 12, 0, 0)
+    _check("12:00 整点 → bi_dt = 昨天（边界属 T-1）",
+           dw.resolve_bi_dt_window(now=now_edge) == "2026-08-25")
+
+    # 场景 D：跨月 8 月 1 日 11 点 → 前天是 7 月 30 日
+    now_cross_month = datetime(2026, 8, 1, 11, 0, 0)
+    _check("跨月 8 月 1 日 11:00 → bi_dt = 2026-07-30（INTERVAL 2）",
+           dw.resolve_bi_dt_window(now=now_cross_month) == "2026-07-30")
+
+
 # ============================================================
 # Main
 # ============================================================
@@ -2103,6 +2222,8 @@ def main():
     test_phase6_p1_pending_fields()
     # Phase 6 P1: 进阶能力弱化 + CTR 反哺免责（决策文档 Demo 范围 §2 / §3）
     test_phase6_p1_nav_and_notice()
+    # Phase 6 P2: CTR 口径固化 v3.1（业务拍板）
+    test_ctr_definition_v31()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

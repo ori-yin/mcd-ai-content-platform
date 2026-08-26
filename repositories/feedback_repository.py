@@ -7,6 +7,13 @@ docs/feedback-ctr.md §2.3 schema：
                   sent_date, reach_success, click_count, order_count,
                   source, imported_at)
 
+v3.1 口径标注（2026-08-26 业务拍板，见 docs/ctr-kpi-definition-proposal-v0.2.md）：
+- click_count 列名保留（避免破坏 Phase 5 已上传数据），实际语义对齐 v3.1 Q1
+  "去重点击人次"——上游导出口径必须按 v0.2 §2 Q1 同一人重复点同一条 plan
+  去重后再入库；如果上游传的是"含重复点击"，反哺算出的 CTR 会系统性偏高
+- reach_success 列名保留，对齐 v3.1 Q2 触达成功
+- 取数时间基准：bi_dt T-1 快照，12 点前用 INTERVAL 2（取数铁律，详 v0.2 §3）
+
 约定：
 - 与 records.db 同目录；路径 data/feedback.db，相对项目根
 - 业务层用 dict 入参/出参（不入 dataclass，避免侵入 core/schemas）

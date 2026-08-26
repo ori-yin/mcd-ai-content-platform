@@ -11,6 +11,12 @@ PRD §4.0 CTR 三入口（A/B/C）共用同一份 CTR Adapter：
 - 接收 list[Candidate] + TaskInput
 - 调用 CTRPredictionAdapter.predict_batch
 - 严格保持四态分明（model_prediction / baseline_only / demo / unavailable）
+
+v3.1 口径（2026-08-26 业务拍板，见 docs/ctr-kpi-definition-proposal-v0.2.md）：
+- baseline 输出对齐 v3.1：Q1 分子=去重点击人次、Q2 分母=触达成功
+- min_reach>=1000 兜底（Q5 暂回退 B，等标注机制就位）
+- 渠道保持为维度（Q4 不聚合）；plan 全周期不截断（Q3）
+- 取数时间基准=bi_dt T-1 快照 12 点前用 INTERVAL 2（取数铁律）
 """
 
 from __future__ import annotations
