@@ -19,7 +19,8 @@
 | 旧项目 | `mcd-copy-analyzer` / `mcd-ctr-predictor` 保持独立运行，不修改源 |
 | Provider | 内网 LLM（OpenAI 兼容）；无 Key 降级 Demo |
 | CTR 模式 | `existing_predictor` / `baseline_only` / `demo` / `unavailable` |
-| 数据契约 | `data/ctr_baseline.json`（v3.0，7 维度）+ 词典 + frameworks |
+| 数据契约 | `data/ctr_baseline.json`（v3.0，CTR 基准 **7 维**）+ 词典 + frameworks |
+| 输入维度 | **5 必填 + 2 灰态**（audience/channel/stage/scene/tone 必填；product_benefit/objective 二期接入） |
 
 **红线**：页面层不得 import 旧项目；CTR 四态分明；不复制整个旧文件到新项目；UI 不放 emoji。
 
@@ -27,30 +28,10 @@
 
 ## 3. 复用清单
 
-### 3.1 mcd-copy-analyzer
+旧项目 → 新项目映射**已全部完成**（Phase 1-2，✅✅）。详细映射见 `CLAUDE.md §5`；这里只保留索引。
 
-| 原模块 | 处理 | 新位置 | 状态 |
-|---|---|---|---|
-| `data.py` parse_message / _map_columns | 直接复用 | `services/data_loader.py` | ✅ Phase 2 |
-| `analyzer.py` tokenize / diagnose_score | 抽纯函数 + 替 cache | `services/text_analyzer.py` | ✅ Phase 2 |
-| `ai_service.py` provider + JSON 解析 | thin wrapper | `adapters/llm_adapter.py` | ✅ Phase 2 |
-| `config.py` 颜色 token + axis_rate | 直接复用 | `ui/theme_tokens.py` / `ui/plotly_helpers.py` | ✅ Phase 0 |
-| `advanced.py` 缺的 4 分析 | **从零实现** | `services/analytics/*.py` | ✅ Phase 2 |
-| `app.py` / `inject_css` | **不复用** | 重写为 `pages/` + `ui/styles.py` | ⏳ Phase 3 |
-
-### 3.2 mcd-ctr-predictor
-
-| 原函数 | 行号 | 新位置 |
-|---|---|---|
-| `get_baseline_ctr` | 54-85 | `adapters/ctr_predictor_adapter/baseline_lookup.py` |
-| `get_time_multiplier` | 88-120 | 同上 |
-| `build_context_for_llm` | 205-251 | `adapters/ctr_predictor_adapter/prompt_builder.py` |
-| `call_llm_batch` | 255-365 | 拆 `enrich_rows_for_llm` + `ProviderRouter` |
-| `auto_detect*` + 8 组别名 | 449-477 | `adapters/ctr_predictor_adapter/column_mapping.py` |
-| `get_char_range` + `count_chars` + `suggest_char_range` | 159-201 | `adapters/ctr_predictor_adapter/char_utils.py` |
-| `OPTIMAL_CHARS` / `CHANNEL_KEYS` | 40-49 | `adapters/ctr_predictor_adapter/constants.py` |
-| `calibrate_baseline.py` | 整体 | `tools/calibrate_baseline.py` |
-| `tests/verify.py` 模式 | 整体 | 升级为解耦版 |
+**mcd-copy-analyzer**（6 模块全部 ✅）— data / analyzer / ai_service / config / advanced 4 分析 / app 重写  
+**mcd-ctr-predictor**（9 项全部 ✅）— baseline_lookup / prompt_builder / column_mapping / char_utils / constants / calibrate 工具 / verify 模式升级，全部落到 `adapters/ctr_predictor_adapter/` 与 `tools/calibrate_baseline.py`
 
 ---
 
@@ -96,9 +77,80 @@
   - verify.py 349 → **395 PASS, 0 FAIL**（新增 §39 决策1 灰态 17 用例 + §40 决策2/3 综合 29 用例）
 - **下一步**：等业务确认（决策文档 §五 7 项清单），Phase 6 候选（P3/P4/demo 回灌/pytest 迁移）暂缓
 
+### §5.5 CTR 准确率学习 Roadmap（2026-08-26 · 重要背景）
+
+**完整原文**：`Downloads\CTR准确率学习-Roadmap附录_2026-08-26.md`。**此处给执行摘要**。
+
+**一句话**：把 CTR 从"查找表统计校准"升级到"会自我度量、会重训的回归模型"，让"**预测误差 vs 真实 CTR 曲线**"往下走。
+
+#### 三台阶
+
+| 台阶 | 做法 | 触发 |
+|---|---|---|
+| **L0（现状）** | baseline 查找表 + `calibrate_baseline.py` EMA | ✅ 已建（Phase 5 P2） |
+| **L1** | LightGBM 回归替查找表（6 维 + 字数 + emoji + 命中词） | feedback 样本 ≥ ~千条 |
+| **L2** | 增量重训 + 上线前回测门禁 + 误差监控 | L1 稳定后 |
+
+#### 当前断点
+
+```
+①生成 → ②预测 → ③投放 → ④回收真实 CTR
+                                ↓
+                          ⑤ 重训模型（断点）
+```
+
+①②③④ Phase 5 管道已搭（P0 signature + P1 feedback + P2 calibrate），**断点在 ⑤**。
+
+#### 落地机制（核心）
+
+1. **存每次预测**：已用 `signature` + `confidence`
+2. **回流后自动算误差**：预测 vs 真实 MAE / MAPE
+3. **画误差曲线**：往下 = 在学；平/往上 = 漂移，触发重训
+4. **达阈值自动重训 + 离线回测门禁**：准确率没退化才上线
+
+**第 2、3 步（误差算 + 曲线）**L0 阶段就能做、不需要多少数据，是地基。
+
+#### 选型铁律 · 为什么是 GBDT 不是深度学习
+
+- 输入是**结构化表格特征** + **中样本** → LightGBM 几乎必然赢神经网络
+- GBDT 出**特征重要性**（能回答"哪个维度影响 CTR"）—— 麦当劳场景可解释是刚需
+- 深度 CTR 模型（DeepFM/DIN）要**亿级样本**才回本，本项目喂不饱，别上
+
+#### 务实节奏（防过拟合）
+
+- **短期（< 几百条）**：维持 L0 EMA；先把 §3 第 2、3 步（误差曲线）搭起来
+- **中期（~ 千条）**：切 L1；现有 demo 回灌门槛 ≥ 50 plan 对 EMA 够，**训 GBDT 偏少易过拟合**
+- **长期**：L2 增量重训 + 回测门禁 + 曲线监控常态化
+
+#### 与决策文档联动
+
+CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**——这要先定**口径**（决策文档 #5）。口径不定，**算不出误差** → L1 全免谈。
+
 ---
 
 ## 6. 待办
+
+> **新会话 AI 直接读这段 ↓**
+
+### 6.0 当前快照（最快定位状态）
+
+- **阶段**：Phase 6 P1 完成（业务确认 7 项**待过**）
+- **用例**：395 PASS / 0 FAIL（`python tests/verify.py`）
+- **首要任务**：走业务确认 #5（CTR 口径）— 草稿见 `docs/ctr-kpi-definition-proposal-v0.1.md`
+- **不动后端反哺 / 不启用灰态字段**直到拍板
+- 详情：§5 决策记录 / §6.1 Phase 历史 / §6.2 候选 / §6.3 业务确认
+
+### 6.1 Phase 历史（已完成）
+
+| Phase | 关键产出 | 用例 |
+|---|---|---|
+| **Phase 1** CTR Adapter 核心层 | baseline/prompt/column/char 4 模块 + `PredictionResult` | 82 |
+| **Phase 2** copy-analyzer Adapter + 4 分析 | data_loader / text_analyzer / analytics（rank/similar/daily/owner） | 152 |
+| **Phase 3** 业务页基础设施 + 01 主流程 | 6 service + 2 prompt + 2 yaml + sqlite repo | 222 |
+| **Phase 4** 02/03/04 三业务页 | 02 单条诊断 / 03 批量评估 / 04 七 Tab 历史洞察 + 01 预览升级 + CTR Adapter bug 修 | 290 |
+| **Phase 5** CTR 反哺闭环 P0+P1+P2 | record signature 指纹 / feedback 库 / baseline 自动校准 | 339 |
+| **Phase 6 P0** 业务确认 + 企微 1v1 + LLM 留空 | PRD §26 12 项拍板 / wechat-bubble-wrap / llm_status.yaml + banner | 349 |
+| **Phase 6 P1** 灰态 + 进阶弱化 + CTR 免责 | 6 维度前端灰态 / 4 附属页 banner / ui/notice + render_ctr_feedback_notice | **395** |
 
 ### Phase 1 — CTR Adapter（核心复用层） ✅ 已完成
 - [x] 抽 `get_baseline_ctr` / `get_time_multiplier` / `build_context_for_llm` 等到 `adapters/ctr_predictor_adapter/`
@@ -160,33 +212,40 @@
 - [x] **不动**：app.py（避 st.Page 递归铁律）/ 后端反哺逻辑 / 任何页面删除（02-05 全弱化不剔除）
 - [x] verify.py 395 PASS, 0 FAIL（新增 §39 灰态 17 用例 + §40 弱化+免责 29 用例）
 
-### 待业务确认（决策文档 §五 · 7 项清单） ⏳ 2026-08-26 待过
-按 `Downloads\Demo范围决策与待确认_2026-08-26.md` 防返工清单——**业务确认前不要动后端反哺 / 灰态字段启用**：
-- [ ] **#1** 产品与权益 维度枚举值 + 是否参与生成（中返工）
-- [ ] **#2** 投放目标 维度枚举值 + 是否参与生成（中返工）
-- [ ] **#3** CTR 反哺**触发条件**（累计多少 plan / 定时？高返工）
-- [ ] **#4** CTR **校准频率**（手动 / T+1 / 周 · 中返工）
-- [ ] **#5** CTR **口径定义**（哪个 CTR / 去重规则 · 高返工）
-- [ ] **#6** 反哺是否**影响生成排序**（A/B/C 候选排序 · 高返工）
-- [ ] **#7** 02-05 附属页面**是否纳入正式版**（还是永久隐藏 · 低返工）
+### 6.2 待业务确认（按返工风险梯队）
 
-### Phase 6 候选（详见 docs/feedback-ctr.md §9） ⏸ 业务确认后再启
-- [ ] **P3 维度权重动态**：`config/dimension_weights.yaml` + `train_dimension_weights.py`
-- [ ] **P4 历史洞察签名关联**：04 七 Tab 加 signature 视角（"这个 Plan 的回流 CTR 是多少 / 历史相似文案平均 CTR"）
-- [ ] **demo 数据回灌**：feedback.db 累计 ≥ 50 plan 后，`_demo_pred` 优先用本地聚合 CTR 而不是写死 2%
-- [ ] pytest 版测试（CLAUDE.md §4.4 工程债）
+> 防返工背景见 `Downloads\Demo范围决策与待确认_2026-08-26.md`。**拍板前不动后端反哺 / 不启用灰态字段**。
 
-### 待业务确认（PRD §26，12 项） ✅ 2026-08-26 已过完
-详细拍板结果见 `docs/architecture.md §五`。摘要：
-- **#1 Demo 主渠道**：APP Push + 企微 1v1 同期（企微 1v1 见 Phase 6 P0）
-- **#2-4 枚举值**：复用 mcd-copy-analyzer 既有 4 值（人群/阶段/场景）
-- **#5-6 字数 + 词表**：复用 `config/channel_rules.yaml` + `config/brand_rules.yaml`
-- **#7 predictor 仓库**：main 版
-- **#8 校准状态**：**未校准 / 机制就绪**（baseline 写死口径，等 P5 回流）
-- **#9 置信区间**：加 `confidence` 字段（PRD v0.2 §5.3 口径 A）
-- **#10 内网 LLM**：暂留空 → Phase 6 加 `config/llm_settings.yaml` + Settings 页
-- **#11 企微 1v1 预览**：第一场同期做（Phase 6 P0）
-- **#12 文案存储**：不存完整文案（只存摘要 + signature + task_json）
+**第一梯队（高返工 · 现在就该确认）**
+- [ ] **#5** CTR **口径定义**（哪个 CTR / 去重规则）—— 地基中的地基；不定 → 反哺存的就是错的。**草稿见 `docs/ctr-kpi-definition-proposal-v0.1.md`**
+- [ ] **#6** 反哺是否**影响生成排序**（A/B/C 候选排序）—— 影响主流程逻辑
+- [ ] **#3** CTR 反哺**触发条件**（累计多少 plan / 定时？）
+
+**第二梯队（中低返工 · 可后置）**
+- [ ] **#1** 产品与权益 维度枚举 + 是否参与生成
+- [ ] **#2** 投放目标 维度枚举 + 是否参与生成
+- [ ] **#4** CTR 校准频率（手动 / T+1 / 周）
+- [ ] **#7** 02-05 附属页面**是否纳入正式版**
+
+### 6.3 候选（详 §5.5 CTR Roadmap）
+
+**业务确认后启动**：
+- [ ] **L1** LightGBM 回归替 baseline 查找表（结构化特征 + 中样本，详 §5.5）
+- [ ] **P3** 维度权重动态 `config/dimension_weights.yaml` + `train_dimension_weights.py`
+- [ ] **P4** 历史洞察签名关联（04 七 Tab 加 signature 视角：回流 CTR / 相似文案均值）
+- [ ] **demo 数据回灌**（feedback.db ≥ 50 plan 后 `_demo_pred` 优先本地聚合）
+- [ ] **pytest 迁移**（CLAUDE.md §4.4 工程债）
+
+### 6.4 PRD §26 12 项已拍板 ✅ 2026-08-26
+详见 `docs/architecture.md §五`。按议题：
+
+| 议题 | 拍板 |
+|---|---|
+| #1 主渠道 / #11 企微 1v1 | APP Push + 企微 1v1 同期 |
+| #2-4 枚举值 / #12 文案存储 | 复用 copy-analyzer 既有 4 值；只存摘要+signature+task_json |
+| #5-6 字数+词表 / #8 校准 | 复用 yaml；CTR "未校准 / 机制就绪" |
+| #7 predictor / #9 置信 | 走 main 版；加 `confidence` 字段 |
+| #10 内网 LLM | 暂留空 → Phase 6 已加 `llm_settings.yaml` + banner |
 
 ---
 
@@ -289,6 +348,17 @@ LLM prompt 字符串里要嵌"引用"，**别直接 `"...\"X\"..."` 配 `\"` 转
 ### Candidate.title 允许为空（2026-08-24 实战）
 短信 / 企微 1v1 无独立标题，PRD §8.2 显式允许。`core/schemas.py:265` 校验必须放：`if not self.body.strip()`，**不要带 title 校验**。验证测试也要相应改成"title 空不抛错"。
 
+### CTR 学习 ≠ 复杂模型 · 务实主义（2026-08-26 · §5.5 衍生教训）
+第一直觉是"加神经网络预测 CTR"，但本场景 4 个硬约束直接排除：
+- 输入特征是**结构化表格**（渠道/人群/阶段/场景 + 字数 + emoji + 命中词），不是文本/图像
+- 样本量是**几千到几万**（麦当劳业务体量），不是亿级
+- **可解释是刚需**——业务要能问"为什么这个 Plan CTR 高"，GBDT 给特征重要性，DNN 给一堆注意力
+- LLM 在旁主攻**生成**，CTR 模型只替**预测**这一层，两个职责清
+
+→ **L1 选 LightGBM/XGBoost 几乎无悬念**；L2 增量重训也走这套路。DeepFM/DIN/Transformer 全上都是过度设计。
+
+**铁律**：加新模型前先问三句——(1) 这是结构化还是非结构化？(2) 样本量级够哪个量级？(3) 可解释是不是刚需？三句里如果有 2 句答"结构化/中样本/是"，**别上深度**。
+
 ### dataclass 字段顺序铁律（2026-08-26 实战 · Phase 6 P1）
 Python dataclass 强约束：**所有带默认值的字段必须在所有无默认值的字段之后**。
 Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置，结果 `raise TypeError: non-default argument 'audience' follows default argument 'product_benefit'`，整页报错回不去。
@@ -320,10 +390,13 @@ Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置
 | 路径 | 用途 |
 |---|---|
 | `C:\ideon\mcd-ai-content-platform\` | 新项目根 |
-| `C:\ideon\mcd-ai-content-platform\PRD.md` | v2.1（1410 行） |
-| `C:\ideon\mcd-ai-content-platform\CLAUDE.md` | 给 AI 看的项目说明 |
-| `C:\ideon\mcd-ai-content-platform\data\ctr_baseline.json` | 7 维度基准（v3.0） |
+| `C:\ideon\mcd-ai-content-platform\PRD.md` | 产品需求文档（版本号见文件头） |
+| `C:\ideon\mcd-ai-content-platform\CLAUDE.md` | AI 会话入门（必读） |
+| `C:\ideon\mcd-ai-content-platform\data\ctr_baseline.json` | CTR 基准 **7 维**（channel/audience/coupon/stage/scene/plan_type/owner） |
 | `C:\ideon\mcd-ai-content-platform\data\records.db` | 生成记录 SQLite（自动建） |
+| `C:\ideon\mcd-ai-content-platform\data\feedback.db` | 真实 CTR 回流 SQLite（Phase 5 P1） |
+| `C:\ideon\mcd-ai-content-platform\config\llm_settings.yaml` | LLM Provider 留空配置（Phase 6 P0） |
+| `C:\ideon\mcd-ai-content-platform\docs\ctr-kpi-definition-proposal-v0.1.md` | **CTR 口径倾向稿（待业务对齐）** |
 | `C:\ideon\mcd-ai-content-platform\config\channel_rules.yaml` | 4 渠道字数上限 |
 | `C:\ideon\mcd-ai-content-platform\config\brand_rules.yaml` | 必带 / 风险 / 禁词 |
 | `C:\ideon\mcd-ai-content-platform\prompts\copy_generation.py` | 生成候选 prompt v1.0 |
@@ -339,9 +412,9 @@ Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置
 1. 读本 Handoff（项目记忆）
 2. 读 `CLAUDE.md`（架构 + 约束）
 3. 读 `PRD.md §4.0 / §13.5 / §15.A`（三处补充）
-4. 跑 `python tests/verify.py`（82 用例）
-5. 看 `.claude/agents/` 3 个 sub-agent
-6. 当前是 **Phase 1 已完成，Phase 2 待开始**
+4. 跑 `python tests/verify.py`（**395 PASS / 0 FAIL**）
+5. 看 `Downloads\Demo范围决策与待确认_2026-08-26.md`（**当前轮边界**）
+6. 当前是 **Phase 6 P1 完成 · 等业务确认 7 项（按 §6.2 梯队，先 #5 口径）**
 
 ---
 

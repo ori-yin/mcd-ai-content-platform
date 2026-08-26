@@ -172,6 +172,7 @@ STREAMLIT_PORT=8511 streamlit run app.py
 - [ ] 改 CTR 相关是否正确标记四态 result_type？
 - [ ] 改 baseline JSON 是否同步修改了 baseline_lookup 的查找分支？
 - [ ] 新增维度 / 渠道 / 字段是否在 `config/` 或 `data/` 配置文件而非硬编码？
+- [ ] **Phase 收尾必同步 `Handoff.md`**：§6 待办列表状态 / §9 用例数 / §10 Self-check 清单（2026-08-26 起强制；防入口信息过期误导下个 AI）
 
 ---
 
