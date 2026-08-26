@@ -82,13 +82,9 @@
   - **反哺批量回灌机制**：沿用 Phase 5 管道，不做实时对接；pages/05_feedback 上传 CSV/Excel → feedback.db → signature 配对算 MAE/MAPE → calibrate_baseline 重算（L0 EMA）；样本 ≥ 1000 后切 L1 GBDT
   - **关键前提**（写入 v0.2 §5）：导出表口径必须与 Q1-Q6 完全一致，否则"真实值"是另一套定义，模型越学越歪
   - verify.py 395 → **421 PASS, 0 FAIL**（新增 §41 v3.1 口径 26 用例：basline 元数据 + 5 文件注释 + calibrate --definition + plan/record/median 三种聚合数值对比 + 4 个 bi_dt 边界场景）
+  - commit `f942765`（9 文件 / +411 行 / -18 行；working tree clean）
   - **下一步**：第一梯队还剩 #3 / #6 待业务拍板；走完启 P0/P1 反哺 demo 数据回灌（业务确认前仅 demo 走通流程）
-  - **决策 1（6 维度前端灰态）**：`core/schemas.py` `TaskInput` 必填 7→5，把 `product_benefit` / `objective` 加默认空串挪到所有无默认字段之后（dataclass 排序铁律，见 §7 教训），加 `PENDING_FIELDS` 元组；`pages/01_content_studio` 两控件 `disabled=True` + label 加「待开发·二期接入」+ `help=` tooltip；`prompts/copy_generation.build_user_prompt` 空时不拼这两行（避免 prompt 里出现空值"产品与权益："）
-  - **决策 2（4 附属页面弱化）**：新建 `ui/notice.py`（`render_advanced_notice` / `render_ctr_feedback_notice` 两个 helper）；`ui/styles.py` 加 `.advanced-notice` / `.home-section-core` / `.home-section-advanced` 三个 CSS 类；02/03 顶部仅 advanced banner；04/05 顶部 advanced + ctr 双 banner；`pages/00_home.py` 重排分组入口卡（核心大卡红底链 01 + 进阶小卡灰底链 02-05）
-  - **决策 3（CTR 反哺免责）**：`render_ctr_feedback_notice` 顶部 04/05 + 00_home 进阶区明示"演示口径·业务确认前不接真实数据"；01 推荐结论原有"不代表正式投放承诺"免责话术保留（Handoff §7 教训录过）
-  - **不动**：app.py（避开 st.Page 自引用递归铁律）；后端反哺逻辑（baseline 校准 / fingerprint / feedback.db 保持演示口径，等业务确认）；任何页面删除（02-05 弱化不剔除）
-  - verify.py 349 → **395 PASS, 0 FAIL**（新增 §39 决策1 灰态 17 用例 + §40 决策2/3 综合 29 用例）
-- **下一步**：等业务确认（决策文档 §五 7 项清单），Phase 6 候选（P3/P4/demo 回灌/pytest 迁移）暂缓
+- **2026-08-26**：推送 GitHub — commit `f942765` 推到 ori-yin/mcd-ai-content-platform（公开仓库，按 memory 直连 github.com）
 
 ### §5.5 CTR 准确率学习 Roadmap（2026-08-26 · 重要背景）
 
