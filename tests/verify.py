@@ -21,6 +21,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# pytest 兼容标记（Phase 8）：模块加载时检测，_check 失败时抛 AssertionError 让 pytest 捕获
+_RUNNING_UNDER_PYTEST = "pytest" in sys.modules
+
 
 # ============================================================
 # Test helpers
@@ -37,7 +40,10 @@ def _check(name: str, condition: bool, detail: str = ""):
         print(f"[PASS] {name}")
     else:
         _failed += 1
-        print(f"[FAIL] {name}: {detail}")
+        msg = f"{name}: {detail}" if detail else name
+        print(f"[FAIL] {msg}")
+        if _RUNNING_UNDER_PYTEST:
+            raise AssertionError(msg)
 
 
 def _section(title: str):
