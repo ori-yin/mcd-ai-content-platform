@@ -113,6 +113,25 @@
   - verify.py 428 → **473 PASS, 0 FAIL**（§43 dimension_weights 20 用例 + §44 demo_feedback 25 用例）/ pytest 43 → **45 passed**（双路一致）
   - 本地拆 2 commit（`c83981f` 代码 + `c616354` Handoff §6.3 checkbox），远端通过 Contents API 合并推（`538f00f` 一次性合并 commit）；CLI emoji 撞 GBK → ASCII `[OK] [SKIP]` 替 ✓
 
+- **2026-08-26**：第二梯队 #1/#2 业务拍板落档（**不动代码，纯文档同步**）：
+  - **#1 产品与权益**：单字段 `product_benefit` → 拆 `product_category` + `benefit_type` 两字段；枚举 10 产品 + 8 权益（含「自定义输入」兜底）；必填；参与生成；jieba 词典与 yaml 枚举解耦并行（jieba = 内容运营维护单品词典，yaml = 产品经理维护业务大类，自演化机制闭环）
+  - **#2 投放目标**：PRD 6 值收敛到 4 值（品牌认知 / 点击驱动 / 转化促成 / 用户召回）；**支持多选**（逗号分隔，max 3，union 合并 tone_bias/must_avoid）；必填；参与生成 + 影响 strategy 优先级 + tone 词库；不约束 product（软引导）
+  - **⚠️ 修正条目 1（拍板同日核对 baseline 实情）**：
+    - Handoff §2 写"baseline 7 维 = channel/audience/coupon/stage/scene/plan_type/owner"**错**——baseline_lookup.py 实际是 1 基础 + 5 渠道交叉 + 1 时段 = 7 维（**无 objective 维度**）
+    - objective 是 **新增** baseline 维度（7 → 8），不是"6→4 key 收敛"
+    - PRD §9.1 例子 `"objective": "建立活动认知、提升点击"` 是字符串拼接，非多选；schema 单字符串维持
+    - baseline 新增 `objective_x_渠道` = 4×6 = 24 key；当前 ~200 plan → 70% 兜底，等反馈 ≥ 1000 后切 L1 GBDT
+  - **⚠️ 修正条目 2（拍板同日用户 Q1-Q3 揭示盲点 → 改多选）**：
+    - 用户 Q1（新品 + 大促）+ Q2（召回 + 新品推荐）都是**多目标并存**——原"4 值单选"会强迫业务方简化信息
+    - 修正为**4 值多选**：逗号分隔，max 3，tone_bias/must_avoid 取**并集**（最保守）
+    - baseline 24 → **90 key**（2^4-1 × 6 = 90），7 级回退兜底（`baseline_lookup.py` 加 1 分支在 char_range 之前）
+    - 修正记录：`Downloads/decision-objective-multiselect-correction-2026-08-26.md`
+    - 修正后剧本：新品+大促 = `brand_awareness,conversion`（"全新 + 5折"）/ 召回+新品 = `user_recall,brand_awareness`（"想念 + 全新"）
+  - 落地清单（未启动）：PRD §6.2/§9.1/§9.2 修订 + `config/product_benefit.yaml` 新 + `config/objective_strategy.yaml` 新（**含 combine_strategy: union + max_objectives: 3**）+ `core/schemas.py` 字段调整（注意 dataclass 字段顺序铁律）+ **8 维 baseline lookup**（含 90 key 算法，key 先 sort）+ **多选 prompt 拼装**（union 合并）+ `services/generation_service` strategy 投票合并；粗估 4-6 工作日
+  - **暂搁**：字典维护 UI `pages/06_settings.py`（等 #7 拍板时一起决策，跟"附属页面范围"强相关）
+  - 决策文档：`Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`（含 2 条修正记录）+ `Downloads/decision-objective-multiselect-correction-2026-08-26.md`（盲点修正）
+  - 测试：未动代码 → 473 PASS / 0 FAIL 不变
+
 ### §5.5 CTR 准确率学习 Roadmap（2026-08-26 · 重要背景）
 
 **完整原文**：`Downloads\CTR准确率学习-Roadmap附录_2026-08-26.md`。**此处给执行摘要**。
@@ -170,9 +189,10 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：Phase 6 P4 完成（§6.3 纯工程候选 P3 + demo 回灌已扫掉；详见 §5 新增条目）
+- **阶段**：Phase 6 P4 + 第二梯队 #1/#2 业务拍板落档（**不动代码**，决策文档在 `Downloads/`）
 - **用例**：473 PASS / 0 FAIL（`python tests/verify.py`）= 45 passed（`pytest tests/verify.py`，双路一致）
-- **首要任务**：第二梯队 #1/#2/#4/#7 待业务确认；L1 LightGBM / P4 签名关联 候选 — 详 §6.2 / §6.3
+- **首要任务**：第二梯队 #4（CTR 校准频率）/#7（附属页面范围 + 字典维护 UI）待业务确认；L1 LightGBM / P4 签名关联 候选 — 详 §6.2 / §6.3
+- **决策文档**：`Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`（**新增**）
 - **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿）+ `docs/feedback-ctr.md`
 
 ### 6.1 Phase 历史（已完成）
@@ -191,6 +211,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 7** 业务拍板落地（#3 触发 + #6 排序） | docs/ctr-feedback-schedule.md / weekly_calibrate.bat / rank_candidates_by_ctr / UI 调 + 文案微调 / 删 phase6_p1/p2_push.py | **428** |
 | **Phase 8** pytest 迁移（CLAUDE.md §4.4 工程债） | pytest.ini / _RUNNING_UNDER_PYTEST 标志 / _check 失败抛 AssertionError / 双路一致（pytest 43 passed + CLI 428 PASS） | **428（CLI）/ 43（pytest）** |
 | **Phase 6 P4** Handoff §6.3 纯工程候选扫掉 | config/dimension_weights.yaml + train_dimension_weights.py / feedback_lookup.py + 5 文件改动 / §43+§44 共 45 用例 | **473（CLI）/ 45（pytest）** |
+| **Phase 9** 第二梯队 #1/#2 业务拍板落档 | `Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`；Handoff §5/§6.0/§6.1/§6.2 同步；**不动代码** | **473（不动）** |
 
 > 详细 bullets 全部移入 §5 决策记录（按 commit hash 可追溯）。本表为速查。
 
@@ -204,10 +225,10 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 - [x] **#3** CTR 反哺**触发条件**（累计多少 plan / 定时？）—— ✅ Phase 7.1 拍板：每周一上午手动跑一次，详 `docs/ctr-feedback-schedule.md`
 
 **第二梯队（中低返工 · 可后置）**
-- [ ] **#1** 产品与权益 维度枚举 + 是否参与生成
-- [ ] **#2** 投放目标 维度枚举 + 是否参与生成
+- [x] **#1** 产品与权益 维度枚举 + 是否参与生成 —— ✅ **Phase 9 已拍板**，详 `Downloads/decision-product-benefit-2026-08-26.md`（拆 `product_category` + `benefit_type` 两字段；10 产品 + 8 权益枚举 +「自定义」输入兜底；必填 + 参与生成；jieba 词典与 yaml 枚举解耦并行）
+- [x] **#2** 投放目标 维度枚举 + 是否参与生成 —— ✅ **Phase 9 已拍板**，详 `Downloads/decision-objective-2026-08-26.md`（6 值 → 4 值收敛：品牌认知 / 点击驱动 / 转化促成 / 用户召回；**支持多选，逗号分隔，max 3，union 合并**；必填 + 参与生成 + 影响 strategy+tone，不约束 product；baseline 新增 objective_x_渠道 = 90 key，7 级回退兜底）
 - [ ] **#4** CTR 校准频率（手动 / T+1 / 周）
-- [ ] **#7** 02-05 附属页面**是否纳入正式版**
+- [ ] **#7** 02-05 附属页面**是否纳入正式版**（含字典维护 UI `pages/06_settings.py` 议题）
 
 ### 6.3 候选（详 §5.5 CTR Roadmap）
 
