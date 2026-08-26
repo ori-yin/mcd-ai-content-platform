@@ -364,8 +364,8 @@ records.db    feedback.db
 ---
 
 **纯工程候选（无需业务拍）**：
-- [ ] **P3** 维度权重动态 `config/dimension_weights.yaml` + `train_dimension_weights.py`（独立技术债）
-- [ ] **demo 数据回灌**（feedback.db ≥ 50 plan 后 `_demo_pred` 优先本地聚合；决策文档已隐式"业务确认前不接真实数据"）
+- [x] **P3** 维度权重动态 `config/dimension_weights.yaml` + `train_dimension_weights.py`（独立技术债）✅ 2026-08-26
+- [x] **demo 数据回灌**（feedback.db ≥ 50 plan 后 `_demo_pred` 优先本地聚合；决策文档已隐式"业务确认前不接真实数据"）✅ 2026-08-26
 
 ### 6.4 PRD §26 12 项已拍板 ✅ 2026-08-26
 详见 `docs/architecture.md §五`。按议题：
