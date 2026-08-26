@@ -106,6 +106,12 @@
   - **双路一致性**：`pytest tests/verify.py` → 43 passed in 6.20s；`python tests/verify.py` → 428 PASS, 0 FAIL（无回归）
   - **顺手发现**：本地 `06425eb` Handoff commit 与远端 `8102185` 内容字节相同、commit hash 不同（autocrlf=true CRLF vs LF 存 blob）—— `git reset --hard origin/main` 对齐，无内容损失
   - 推送走 Contents API（github.com 被墙），3 commit：本地 `0709f04` (pytest.ini + verify.py) + 本地 `6002e6c` (push_via_api.py FILES 切) + Contents API 合并推 → 远端 HEAD `1a7a2c3`
+- **2026-08-26**：Phase 6 P4 完成——**Handoff §6.3 纯工程候选 2 项扫掉**（业务拍板项不动）：
+  - **P3 维度权重动态**：`config/dimension_weights.yaml`（5 维度权重 + 6 baseline_modifiers + 元信息）+ `tools/train_dimension_weights.py`（仿 calibrate_baseline.py 结构，argparse + 三段策略 5/20 + .bak 备份；v0.1 占位不接真实数据，等业务确认）；`services/text_analyzer.diagnose_score:557` 加权聚合替等权 + 新增 `load_dimension_weights()` lru_cache(1) helper；`adapters/ctr_predictor_adapter/baseline_lookup.py` 6 个 return 分支加 `_apply_dimension_weights()`（clamp [0.5, 2.0]）+ `_load_dimension_modifiers()` helper
+  - **demo 数据回灌**：新建 `feedback_lookup.py`（`FEEDBACK_READY_MIN_PLANS=50` / `count_distinct_plans()` / `is_feedback_ready()` lru_cache(1) / `lookup_feedback_ctr(sig)` lru_cache(128) / 全 try-except + 参数化 SQL 防注入）；`repositories/feedback_repository.count_distinct_plans()` 对外暴露；`services/ctr_prediction_service._candidate_to_row` 末尾加 `_signature` 字段；`adapters/ctr_predictor_adapter/prompt_builder.enrich_rows_for_llm` 透传 `_signature`；`adapters/ctr_predictor_adapter/_demo_pred` 开头 9 行 feedback 分支（confidence=0.7，signature 命中后 `pred_ctr=fb_ctr`；DB 不就绪 / 无 signature / miss 三态全走原 baseline × tm 兜底）；**adapter 直接 sqlite3，不 import repository**（CLAUDE.md §4.1 红线）
+  - **不动**：`core/schemas.PredictionResult`（`result_type` 仍 4 值）/ `services/rule_engine` / `services/analytics/*` / 6 维回退顺序 / `_score_*` 原始打分函数 / 不接真实 feedback
+  - verify.py 428 → **473 PASS, 0 FAIL**（§43 dimension_weights 20 用例 + §44 demo_feedback 25 用例）/ pytest 43 → **45 passed**（双路一致）
+  - 本地拆 2 commit（`c83981f` 代码 + `c616354` Handoff §6.3 checkbox），远端通过 Contents API 合并推（`538f00f` 一次性合并 commit）；CLI emoji 撞 GBK → ASCII `[OK] [SKIP]` 替 ✓
 
 ### §5.5 CTR 准确率学习 Roadmap（2026-08-26 · 重要背景）
 
