@@ -251,7 +251,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 **第一梯队（高返工 · 现在就该确认）**
 - [x] **#5** CTR **口径定义**（哪个 CTR / 去重规则）—— ✅ Phase 6 P2 已拍板，详 `docs/ctr-kpi-definition-proposal-v0.2.md`
-- [ ] **#6** 反哺是否**影响生成排序**（A/B/C 候选排序）—— 影响主流程逻辑
+- [x] **#6** 反哺是否**影响生成排序**（A/B/C 候选排序）—— ✅ Phase 7.2 拍板：同意，rank_candidates_by_ctr 已实现（pred_ctr 降序 + title 长度兜底）
 - [x] **#3** CTR 反哺**触发条件**（累计多少 plan / 定时？）—— ✅ Phase 7.1 拍板：每周一上午手动跑一次，详 `docs/ctr-feedback-schedule.md`
 
 **第二梯队（中低返工 · 可后置）**
@@ -263,10 +263,100 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 ### 6.3 候选（详 §5.5 CTR Roadmap）
 
 **业务确认后启动**：
-- [ ] **L1** LightGBM 回归替 baseline 查找表（结构化特征 + 中样本，详 §5.5）
-- [ ] **P3** 维度权重动态 `config/dimension_weights.yaml` + `train_dimension_weights.py`
-- [ ] **P4** 历史洞察签名关联（04 七 Tab 加 signature 视角：回流 CTR / 相似文案均值）
-- [ ] **demo 数据回灌**（feedback.db ≥ 50 plan 后 `_demo_pred` 优先本地聚合）
+
+#### L1 · LightGBM 回归替 baseline 查找表（详 §5.5）
+
+**一句话**：用 LightGBM 回归替 baseline 7 维查表，**结构化特征 + 中样本 + 可解释**三场景适配 GBDT，DNN 是过度设计。
+
+**为什么是 GBDT 不是 DNN**：
+- 输入 = 结构化表格（7 维 + 字数 + emoji + 命中词），不是文本/图像
+- 样本 = 几千到几万（麦当劳业务体量），不是亿级
+- 可解释 = 刚需——业务问"为什么这个 Plan CTR 高"，GBDT 出特征重要性，DNN 给一堆注意力
+- DeepFM/DIN/Transformer 要亿级样本回本，喂不饱
+
+**关键设计点**：
+- **特征 X**：7 维基础 + 文本衍生（title_len/body_len/emoji_count/命中词数）+ 历史衍生（past_ctr_similar）+ 时段衍生（dayofweek/hour/is_holiday）
+- **训练集**：feedback.db（真实 CTR）按 signature join records.db → 每个 plan 一行 (X, y)
+- **样本阈值**：< 50 plan 走 baseline / 50-500 走 L0 EMA / **~ 1000 切 L1**（< 1000 易过拟合，叶节点多 + 噪声大）
+- **离线回测门禁**：L1 MAE > L0 × 1.05 → 拒绝上线，回退 L0
+- **冷启动兜底**：新维度组合 L1 也查不到，走 baseline 兜底（4 态分明不变）
+- **误差曲线**（必备）：预测 vs 真实 MAE/MAPE 散点 + 时间趋势图；曲线往下 = 在学，平/往上 = 漂移触发告警
+
+**落地步骤**（粗估 10 工作日）：
+1. `tools/train_l1_model.py`（~150 行：加载 feedback.db → join → 训练集 → LightGBM 训练 → 保存 .pkl）
+2. `adapters/ctr_predictor_adapter/l1_predictor.py`（~50 行：加载 .pkl + predict）
+3. `CTRPredictionAdapter` mode 加 `"l1_model"`（~30 行）
+4. `tools/plot_error_curve.py`（~80 行：每周预测 vs 真实 MAE 散点图）
+5. `tests/verify.py §43` L1 模块（~10 用例）
+6. 业务反馈：误差曲线图、特征重要性 Top10、模型切换门禁报告
+
+**风险**：
+1. **过拟合**：< 千条样本时 GBDT 不如 L0 EMA
+2. **冷启动**：新维度组合必须走 baseline 兜底
+3. **误差曲线不一定往下走**——可能持平或上漂，这是诊断信号（"在学" vs "漂移"）
+4. **责任划分**：谁负责训练 / 谁负责监控 / 谁有权批准上线
+
+**业务要拍 4 项**：
+1. **切 L1 时点**：样本 ≥ 多少 plan 时启动 L1？建议 ≥ 1000
+2. **谁来训练**：业务方跑 / 平台自动 / 数据团队跑？
+3. **误差告警阈值**：MAE 涨多少触发告警？建议 > 30%
+4. **可解释输出**：要不要把"特征重要性 Top10 维度"每周给业务看？
+
+---
+
+#### P4 · 历史洞察签名关联（04 七 Tab 加 signature 视角）
+
+**一句话**：把"哪条 Plan 后来效果如何"接进洞察 Tab，让业务闭环"看"反哺。
+
+**当前状态**：`pages/04_historical_insights.py` 七 Tab 按 plan / 文案维度统计，没有"采纳后真实效果"视角。P4 加 signature 视角 = 新增第 8 Tab"签名关联"。
+
+**为什么重要**：
+- 闭环到"看"——业务验证"我推荐的文案投出去后真有人点吗"
+- 反哺闭环可视化——哪些文案被采纳 → 投出去 → 真实 CTR 多高
+- 找高效 Plan 模板——相似文案 vs 真实 CTR 找规律
+
+**Tab 内容**：
+- 表格按 signature 分组聚合：`signature` / `采纳数` / `预测 CTR 平均` / **feedback 接入后**加 `真实 CTR 中位数/P90` / `预测 vs 真实 diff`
+- 散点图：预测 CTR (x) vs 真实 CTR (y)，每点一个 plan
+- Top10 复用模板：采纳数最多的 signature
+
+**数据来源**：
+```
+records.db    feedback.db
+   ↓              ↓
+   selected_id ←─signature─→ 真实 CTR（按 signature join）
+```
+
+没有 feedback 数据时只能看"采纳数"，无法做 CTR 对比——这正是当前状态。
+
+**风险**：
+1. **没数据时空着**——业务确认前不接真实数据，Tab 加了但只能看采纳数，可能觉得"没用"
+2. **数据稀疏**——单 signature 可能只 1-2 个 plan，"中位数 CTR"无意义；加阈值保护（≥ N 才显示 CTR 列）
+3. **混淆"采纳"和"成功"**——selected_id ≠ 投放成功，只是"运营最终选的那条"
+4. **CTR 散点少时画不出**——feedback 样本 < 50 时散点只有几个点，无诊断价值
+5. **与 L1 联动**——L1 训练数据正是"signature + 真实 CTR"，P4 是 L1 的"查看界面"
+
+**落地步骤**（粗估 3 工作日）：
+1. `services/signature_insight_service.py`（~100 行）
+   - `summarize_signatures(records, feedback)` → `list[{signature, count, pred_ctr_avg, real_ctr_median}]`
+   - 空数据兜底：`feedback is None` → 只返回采纳数维度
+2. `pages/04_historical_insights.py` 加第 8 Tab（~80 行 + plotly 散点）
+3. `tests/verify.py §43`（~6 用例：聚合、join、空数据兜底、稀疏过滤）
+4. **联动 L1**：`signature_insight_service` 直接给 `train_l1_model.py` 提供训练数据
+
+**业务要拍 4 项**：
+1. **要不要加这个 Tab**：业务确认前不接真实数据，Tab 加了只能看采纳数——值不值得？
+2. **CTR 列显示阈值**：feedback 样本 ≥ 多少才显示 CTR 列？建议 ≥ 50
+3. **展示粒度**：signature（细 12 位指纹）vs strategy（A_核心利益直给 3 选 1）？
+4. **与 L1 联动**：要不要 P4 先于 L1 做（先有"看"再有"用"）？
+
+**建议节奏**：P4 先做（3 天）→ L1 后做（10 天）。先有"看"的能力，再上"用"的模型。
+
+---
+
+**纯工程候选（无需业务拍）**：
+- [ ] **P3** 维度权重动态 `config/dimension_weights.yaml` + `train_dimension_weights.py`（独立技术债）
+- [ ] **demo 数据回灌**（feedback.db ≥ 50 plan 后 `_demo_pred` 优先本地聚合；决策文档已隐式"业务确认前不接真实数据"）
 - [ ] **pytest 迁移**（CLAUDE.md §4.4 工程债）
 
 ### 6.4 PRD §26 12 项已拍板 ✅ 2026-08-26
