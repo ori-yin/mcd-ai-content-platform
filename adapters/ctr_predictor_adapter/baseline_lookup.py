@@ -69,30 +69,34 @@ def get_baseline_ctr(
 
     # 标题字数优先
     if char_range and f"{ch}_{char_range}" in d.get("渠道_x_标题字数", {}).get("data", {}):
-        return d["渠道_x_标题字数"]["data"][f"{ch}_{char_range}"]
+        return _apply_dimension_weights(
+            d["渠道_x_标题字数"]["data"][f"{ch}_{char_range}"], "渠道_x_标题字数")
 
     # 渠道 × 计划类型
     if plan_type in ("AARRPlan", "普通Plan") and f"{ch}_{plan_type}" in d.get("渠道_x_计划类型", {}).get("data", {}):
-        return d["渠道_x_计划类型"]["data"][f"{ch}_{plan_type}"]
+        return _apply_dimension_weights(
+            d["渠道_x_计划类型"]["data"][f"{ch}_{plan_type}"], "渠道_x_计划类型")
 
     # 渠道 × 预算owner
     if owner and f"{ch}_{owner}" in d.get("渠道_x_预算owner", {}).get("data", {}):
-        return d["渠道_x_预算owner"]["data"][f"{ch}_{owner}"]
+        return _apply_dimension_weights(
+            d["渠道_x_预算owner"]["data"][f"{ch}_{owner}"], "渠道_x_预算owner")
 
     # 渠道 × 是否用券
     if coupon in ("是", "否"):
         v = d.get("渠道_x_是否用券", {}).get("data", {}).get(f"{ch}_{coupon}")
         if v:
-            return v
+            return _apply_dimension_weights(v, "渠道_x_是否用券")
 
     # 渠道 × 工作日类型
     if workday in ("工作日", "非工作日"):
         v = d.get("渠道_x_工作日类型", {}).get("data", {}).get(f"{ch}_{workday}")
         if v:
-            return v
+            return _apply_dimension_weights(v, "渠道_x_工作日类型")
 
     # 渠道整体
-    return d.get("渠道", {}).get("data", {}).get(ch, None)
+    return _apply_dimension_weights(
+        d.get("渠道", {}).get("data", {}).get(ch, None), "渠道")
 
 
 def get_time_multiplier(time_str: str, baseline: Optional[dict] = None) -> float:
@@ -131,3 +135,31 @@ def get_time_multiplier(time_str: str, baseline: Optional[dict] = None) -> float
     hour_ctr = td.get(f"{hour}时", overall_avg)
     mult = hour_ctr / overall_avg if overall_avg else 1.0
     return max(0.5, min(2.5, mult))
+
+
+# ── P3 维度级 baseline 微调（来自 config/dimension_weights.yaml） ──
+@functools.lru_cache(maxsize=1)
+def _load_dimension_modifiers() -> dict:
+    """读 dimension_weights.yaml 的 baseline_modifiers 段；缺失/异常 → {}。"""
+    p = Path(__file__).resolve().parents[2] / "config" / "dimension_weights.yaml"
+    if not p.exists():
+        return {}
+    try:
+        import yaml
+        doc = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        return doc.get("baseline_modifiers", {}) or {}
+    except Exception:
+        return {}
+
+
+def _apply_dimension_weights(raw_bl: Optional[float], dim_key: str) -> Optional[float]:
+    """维度级微调：raw_bl * weight（weight ∈ [0.5, 2.0]，缺维度默认 1.0）。
+
+    不破坏 get_baseline_ctr 6 维回退优先级，仅对回退后的 raw_bl 乘 modifier。
+    raw_bl 为 None 时透传 None（_demo_pred / _baseline_only_pred 拿 None 显示"无基准"）。
+    """
+    if raw_bl is None:
+        return None
+    w = float(_load_dimension_modifiers().get(dim_key, 1.0))
+    w = max(0.5, min(2.0, w))  # clamp 防止越界
+    return round(raw_bl * w, 5)

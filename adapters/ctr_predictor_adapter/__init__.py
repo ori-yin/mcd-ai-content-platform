@@ -36,6 +36,7 @@ from .column_mapping import (
     auto_detect_all,
 )
 from .prompt_builder import build_context_for_llm, enrich_rows_for_llm
+from .feedback_lookup import is_feedback_ready, lookup_feedback_ctr
 
 from typing import Optional  # noqa: E402
 
@@ -177,6 +178,21 @@ class CTRPredictionAdapter:
         bl = _safe_ctr(r.get("_bl_str"))
         # demo 占位：基准 × 时段系数 ± 5%（这里用 baseline * tm 作为"稳定占位"）
         tm = r.get("_tm", 1.0)
+        sig = r.get("_signature")
+
+        # Phase-B：feedback.db 就绪时（≥50 plans），按 signature 优先查真实 CTR
+        if sig and is_feedback_ready():
+            fb_ctr = lookup_feedback_ctr(sig)
+            if fb_ctr is not None:
+                return PredictionResult.demo(
+                    pred_ctr=fb_ctr,
+                    confidence=0.7,  # 历史聚合比 baseline × tm 高
+                    suggestion=f"历史聚合CTR {fb_ctr*100:.2f}% (signature={sig[:8]}…)",
+                    baseline_ctr=bl,
+                    time_multiplier=tm,
+                )
+
+        # 兜底：原 baseline × tm 路径（DB 不就绪 / 无 signature / signature miss）
         demo_ctr = (bl * tm) if bl else 0.02  # 兜底 2%
         bl_str = f"{bl*100:.2f}%" if bl is not None else "无基准"
         return PredictionResult.demo(

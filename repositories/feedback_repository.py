@@ -207,7 +207,22 @@ def count(db_path: Optional[str] = None) -> int:
         conn.close()
 
 
+def count_distinct_plans(db_path: Optional[str] = None) -> int:
+    """distinct task_signature 数（≈ plan 数）。
+
+    给上层业务用（例如未来想做"回灌就绪状态"看板）。
+    adapter 层不调用本函数（CLAUDE.md §4.1 adapter 不能依赖 repository）；
+    adapter 走 adapters/ctr_predictor_adapter/feedback_lookup.py 直接 sqlite3。
+    """
+    conn = get_connection(db_path)
+    try:
+        cur = conn.execute("SELECT COUNT(DISTINCT task_signature) FROM feedback_records")
+        return int(cur.fetchone()[0])
+    finally:
+        conn.close()
+
+
 __all__ = [
     "save", "save_batch", "list_all", "aggregate_by_signature",
-    "count", "get_connection", "DB_PATH",
+    "count", "count_distinct_plans", "get_connection", "DB_PATH",
 ]

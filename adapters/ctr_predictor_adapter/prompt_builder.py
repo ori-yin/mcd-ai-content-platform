@@ -109,5 +109,9 @@ def enrich_rows_for_llm(rows: list, baseline: Optional[dict] = None) -> list:
         new_row = dict(row)
         new_row["_bl_str"] = bl_str
         new_row["_tm"] = tm
+        # Phase-B demo 回灌：透传 _signature（来自 ctr_prediction_service._candidate_to_row）
+        # 此处不生成 signature，仅透传；生成在 services 层（避免 prompt_builder 依赖 core.schemas）
+        if "_signature" in row:
+            new_row["_signature"] = row["_signature"]
         enriched.append(new_row)
     return enriched

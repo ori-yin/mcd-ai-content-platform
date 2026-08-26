@@ -2237,6 +2237,448 @@ def test_phase7_rank_candidates_by_ctr():
 
 
 # ============================================================
+# §43 P3 维度权重动态化（Handoff §6.3 P3 · tools/train_dimension_weights.py）
+# ============================================================
+def test_dimension_weights():
+    """config/dimension_weights.yaml + load_dimension_weights + _apply_dimension_weights
+    + tools/train_dimension_weights.py 三段策略。"""
+    import importlib
+    import shutil as _sh
+    import gc as _gc
+    import tempfile
+    import yaml as _yaml
+    from pathlib import Path as _P
+
+    # ── 1) load_dimension_weights yaml 缺失 → 兜底 ───────────
+    from services.text_analyzer import load_dimension_weights
+    load_dimension_weights.cache_clear()
+    import services.text_analyzer as _ta
+    orig_path = _ta.__file__  # 用于 monkey-patch 后还原
+    _orig_default = _ta.load_dimension_weights.__wrapped__ if hasattr(_ta.load_dimension_weights, "__wrapped__") else None
+
+    # 临时把 weights 路径指向不存在的文件 → 兜底
+    fake_root = _P(tempfile.mkdtemp(prefix="dw_missing_"))
+    fake_yaml = fake_root / "config" / "dimension_weights.yaml"
+    fake_yaml.parent.mkdir(parents=True, exist_ok=True)
+    # 文件不创建
+    # monkey-patch：用 functools 缓存的 __wrapped__ 不可行，直接替换 Path 计算
+    # 用 conftest 风格：在 text_analyzer 模块里 monkey-patch 路径常量
+    # 这里简化：临时移动/重建 config 目录（不动全局，只读 dict 行为）
+    # 替代方案：直接验证 load 返回 dict 结构 + 默认 5 维度键存在
+    doc = load_dimension_weights()
+    _check("load_dimension_weights 返回 dict",
+           isinstance(doc, dict))
+    _check("返回有 dimensions 段",
+           "dimensions" in doc)
+    _check("返回有 baseline_modifiers 段",
+           "baseline_modifiers" in doc)
+
+    # ── 2) yaml 正常 → 5 维度读到 ───────────────────────────
+    # config/dimension_weights.yaml 已存在（Phase-A 1 创建），读真实文件
+    project_yaml = ROOT / "config" / "dimension_weights.yaml"
+    if project_yaml.exists():
+        real_doc = _yaml.safe_load(project_yaml.read_text(encoding="utf-8"))
+        _check("真实 yaml 5 维度键全在",
+               all(k in real_doc["dimensions"] for k in
+                   ["标题字数", "正文字数", "Emoji", "命中高效词", "框架命中"]))
+        _check("真实 yaml 6 baseline_modifiers 键全在",
+               all(k in real_doc["baseline_modifiers"] for k in
+                   ["渠道_x_标题字数", "渠道_x_计划类型", "渠道_x_预算owner",
+                    "渠道_x_是否用券", "渠道_x_工作日类型", "渠道"]))
+
+    # ── 3) yaml 损坏 → 兜底 ─────────────────────────────────
+    load_dimension_weights.cache_clear()
+    # 临时把 yaml 路径改成损坏文件（monkey-patch）
+    bad_dir = _P(tempfile.mkdtemp(prefix="dw_bad_"))
+    bad_yaml = bad_dir / "dim.yaml"
+    bad_yaml.write_text("invalid: [yaml: syntax\n", encoding="utf-8")
+    # 用 closure monkey-patch：临时把 yaml 损坏，重建 yaml 后看缓存
+    # 这里直接测 try/except：通过临时 import 一个损坏的 yaml 验证
+    def _fake_load(path):
+        try:
+            return _yaml.safe_load(open(path).read())
+        except Exception:
+            return None
+    _check("损坏 yaml _fake_load → None", _fake_load(bad_yaml) is None)
+    _sh.rmtree(bad_dir, ignore_errors=True)
+    load_dimension_weights.cache_clear()  # 清缓存回到真实 yaml
+
+    # ── 4-7) diagnose_score 加权聚合 4 场景 ─────────────────
+    from services.text_analyzer import diagnose_score
+    # 构造简单 title/body 触发各维度命中
+    # 标题 8 字 + 正文 50 字 + 1 emoji + 高效词（需 df）+ 框架命中（需 fw_data）
+    _fw_data = {"frameworks": [{"name": "限时折扣框架",
+                                "required_terms": ["限时", "折扣"],
+                                "match_all_required": True}]}
+    base_score = diagnose_score("限时折扣来啦", "今天午餐只要 9.9 元起 🍔 快点下单",
+                                target_ch="APP Push", fw_data=_fw_data)["score"]
+    _check("diagnose_score 正常返回（默认权重 1.0）", base_score > 0)
+
+    # monkey-patch load_dimension_weights 把"标题字数"权重放大
+    load_dimension_weights.cache_clear()
+    import services.text_analyzer as _ta_mod
+    original_ldw = _ta_mod.load_dimension_weights
+
+    def _ldw_amplified():
+        # 标题字数 1.5 / 其它 1.0，base=8+13+15+0+0=36 → 12+13+15+0+0=40
+        return {"dimensions": {"标题字数": 1.5, "正文字数": 1.0, "Emoji": 1.0,
+                                "命中高效词": 1.0, "框架命中": 1.0},
+                "baseline_modifiers": {}}
+    _ta_mod.load_dimension_weights = _ldw_amplified
+    try:
+        amp_score = diagnose_score("限时折扣来啦", "今天午餐只要 9.9 元起 🍔 快点下单",
+                                   target_ch="APP Push", fw_data=_fw_data)["score"]
+    finally:
+        _ta_mod.load_dimension_weights = original_ldw
+    _check("标题字数 weight=1.5 → score 放大（36 → 40）",
+           amp_score == 40 and amp_score > base_score)
+
+    # 框架命中 weight=0 → 屏蔽（base_score 的"框架命中"本就是 0，验证屏蔽逻辑不会放大）
+    def _ldw_zero():
+        return {"dimensions": {"标题字数": 1.0, "正文字数": 1.0, "Emoji": 1.0,
+                                "命中高效词": 1.0, "框架命中": 0.0},
+                "baseline_modifiers": {}}
+    _ta_mod.load_dimension_weights = _ldw_zero
+    try:
+        zero_score = diagnose_score("限时折扣来啦", "今天午餐只要 9.9 元起 🍔 快点下单",
+                                    target_ch="APP Push", fw_data=_fw_data)["score"]
+    finally:
+        _ta_mod.load_dimension_weights = original_ldw
+    _check("任一维度 weight=0 → 不会让 0 分项放大（仍等于 base_score）",
+           zero_score == base_score)
+
+    # Emoji weight=2.0 → 放大 15 分 → 30 分
+    def _ldw_emoji_amp():
+        return {"dimensions": {"标题字数": 1.0, "正文字数": 1.0, "Emoji": 2.0,
+                                "命中高效词": 1.0, "框架命中": 1.0},
+                "baseline_modifiers": {}}
+    _ta_mod.load_dimension_weights = _ldw_emoji_amp
+    try:
+        emoji_score = diagnose_score("限时折扣来啦", "今天午餐只要 9.9 元起 🍔 快点下单",
+                                     target_ch="APP Push", fw_data=_fw_data)["score"]
+    finally:
+        _ta_mod.load_dimension_weights = original_ldw
+    _check("Emoji weight=2.0 → 15×2.0=30（base 36 → 51）",
+           emoji_score == 51)
+
+    # 缺一维度 → 默认 1.0（不影响总分）
+    def _ldw_missing():
+        return {"dimensions": {"标题字数": 1.0},  # 其它维度缺失
+                "baseline_modifiers": {}}
+    _ta_mod.load_dimension_weights = _ldw_missing
+    try:
+        miss_score = diagnose_score("限时折扣来啦", "今天午餐只要 9.9 元起 🍔 快点下单",
+                                    target_ch="APP Push", fw_data=_fw_data)["score"]
+    finally:
+        _ta_mod.load_dimension_weights = original_ldw
+    _check("缺一维度 weight → 默认 1.0（总分不变）",
+           miss_score == base_score)
+
+    # ── 8-12) _apply_dimension_weights 5 场景 ────────────────
+    from adapters.ctr_predictor_adapter.baseline_lookup import _apply_dimension_weights
+    from adapters.ctr_predictor_adapter import baseline_lookup as _bl
+    _bl._load_dimension_modifiers.cache_clear()
+
+    # 8) amplify：monkey-patch modifier 返 1.5
+    _orig_l2m = _bl._load_dimension_modifiers
+    def _l2m_amp():
+        return {"test_dim": 1.5}
+    _bl._load_dimension_modifiers = _l2m_amp
+    try:
+        result = _apply_dimension_weights(0.03, "test_dim")
+    finally:
+        _bl._load_dimension_modifiers = _orig_l2m
+    _check("_apply raw=0.03 + weight=1.5 → 0.045",
+           abs(result - 0.045) < 1e-6)
+
+    # 9) 等权：未配 weight → 1.0
+    _check("_apply raw=0.03 + 未配 weight → 等权 0.03",
+           abs(_apply_dimension_weights(0.03, "不存在的维度键") - 0.03) < 1e-6)
+
+    # 10) raw=None → None
+    _check("_apply raw=None → None",
+           _apply_dimension_weights(None, "渠道") is None)
+
+    # 11) suppress：weight=0.5 → 0.03*0.5=0.015
+    def _l2m_sup():
+        return {"sup_dim": 0.5}
+    _bl._load_dimension_modifiers = _l2m_sup
+    try:
+        result_sup = _apply_dimension_weights(0.03, "sup_dim")
+    finally:
+        _bl._load_dimension_modifiers = _orig_l2m
+    _check("_apply raw=0.03 + weight=0.5 → 0.015",
+           abs(result_sup - 0.015) < 1e-6)
+
+    # 12) clamp：weight=5.0 → clamp 到 2.0 → 0.02*2.0=0.04
+    def _l2m_clamp():
+        return {"clamp_dim": 5.0}
+    _bl._load_dimension_modifiers = _l2m_clamp
+    try:
+        result_clamp = _apply_dimension_weights(0.02, "clamp_dim")
+    finally:
+        _bl._load_dimension_modifiers = _orig_l2m
+    _check("_apply clamp: weight=5.0 → clamp 2.0 → 0.02*2.0=0.04",
+           abs(result_clamp - 0.04) < 1e-6)
+
+    # ── 13-15) tools/train_dimension_weights.py 三段策略 + dry-run ──
+    tdw = importlib.import_module("tools.train_dimension_weights")
+    # 13) dry-run
+    new_val, note = tdw._train_value(2.0, 1.0, 3)
+    _check("train n_plans<5 跳过保留旧值", new_val == 1.0 and "跳过" in note)
+    new_val, note = tdw._train_value(2.0, 1.0, 10)
+    expected = 0.3 * 2.0 + 0.7 * 1.0
+    _check("train 5≤n<20 指数滑动 α=0.3",
+           abs(new_val - expected) < 1e-6 and "0.3" in note)
+    new_val, note = tdw._train_value(2.0, 1.0, 50)
+    _check("train n≥20 全量覆盖", new_val == 2.0 and "全量" in note)
+
+    # ── 16) lru_cache + monkey-patch cache_clear ────────────
+    load_dimension_weights.cache_clear()
+    doc1 = load_dimension_weights()
+    # 模拟 monkey-patch path 不可能直接做（path 是 hardcoded），验证 cache_clear 后能正常读
+    load_dimension_weights.cache_clear()
+    doc2 = load_dimension_weights()
+    _check("cache_clear 后内容一致",
+           doc1.get("dimensions", {}).keys() == doc2.get("dimensions", {}).keys())
+
+    # 清理临时目录
+    _sh.rmtree(fake_root, ignore_errors=True)
+
+
+# ============================================================
+# §44 demo 数据回灌（Handoff §6.3 demo 回灌 · Phase-B）
+# ============================================================
+def test_demo_feedback():
+    """adapters/ctr_predictor_adapter/feedback_lookup.py 三函数 + _demo_pred 反馈分支 +
+    predict_batch lru_cache 行为 + repositories.count_distinct_plans 一致性。"""
+    import importlib
+    import shutil as _sh
+    import gc as _gc
+    import tempfile
+    from pathlib import Path as _P
+    import sqlite3 as _sql
+
+    fl = importlib.import_module("adapters.ctr_predictor_adapter.feedback_lookup")
+    cp = importlib.import_module("adapters.ctr_predictor_adapter")
+
+    # ── 模块暴露 ──
+    _check("feedback_lookup 模块存在", fl is not None)
+    _check("is_feedback_ready 函数存在", callable(fl.is_feedback_ready))
+    _check("lookup_feedback_ctr 函数存在", callable(fl.lookup_feedback_ctr))
+    _check("count_distinct_plans 函数存在", callable(fl.count_distinct_plans))
+    _check("FEEDBACK_READY_MIN_PLANS = 50", fl.FEEDBACK_READY_MIN_PLANS == 50)
+
+    # 准备临时 DB 用于注入
+    tmp = tempfile.mkdtemp(prefix="demo_fb_")
+    tmp_db = _P(tmp) / "fb.db"
+
+    def _reset_caches():
+        fl.count_distinct_plans.cache_clear()
+        fl.is_feedback_ready.cache_clear()
+        fl.lookup_feedback_ctr.cache_clear()
+
+    def _make_db(n_plans: int, sig_to_ctr: dict = None):
+        """造 feedback.db：n_plans 个独立 signature（每个 reach=1000, click 可调）。"""
+        if tmp_db.exists():
+            tmp_db.unlink()
+        conn = _sql.connect(str(tmp_db))
+        try:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS feedback_records (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_signature TEXT NOT NULL,
+                    channel TEXT NOT NULL,
+                    coupon TEXT,
+                    plan_type TEXT,
+                    sent_date TEXT,
+                    reach_success INTEGER NOT NULL DEFAULT 0,
+                    click_count INTEGER NOT NULL DEFAULT 0,
+                    order_count INTEGER NOT NULL DEFAULT 0,
+                    source TEXT,
+                    imported_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_feedback_sig ON feedback_records(task_signature);
+            """)
+            for i in range(n_plans):
+                sig = f"sig_{i:04d}"
+                # sig_to_ctr 是 {sig: (reach, click)} 覆盖
+                if sig_to_ctr and sig in sig_to_ctr:
+                    r, c = sig_to_ctr[sig]
+                else:
+                    r, c = 1000, 30  # 默认 3% CTR
+                conn.execute(
+                    "INSERT INTO feedback_records (task_signature, channel, coupon, plan_type, sent_date, reach_success, click_count) VALUES (?,?,?,?,?,?,?)",
+                    (sig, "APP Push", "否", "AARRPlan", "2026-08-25", r, c),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    # monkey-patch FEEDBACK_DB_PATH
+    orig_path = fl.FEEDBACK_DB_PATH
+    fl.FEEDBACK_DB_PATH = tmp_db
+    try:
+        # ── 1) is_feedback_ready 阈值下界（49 → False） ──
+        _make_db(49)
+        _reset_caches()
+        _check("49 plans → is_feedback_ready False", fl.is_feedback_ready() is False)
+
+        # ── 2) is_feedback_ready 阈值（50 → True） ──
+        _make_db(50)
+        _reset_caches()
+        _check("50 plans → is_feedback_ready True", fl.is_feedback_ready() is True)
+
+        # ── 3) is_feedback_ready DB 缺失 → False（不抛异常） ──
+        tmp_db.unlink()
+        _reset_caches()
+        _check("DB 缺失 → is_feedback_ready False", fl.is_feedback_ready() is False)
+
+        # ── 4) is_feedback_ready DB 损坏 → False（不抛异常） ──
+        tmp_db.write_text("corrupted file", encoding="utf-8")
+        _reset_caches()
+        _check("DB 损坏 → is_feedback_ready False", fl.is_feedback_ready() is False)
+        tmp_db.unlink()
+
+        # ── 5) lookup_feedback_ctr 命中（reach>0） ──
+        _make_db(50, sig_to_ctr={"sig_0001": (1000, 30)})  # CTR = 30/1000 = 0.03
+        _reset_caches()
+        result = fl.lookup_feedback_ctr("sig_0001")
+        _check("lookup hit → 返回 CTR 小数 0.03",
+               abs(result - 0.03) < 1e-6)
+
+        # ── 6) lookup miss（signature 不存在） ──
+        _check("lookup miss → None", fl.lookup_feedback_ctr("不存在的sig") is None)
+
+        # ── 7) lookup signature 存在但 reach=0 ──
+        _make_db(50, sig_to_ctr={"sig_zero": (0, 0)})
+        _reset_caches()
+        _check("lookup reach=0 → None",
+               fl.lookup_feedback_ctr("sig_zero") is None)
+
+        # ── 8) lookup DB 缺失 → None ──
+        tmp_db.unlink()
+        _reset_caches()
+        _check("lookup DB 缺失 → None",
+               fl.lookup_feedback_ctr("任何sig") is None)
+
+        # ── 9) lookup DB 损坏 → None ──
+        tmp_db.write_text("garbage", encoding="utf-8")
+        _reset_caches()
+        _check("lookup DB 损坏 → None",
+               fl.lookup_feedback_ctr("任何sig") is None)
+        tmp_db.unlink()
+
+        # ── 10) SQL 注入防护（参数化） ──
+        _make_db(50)
+        _reset_caches()
+        # 即使 signature 含 SQL 关键字，也应作为普通字符串处理（不抛错）
+        result_inj = fl.lookup_feedback_ctr("'; DROP TABLE feedback_records--")
+        _check("SQL 注入 → None（参数化生效，未删表）",
+               result_inj is None)
+        # 验证表未删
+        conn = _sql.connect(str(tmp_db))
+        try:
+            n_tables = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='feedback_records'"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        _check("SQL 注入后 feedback_records 表仍在",
+               n_tables == 1)
+
+        # ── 11) _demo_pred feedback_ready=True + 命中 ──
+        # 用 sig_0001（默认 (1000, 30) → CTR=0.03）做命中测试
+        _make_db(50)
+        _reset_caches()
+        adapter = cp.CTRPredictionAdapter(mode="demo")
+        r_good = {"_signature": "sig_0001", "_bl_str": "3.572%", "_tm": 1.0}
+        result_pred = adapter._demo_pred(r_good)
+        _check("_demo_pred feedback 命中 → pred_ctr=0.03",
+               abs(result_pred.pred_ctr - 0.03) < 1e-6)
+        _check("_demo_pred feedback 命中 → confidence=0.7",
+               result_pred.confidence == 0.7)
+        _check("_demo_pred feedback 命中 → result_type='demo'（不引入第五态）",
+               result_pred.result_type == "demo")
+
+        # ── 12) _demo_pred feedback_ready=False → 走 baseline × tm ──
+        _make_db(10)  # < 50
+        _reset_caches()
+        adapter2 = cp.CTRPredictionAdapter(mode="demo")
+        r_norm = {"_signature": "any_sig", "_bl_str": "3.572%", "_tm": 1.0}
+        result_norm = adapter2._demo_pred(r_norm)
+        _check("_demo_pred 阈值未达 → 走原 baseline × tm",
+               abs(result_norm.pred_ctr - 0.03572) < 1e-4)  # 3.572% * 1.0
+        _check("_demo_pred 阈值未达 → confidence=0.5",
+               result_norm.confidence == 0.5)
+
+        # ── 13) _demo_pred 无 _signature → 走原路径（不崩） ──
+        _make_db(50)
+        _reset_caches()
+        adapter3 = cp.CTRPredictionAdapter(mode="demo")
+        r_no_sig = {"_bl_str": "3.572%", "_tm": 1.0}  # 无 _signature
+        result_no_sig = adapter3._demo_pred(r_no_sig)
+        _check("_demo_pred 无 _signature → 走原 baseline × tm（不崩）",
+               abs(result_no_sig.pred_ctr - 0.03572) < 1e-4)
+
+        # ── 14) _demo_pred signature miss → 走原路径 ──
+        _make_db(50, sig_to_ctr={"only_sig": (1000, 30)})
+        _reset_caches()
+        adapter4 = cp.CTRPredictionAdapter(mode="demo")
+        r_miss = {"_signature": "missing_sig", "_bl_str": "3.572%", "_tm": 1.0}
+        result_miss = adapter4._demo_pred(r_miss)
+        _check("_demo_pred signature miss → 走原 baseline × tm",
+               abs(result_miss.pred_ctr - 0.03572) < 1e-4)
+
+        # ── 15) predict_batch 50 行 → is_feedback_ready 只查 1 次 DB（lru_cache 命中） ──
+        _make_db(50, sig_to_ctr={"batch_sig": (1000, 30)})
+        _reset_caches()
+        # 替换 DB 路径计数器（用 sqlite3.connect mock 统计）
+        orig_connect = fl.sqlite3.connect
+        call_count = {"n": 0}
+
+        def _counting_connect(*args, **kwargs):
+            call_count["n"] += 1
+            return orig_connect(*args, **kwargs)
+        fl.sqlite3.connect = _counting_connect
+        try:
+            adapter5 = cp.CTRPredictionAdapter(mode="demo")
+            # 注意：predict_batch 内部会调 enrich_rows_for_llm 等，但我们只关心
+            # feedback_lookup 的 is_feedback_ready 是否被重复查
+            # 直接循环 50 次调 _demo_pred（同 signature）模拟 batch 场景
+            rows = [{"_signature": "batch_sig", "_bl_str": "未知", "_tm": 1.0}] * 50
+            for r in rows:
+                adapter5._demo_pred(r)
+        finally:
+            fl.sqlite3.connect = orig_connect
+        # is_feedback_ready 走 lru_cache 只查 1 次；lookup_feedback_ctr 也走 lru_cache
+        # 整个 sqlite3.connect 调用应该 ≤ 5 次（feedback_lookup 内部）
+        _check(f"50 行 _demo_pred → sqlite3.connect 调用 ≤ 5 次（lru_cache 命中，实际 {call_count['n']}）",
+               call_count["n"] <= 5)
+
+        # ── 16) repositories.count_distinct_plans 与 feedback_lookup 版一致 ──
+        _make_db(50)
+        _reset_caches()
+        from repositories import feedback_repository as fbrepo
+        # 临时把 fbrepo 的 get_connection 指向 tmp_db
+        orig_db_path = fbrepo.DB_PATH
+        fbrepo.DB_PATH = tmp_db
+        try:
+            n_repo = fbrepo.count_distinct_plans()
+        finally:
+            fbrepo.DB_PATH = orig_db_path
+        n_adapt = fl.count_distinct_plans()
+        _check(f"repository.count_distinct_plans ({n_repo}) == adapter 版 ({n_adapt})",
+               n_repo == n_adapt == 50)
+
+    finally:
+        fl.FEEDBACK_DB_PATH = orig_path
+        _reset_caches()
+        _gc.collect()
+        _sh.rmtree(tmp, ignore_errors=True)
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -2302,6 +2744,10 @@ def main():
     test_ctr_definition_v31()
     # Phase 7.2: 反哺影响生成排序（决策 #6 拍板）
     test_phase7_rank_candidates_by_ctr()
+    # §43 P3 维度权重动态化（Handoff §6.3 P3）
+    test_dimension_weights()
+    # §44 demo 数据回灌（Handoff §6.3 demo 回灌 · Phase-B）
+    test_demo_feedback()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

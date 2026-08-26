@@ -22,12 +22,16 @@ from __future__ import annotations
 from typing import List, Optional
 
 from adapters.ctr_predictor_adapter import CTRPredictionAdapter
-from core.schemas import TaskInput, Candidate, PredictionResult
+from core.schemas import TaskInput, Candidate, PredictionResult, task_signature
 
 
 # 渠道 → 维度字段映射（PRD §6.2 / §12.5）
 def _candidate_to_row(candidate: Candidate, task: TaskInput) -> dict:
-    """把 Candidate + TaskInput 转 CTR Adapter 的 row dict。"""
+    """把 Candidate + TaskInput 转 CTR Adapter 的 row dict。
+
+    _signature 字段：Phase-B demo 回灌用，按 task + title 算 SHA1 截 12 位
+    （与 records.db / feedback.db 的 task_signature 字段对齐，Phase 5 P0 约定）。
+    """
     title = candidate.effective_title
     body = candidate.effective_body
     return {
@@ -38,6 +42,7 @@ def _candidate_to_row(candidate: Candidate, task: TaskInput) -> dict:
         "coupon": task.coupon if task.coupon != "未知" else None,
         "owner": None,  # PRD §26 第 12 项待确认
         "title_len": len(title),
+        "_signature": task_signature(task, candidates=[candidate], selected_id=candidate.id),
     }
 
 
@@ -77,6 +82,17 @@ def predict_one(
     脱离 AI 生成上下文：仅 title+body+channel 即可，不构造 Candidate（避免 id=A/B/C 限制）。
     """
     adapter = CTRPredictionAdapter(mode=mode)
+    # 构造临时 TaskInput + Candidate 算 signature（predict_one 无 task 入参）
+    tmp_task = TaskInput(
+        channel=channel,
+        audience="未知",
+        stage="未知",
+        scene="未知",
+        tone="未知",
+        plan_type=plan_type or "",
+        coupon=coupon or "",
+    )
+    tmp_cand = Candidate(id="A", strategy="diagnose", title=title, body=body)
     row = {
         "channel": channel,
         "title": title,
@@ -85,6 +101,7 @@ def predict_one(
         "coupon": coupon if coupon and coupon != "未知" else None,
         "owner": None,
         "title_len": len(title),
+        "_signature": task_signature(tmp_task, candidates=[tmp_cand], selected_id=tmp_cand.id),
     }
     results = adapter.predict_batch([row])
     if not results:
