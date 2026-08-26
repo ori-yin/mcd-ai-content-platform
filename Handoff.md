@@ -138,8 +138,17 @@
 - [ ] `config/dimension_weights.yaml`（留 Phase 6）
 - [ ] 历史洞察页签 signature 关联展示（留 Phase 6）
 
-### 待业务确认（PRD §26，12 项）
-第一场 Demo 主渠道 / 人群-阶段-场景枚举值 / 字数上限 / 禁用词清单 / 校准状态 / 内网 LLM 接口 / 企微 1v1 预览支持 / 完整文案存储
+### 待业务确认（PRD §26，12 项） ✅ 2026-08-26 已过完
+详细拍板结果见 `docs/architecture.md §五`。摘要：
+- **#1 Demo 主渠道**：APP Push + 企微 1v1 同期（企微 1v1 见 Phase 6 P0）
+- **#2-4 枚举值**：复用 mcd-copy-analyzer 既有 4 值（人群/阶段/场景）
+- **#5-6 字数 + 词表**：复用 `config/channel_rules.yaml` + `config/brand_rules.yaml`
+- **#7 predictor 仓库**：main 版
+- **#8 校准状态**：**未校准 / 机制就绪**（baseline 写死口径，等 P5 回流）
+- **#9 置信区间**：加 `confidence` 字段（PRD v0.2 §5.3 口径 A）
+- **#10 内网 LLM**：暂留空 → Phase 6 加 `config/llm_settings.yaml` + Settings 页
+- **#11 企微 1v1 预览**：第一场同期做（Phase 6 P0）
+- **#12 文案存储**：不存完整文案（只存摘要 + signature + task_json）
 
 ---
 
