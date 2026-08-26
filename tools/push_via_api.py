@@ -26,31 +26,15 @@ BRANCH = "main"
 
 ROOT = Path(__file__).resolve().parent.parent
 FILES = [
-    "Handoff.md",
-    "adapters/ctr_predictor_adapter/__init__.py",
-    "docs/feedback-ctr.md",
-    "pages/01_content_studio.py",
-    "pages/02_copy_diagnosis.py",
-    "pages/03_batch_evaluation.py",
-    "pages/04_historical_insights.py",
-    "services/batch_evaluation_service.py",
-    "services/copy_analysis_service.py",
-    "services/ctr_prediction_service.py",
+    "pytest.ini",
     "tests/verify.py",
 ]
 COMMIT_MSG = (
-    "feat(Phase 4): 02 诊断 + 03 批量评估 + 04 历史洞察三页 + 反哺思考笔记\n\n"
-    "- pages/02_copy_diagnosis.py: 入口 B 五位一体（规则+词语+相似+CTR+AI改写）\n"
-    "- services/batch_evaluation_service.py: CSV/Excel 解析+批量评估+CSV导出\n"
-    "- pages/03_batch_evaluation.py: 入口 C 上传→预览→评估→下载\n"
-    "- pages/04_historical_insights.py: 七 Tab 洞察（rank/词频/emoji/字数/相似/趋势/Owner）\n"
-    "- pages/01_content_studio.py: 渠道预览升级（加品牌头部+时间戳）\n"
-    "- docs/feedback-ctr.md: CTR 反哺闭环思考笔记\n"
-    "- adapters/ctr_predictor_adapter/__init__.py: _demo_pred bl=None 兜底\n"
-    "- services/ctr_prediction_service.py: predict_one 不走 Candidate\n"
-    "- services/copy_analysis_service.py: diagnose 补 problems/suggestions\n"
-    "- Handoff.md: 决策记录+教训+Phase 5 待办\n"
-    "- verify.py: 230 -> 290 PASS\n"
+    "feat(Phase 8): pytest 迁移 — 双路运行（pytest 43 passed + CLI 428 PASS）\n\n"
+    "- pytest.ini: testpaths=tests / python_files=verify.py+test_*.py / markers 按 Phase 划分\n"
+    "- tests/verify.py: _RUNNING_UNDER_PYTEST 标志 + _check 失败抛 AssertionError（pytest）/ 静默累计（CLI）\n"
+    "- 保留 if __name__ == '__main__': 块，CLI 行为完全不变（428 PASS, 0 FAIL）\n"
+    "- 反向验证：注入失败 _check → pytest 报 1 failed；恢复后 43 passed\n"
 )
 
 
