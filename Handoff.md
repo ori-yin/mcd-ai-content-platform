@@ -98,6 +98,14 @@
   - **#6 反哺影响排序**：新加 `services/generation_service.rank_candidates_by_ctr(candidates, ctr_results)` 纯函数（pred_ctr 降序 + title 长度兜底 + unavailable 排末尾）；`pages/01_content_studio` 在 `predict_for_candidates` 后调一次，默认 `selected_id` 改 `candidates[0].id`（CTR 最高那条）；`_render_recommendation` 文案加"按 CTR 降序展示（演示口径）"措辞
   - **顺手清理**：删 `tools/phase6_p1_push.py` + `phase6_p2_push.py`（Handoff §10 self-check "临时文件全清" 闭环）
   - 12 文件改动未 commit，等推送
+- **2026-08-26**：Phase 8 pytest 迁移——CLAUDE.md §4.4 工程债完成（双路运行，按 `feedback-concise-replies` 紧凑）：
+  - **新文件 `pytest.ini`**：testpaths=tests / python_files=verify.py+test_*.py / markers 按 Phase 划分（phase1~phase7 7 个 marker，待用）/ `-ra --strict-markers --tb=short` addopts
+  - **verify.py 改造**：顶部加 `_RUNNING_UNDER_PYTEST = "pytest" in sys.modules`（模块加载时检测）；`_check` 失败时 pytest 模式 `raise AssertionError(msg)` / CLI 模式静默累计（保留旧行为 428 PASS）
+  - **requirements.txt 早列** `pytest>=7.4.0` + `pytest-cov>=4.1.0`，本轮无依赖变更（pip 装的是 pytest 9.1.1）
+  - **反向验证**：注入 `_check(..., False, ...)` → pytest 立刻报 `1 failed, AssertionError: ...`；恢复后 43 passed
+  - **双路一致性**：`pytest tests/verify.py` → 43 passed in 6.20s；`python tests/verify.py` → 428 PASS, 0 FAIL（无回归）
+  - **顺手发现**：本地 `06425eb` Handoff commit 与远端 `8102185` 内容字节相同、commit hash 不同（autocrlf=true CRLF vs LF 存 blob）—— `git reset --hard origin/main` 对齐，无内容损失
+  - 推送走 Contents API（github.com 被墙），3 commit：本地 `0709f04` (pytest.ini + verify.py) + 本地 `6002e6c` (push_via_api.py FILES 切) + Contents API 合并推 → 远端 HEAD `1a7a2c3`
 
 ### §5.5 CTR 准确率学习 Roadmap（2026-08-26 · 重要背景）
 
@@ -156,9 +164,9 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：Phase 6 P2 完成 + Phase 6 P3 simplify 清理完成（详见 §5 新增条目）
-- **用例**：418 PASS / 0 FAIL（`python tests/verify.py`，P3 删 3 个 PENDING_FIELDS 死用例）
-- **首要任务**：第一梯队剩 #3 反哺触发条件 / #6 反哺是否影响生成排序 — 详 §6.2
+- **阶段**：Phase 8 pytest 迁移完成（详见 §5 新增条目）
+- **用例**：428 PASS / 0 FAIL（`python tests/verify.py`）= 43 passed（`pytest tests/verify.py`，双路一致）
+- **首要任务**：第二梯队 #1/#2/#4/#7 待业务确认；L1 LightGBM / P4 签名关联 候选 — 详 §6.2 / §6.3
 - **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿）+ `docs/feedback-ctr.md`
 - **不动**：业务确认前不接真实反馈数据；不启用灰态字段（product_benefit/objective）
 - 详情：§5 决策记录 / §6.1 Phase 历史 / §6.2 待业务确认 / §6.3 候选
@@ -177,6 +185,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 6 P2** CTR 口径固化 v3.1 | Q1-Q6 拍板 / bi_dt 铁律 / 6 文件落地 / 反哺批量回灌机制 | 421 |
 | **Phase 6 P3** simplify 清理（4 agent review） | yaml.safe_load 替手写解析 / v3.1 docstring 缩成 1 行 / 删 PENDING_FIELDS / _to_local 死分支 / notice.py 合并 helper | **418** |
 | **Phase 7** 业务拍板落地（#3 触发 + #6 排序） | docs/ctr-feedback-schedule.md / weekly_calibrate.bat / rank_candidates_by_ctr / UI 调 + 文案微调 / 删 phase6_p1/p2_push.py | **428** |
+| **Phase 8** pytest 迁移（CLAUDE.md §4.4 工程债） | pytest.ini / _RUNNING_UNDER_PYTEST 标志 / _check 失败抛 AssertionError / 双路一致（pytest 43 passed + CLI 428 PASS） | **428（CLI）/ 43（pytest）** |
 
 ### Phase 1 — CTR Adapter（核心复用层） ✅ 已完成
 - [x] 抽 `get_baseline_ctr` / `get_time_multiplier` / `build_context_for_llm` 等到 `adapters/ctr_predictor_adapter/`
@@ -357,7 +366,6 @@ records.db    feedback.db
 **纯工程候选（无需业务拍）**：
 - [ ] **P3** 维度权重动态 `config/dimension_weights.yaml` + `train_dimension_weights.py`（独立技术债）
 - [ ] **demo 数据回灌**（feedback.db ≥ 50 plan 后 `_demo_pred` 优先本地聚合；决策文档已隐式"业务确认前不接真实数据"）
-- [ ] **pytest 迁移**（CLAUDE.md §4.4 工程债）
 
 ### 6.4 PRD §26 12 项已拍板 ✅ 2026-08-26
 详见 `docs/architecture.md §五`。按议题：
