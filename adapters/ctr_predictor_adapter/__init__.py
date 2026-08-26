@@ -178,10 +178,11 @@ class CTRPredictionAdapter:
         # demo 占位：基准 × 时段系数 ± 5%（这里用 baseline * tm 作为"稳定占位"）
         tm = r.get("_tm", 1.0)
         demo_ctr = (bl * tm) if bl else 0.02  # 兜底 2%
+        bl_str = f"{bl*100:.2f}%" if bl is not None else "无基准"
         return PredictionResult.demo(
             pred_ctr=round(demo_ctr, 5),
             confidence=0.5,
-            suggestion=f"演示数据：基准CTR {bl*100:.2f}% × 时段系数 {tm:.2f}",
+            suggestion=f"演示数据：基准CTR {bl_str} × 时段系数 {tm:.2f}",
             baseline_ctr=bl,
             time_multiplier=tm,
         )

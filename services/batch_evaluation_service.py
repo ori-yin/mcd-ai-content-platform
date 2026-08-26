@@ -1,0 +1,214 @@
+# -*- coding: utf-8 -*-
+r"""
+services/batch_evaluation_service.py — 批量文案评估 service
+
+PRD §4.3 入口 C：上传 CSV/Excel 批量文案清单，逐条
+- 规则检查（rule_engine.check_one）
+- CTR 入口 B（ctr_prediction_service.predict_one）
+- 优化建议（基于规则结果 + CTR 偏差）
+
+与 records.db 区分：批量评估不落库（只读入口 C）。如果用户要保存，导出 CSV 后人工决定。
+
+口径：
+- 必填列：title + body + channel（三列最少）
+- 兼容别名：标题/Title、content/Body/正文 等
+- 渠道必须命中 CHANNELS，否则该行记 error 跳过
+"""
+
+from __future__ import annotations
+
+import io
+from typing import List, Dict, Any, Optional
+
+import pandas as pd
+
+from core.schemas import CHANNELS, RuleResult, PredictionResult
+from services.rule_engine import load_rules, check_one
+from services.ctr_prediction_service import predict_one
+
+
+# 列名别名（兼容多种命名）
+_COL_ALIASES = {
+    "title":  ["标题", "title", "标题文案", "headline"],
+    "body":   ["正文", "body", "文案内容", "content", "text"],
+    "channel": ["渠道", "channel", "投放渠道"],
+    "plan_type": ["计划类型", "plan_type", "plan类型", "plantype"],
+    "coupon": ["是否用券", "coupon", "用券"],
+}
+
+
+def parse_batch_file(file_bytes: bytes, filename: str = "") -> pd.DataFrame:
+    """读 CSV/Excel 文件 → DataFrame。自动识别 .csv / .xlsx。
+
+    返回的列：title / body / channel（其他列原样保留）。
+    """
+    name = (filename or "").lower()
+    if name.endswith(".csv"):
+        df = pd.read_csv(io.BytesIO(file_bytes))
+    elif name.endswith((".xlsx", ".xls")):
+        df = pd.read_excel(io.BytesIO(file_bytes))
+    else:
+        # 默认按 csv 试一次
+        try:
+            df = pd.read_csv(io.BytesIO(file_bytes))
+        except Exception:
+            df = pd.read_excel(io.BytesIO(file_bytes))
+
+    # 列名标准化
+    rename = {}
+    lower_cols = {str(c).strip().lower(): c for c in df.columns}
+    for target, aliases in _COL_ALIASES.items():
+        if target in df.columns:
+            continue
+        for a in aliases:
+            if a.lower() in lower_cols:
+                rename[lower_cols[a.lower()]] = target
+                break
+    if rename:
+        df = df.rename(columns=rename)
+
+    # 缺列填空
+    for col in ("title", "body", "channel"):
+        if col not in df.columns:
+            df[col] = ""
+
+    # 字符串化（防止 int64 等混入）
+    for col in ("title", "body", "channel"):
+        df[col] = df[col].astype(str).fillna("").str.strip()
+    return df
+
+
+def _build_suggestion(rule: RuleResult, ctr: PredictionResult) -> str:
+    """拼一句优化建议（30 字内）。"""
+    parts: list = []
+    if rule.has_blocking:
+        parts.append("存在阻断项")
+    if ctr.result_type == "demo" and ctr.pred_ctr is not None and ctr.baseline_ctr is not None:
+        diff = (ctr.pred_ctr - ctr.baseline_ctr) * 100
+        if diff < -1:
+            parts.append(f"低于基准 {abs(diff):.1f}pp")
+        elif diff > 1:
+            parts.append(f"高于基准 {diff:.1f}pp")
+    if not parts:
+        if ctr.suggestion:
+            parts.append(ctr.suggestion[:20])
+        else:
+            parts.append("规则通过")
+    return " · ".join(parts)[:60]
+
+
+def evaluate_batch(
+    df: pd.DataFrame,
+    ctr_mode: str = "demo",
+    progress_cb: Optional[Any] = None,
+) -> List[Dict[str, Any]]:
+    """批量评估 DataFrame。
+
+    输入列：title / body / channel（其它列原样保留以便后续导出）
+    返回：list[dict]，每行包含：
+        - row_index / title / body / channel
+        - rule_status / rule_fail_count / rule_warn_count
+        - ctr_result_type / ctr_pred / ctr_baseline / ctr_confidence / ctr_error
+        - suggestion（30 字内）
+        - error（行级异常信息）
+    progress_cb: 可选回调 fn(done, total)
+    """
+    channel_rules, brand_rules = load_rules()
+    n = len(df)
+    rows: List[Dict[str, Any]] = []
+    for i in range(n):
+        r = df.iloc[i]
+        title = str(r.get("title", "") or "")
+        body = str(r.get("body", "") or "")
+        channel = str(r.get("channel", "") or "")
+        plan_type = str(r.get("plan_type", "") or "") or None
+        coupon = str(r.get("coupon", "") or "") or None
+
+        out: Dict[str, Any] = {
+            "row_index": i,
+            "title": title,
+            "body": body,
+            "channel": channel,
+            "rule_status": "",
+            "rule_fail_count": 0,
+            "rule_warn_count": 0,
+            "ctr_result_type": "",
+            "ctr_pred": None,
+            "ctr_baseline": None,
+            "ctr_confidence": None,
+            "ctr_error": "",
+            "suggestion": "",
+            "error": "",
+        }
+
+        # 行级必填校验
+        if not body:
+            out["error"] = "正文为空"
+            if progress_cb:
+                progress_cb(i + 1, n)
+            rows.append(out)
+            continue
+        if channel not in CHANNELS:
+            out["error"] = f"渠道「{channel}」不在 {CHANNELS}"
+            if progress_cb:
+                progress_cb(i + 1, n)
+            rows.append(out)
+            continue
+
+        try:
+            rule = check_one(title, body, channel, channel_rules, brand_rules)
+            out["rule_status"] = rule.status
+            out["rule_fail_count"] = len(rule.fails)
+            out["rule_warn_count"] = len(rule.warns)
+        except Exception as e:
+            out["error"] = f"规则检查失败：{e}"
+
+        try:
+            ctr = predict_one(title=title, body=body, channel=channel,
+                              plan_type=plan_type, coupon=coupon, mode=ctr_mode)
+            out["ctr_result_type"] = ctr.result_type
+            out["ctr_pred"] = ctr.pred_ctr
+            out["ctr_baseline"] = ctr.baseline_ctr
+            out["ctr_confidence"] = ctr.confidence
+            out["ctr_error"] = ctr.error or ""
+        except Exception as e:
+            out["ctr_error"] = f"CTR 失败：{e}"
+
+        # 建议
+        try:
+            ctr_obj = PredictionResult(
+                result_type=out["ctr_result_type"] or "unavailable",
+                pred_ctr=out["ctr_pred"],
+                baseline_ctr=out["ctr_baseline"],
+                confidence=out["ctr_confidence"],
+                error=out["ctr_error"] or None,
+            )
+            out["suggestion"] = _build_suggestion(rule, ctr_obj)
+        except Exception:
+            out["suggestion"] = ""
+
+        rows.append(out)
+        if progress_cb:
+            progress_cb(i + 1, n)
+    return rows
+
+
+def rows_to_dataframe(rows: List[Dict[str, Any]]) -> pd.DataFrame:
+    """评估结果 list → DataFrame，便于展示和导出。"""
+    return pd.DataFrame(rows)
+
+
+def rows_to_csv_bytes(rows: List[Dict[str, Any]]) -> bytes:
+    """评估结果 → CSV bytes（UTF-8 BOM，Excel 兼容）。"""
+    df = rows_to_dataframe(rows)
+    buf = io.BytesIO()
+    df.to_csv(buf, index=False, encoding="utf-8-sig")
+    return buf.getvalue()
+
+
+__all__ = [
+    "parse_batch_file",
+    "evaluate_batch",
+    "rows_to_dataframe",
+    "rows_to_csv_bytes",
+]

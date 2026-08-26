@@ -359,19 +359,20 @@ def _render_channel_preview(task: TaskInput, c: Candidate):
     ch = task.channel
     title = c.effective_title or "（无标题）"
     body = c.effective_body
-    preview_html = ""
     if ch == "APP Push":
         preview_html = (
             f'<div class="preview-card">'
+            f'<div style="font-size:0.78em;opacity:0.55;margin-bottom:0.4rem;">'
+            f"McDonald&apos;s · {datetime.now().strftime('%H:%M')}</div>"
             f'<div class="pv-title">{title}</div>'
             f'<div class="pv-body">{body}</div>'
-            f'<div class="pv-meta">APP Push · {datetime.now().strftime("%H:%M")}</div>'
+            f'<div class="pv-meta">APP Push · 点击查看</div>'
             f'</div>'
         )
     elif ch == "企微 1v1":
         preview_html = (
             f'<div class="preview-card">'
-            f'<div style="font-size:0.78em;opacity:0.6;margin-bottom:0.4rem;">麦当劳客服</div>'
+            f'<div style="font-size:0.78em;opacity:0.6;margin-bottom:0.4rem;">麦当劳客服 · 现在</div>'
             f'<div class="pv-body">{body}</div>'
             f'<div class="pv-meta">企微 1v1 · 立即查看</div>'
             f'</div>'
@@ -380,6 +381,7 @@ def _render_channel_preview(task: TaskInput, c: Candidate):
         seg = max(1, (len(body) + 69) // 70)
         preview_html = (
             f'<div class="preview-card">'
+            f'<div style="font-size:0.78em;opacity:0.55;margin-bottom:0.4rem;">106xxxxxxxx</div>'
             f'<div class="pv-body">{body}</div>'
             f'<div class="pv-meta">短信 · {len(body)} 字 / {seg} 段</div>'
             f'</div>'
@@ -387,13 +389,15 @@ def _render_channel_preview(task: TaskInput, c: Candidate):
     elif ch == "站内信":
         preview_html = (
             f'<div class="preview-card">'
+            f'<div style="font-size:0.78em;opacity:0.55;margin-bottom:0.4rem;">'
+            f"McDonald&apos;s App · 消息中心</div>"
             f'<div class="pv-title">{title}</div>'
             f'<div class="pv-body">{body}</div>'
             f'<div class="pv-meta">站内信 · 查看详情</div>'
             f'</div>'
         )
     else:
-        preview_html = f'<div class="warning-banner">该渠道预览待 P1 实现（PRD §8.2）</div>'
+        preview_html = '<div class="warning-banner">该渠道预览待 P1 实现（PRD §8.2）</div>'
 
     st.markdown("**渠道预览**")
     st.markdown(preview_html, unsafe_allow_html=True)

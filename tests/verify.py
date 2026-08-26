@@ -1198,6 +1198,268 @@ def test_pages_import():
 
 
 # ============================================================
+# 31) Phase 4.1 — 02 文案诊断页入口 B 闭环
+# ============================================================
+_section("31) 02 文案诊断（PRD §4.2 入口 B）")
+
+def test_diagnosis_page():
+    from services.rule_engine import load_rules, check_one
+    from services.copy_analysis_service import diagnose
+    from services.ctr_prediction_service import predict_one
+    from services.similarity_service import find_similar, summarize_similar
+    from core.schemas import CHANNELS, PredictionResult, RuleResult
+    from prompts.copy_rewrite import (
+        get_system_prompt, build_user_prompt, parse_response,
+    )
+
+    channel_rules, brand_rules = load_rules()
+
+    # 1. rule_engine.check_one 单条入口
+    rule = check_one("新品小卡来啦", "新品优惠 + 限定小卡，点击查看详情。",
+                     "APP Push", channel_rules, brand_rules)
+    _check("check_one 返回 RuleResult", isinstance(rule, RuleResult))
+    _check("check_one 至少 4 类规则", len(rule.items) >= 4)
+    has_pass = any(it.severity == "pass" for it in rule.items)
+    _check("check_one 含至少 1 条 pass", has_pass)
+
+    # 2. check_one 异常输入不抛错
+    rule_blocked = check_one("XXX", "违禁词" * 50, "APP Push", channel_rules, brand_rules)
+    _check("check_one 异常输入不抛错", isinstance(rule_blocked, RuleResult))
+
+    # 3. copy_analysis_service.diagnose
+    diag = diagnose("新品小卡来啦", "新品优惠 + 限定小卡，点击查看详情。", channel="APP Push")
+    _check("diagnose 返回 dict", isinstance(diag, dict))
+    _check("diagnose 含 score/grade", "score" in diag and "grade" in diag)
+    _check("diagnose 含 problems/suggestions/diag",
+           all(k in diag for k in ("problems", "suggestions", "diag")))
+
+    # 4. ctr_prediction_service.predict_one（入口 B）
+    ctr = predict_one("新品小卡来啦", "新品优惠 + 限定小卡，点击查看详情。",
+                      channel="APP Push", mode="demo")
+    _check("predict_one 返回 PredictionResult", isinstance(ctr, PredictionResult))
+    _check("predict_one 四态合法",
+           ctr.result_type in ("model_prediction", "baseline_only", "demo", "unavailable"))
+    _check("predict_one demo 模式 pred_ctr 非空",
+           ctr.result_type == "demo" and ctr.pred_ctr is not None)
+
+    # 5. predict_one 短信渠道（title 允许空）
+    ctr_sms = predict_one("", "新品优惠立即查看回T退订", channel="短信", mode="demo")
+    _check("predict_one 短信渠道不抛错", isinstance(ctr_sms, PredictionResult))
+
+    # 6. similarity_service（无历史数据时返回空 df + summary）
+    sim_df = find_similar("新品小卡来啦", "新品优惠 + 限定小卡", channel="APP Push")
+    sim_sum = summarize_similar(sim_df)
+    _check("find_similar 返回 DataFrame", hasattr(sim_df, "empty"))
+    _check("summarize_similar 返回 dict", isinstance(sim_sum, dict))
+    _check("summarize_similar 含 count/avg_ctr/top_terms",
+           all(k in sim_sum for k in ("count", "avg_ctr", "top_terms")))
+
+    # 7. copy_rewrite prompt
+    sp = get_system_prompt("shorten")
+    _check("rewrite get_system_prompt 'shorten' 非空", bool(sp))
+    up = build_user_prompt("shorten", "标题", "正文",
+                           {"title_max": 15, "body_max": 60, "emoji_max": 2})
+    _check("rewrite build_user_prompt 含渠道约束", "15" in up and "60" in up)
+    parsed = parse_response('```json\n{"title":"t","body":"b","reason":"r"}\n```')
+    _check("rewrite parse 正常 dict",
+           parsed.get("title") == "t" and parsed.get("body") == "b")
+
+    # 8. 全部 4 个渠道预测不抛错
+    for ch in CHANNELS:
+        try:
+            predict_one("t" if ch not in ("短信", "企微 1v1") else "",
+                        "body 测试内容", channel=ch, mode="demo")
+            _check(f"predict_one {ch} 不抛错", True)
+        except Exception as e:
+            _check(f"predict_one {ch} 不抛错", False, str(e))
+
+
+# ============================================================
+# 32) Phase 4.2 — 03 批量评估（PRD §4.3 入口 C）
+# ============================================================
+_section("32) 03 批量评估（PRD §4.3 入口 C）")
+
+def test_batch_evaluation():
+    import io
+    import pandas as pd
+    from services.batch_evaluation_service import (
+        parse_batch_file, evaluate_batch, rows_to_dataframe, rows_to_csv_bytes,
+    )
+
+    # 1. CSV 解析（含别名）
+    csv_bytes = (
+        "标题,正文,渠道\n"
+        "新品小卡来啦,新品优惠 + 限定小卡，点击查看详情,APP Push\n"
+        ",专属福利：新品小卡，点击领取,企微 1v1\n"
+        "早安,早餐 8 折优惠，回 T 退订,短信\n"
+    ).encode("utf-8")
+    df = parse_batch_file(csv_bytes, "test.csv")
+    _check("parse_batch_file 返回 DataFrame", isinstance(df, pd.DataFrame))
+    _check("parse_batch_file 3 行（1 header + 3 数据）", len(df) == 3)
+    _check("parse_batch_file 列名标准化", all(c in df.columns for c in ("title", "body", "channel")))
+
+    # 2. Excel 解析
+    buf = io.BytesIO()
+    pd.DataFrame({"title": ["t1"], "body": ["b1"], "channel": ["APP Push"]}).to_excel(buf, index=False)
+    df2 = parse_batch_file(buf.getvalue(), "test.xlsx")
+    _check("parse_batch_file 支持 Excel", len(df2) == 1 and "body" in df2.columns)
+
+    # 3. 别名映射（"headline" → "title"）
+    alias_csv = "headline,body_text,投放渠道\nHi,Body,APP Push\n".encode("utf-8")
+    df3 = parse_batch_file(alias_csv, "alias.csv")
+    _check("parse_batch_file 别名 headline→title", "title" in df3.columns)
+    _check("parse_batch_file 别名 body_text→body", "body" in df3.columns)
+    _check("parse_batch_file 别名 投放渠道→channel", "channel" in df3.columns)
+
+    # 4. 评估流程
+    rows = evaluate_batch(df, ctr_mode="demo")
+    _check("evaluate_batch 返回 list", isinstance(rows, list))
+    _check("evaluate_batch 行数 == df 行数", len(rows) == len(df))
+    for r in rows:
+        _check(f"row {r['row_index']} 含 channel", "channel" in r)
+        _check(f"row {r['row_index']} 含 rule_status", "rule_status" in r)
+        _check(f"row {r['row_index']} 含 ctr_result_type", "ctr_result_type" in r)
+        _check(f"row {r['row_index']} 含 suggestion", "suggestion" in r)
+        break  # 不重复
+
+    # 5. 空 body 行 → 记录 error
+    empty_csv = "title,body,channel\nt1,,APP Push\n".encode("utf-8")
+    rows2 = evaluate_batch(parse_batch_file(empty_csv, "empty.csv"))
+    _check("空 body 行被记 error", rows2[0]["error"] != "")
+
+    # 6. 非法渠道行 → 记 error（不影响其他行）
+    bad_csv = "title,body,channel\n标题,内容,未知渠道\n".encode("utf-8")
+    rows3 = evaluate_batch(parse_batch_file(bad_csv, "bad.csv"))
+    _check("非法渠道行被记 error", rows3[0]["error"] != "")
+
+    # 7. 全部 4 个渠道批量
+    df4 = pd.DataFrame({
+        "title": ["t1", "", "t3", "t4"],
+        "body": ["b1 优惠点击查看", "b2 立即查看", "b3 查看详情", "b4 立即了解"],
+        "channel": ["APP Push", "企微 1v1", "短信", "站内信"],
+    })
+    rows4 = evaluate_batch(df4, ctr_mode="demo")
+    _check("4 渠道批量评估行数对齐", len(rows4) == 4)
+    _check("4 渠道批量评估均有 rule_status", all(r["rule_status"] for r in rows4))
+
+    # 8. 行级 CTR demo 模式
+    ctr_ok = sum(1 for r in rows4 if r["ctr_result_type"] == "demo" and r["ctr_pred"] is not None)
+    _check("4 渠道批量 CTR demo 全部返回", ctr_ok == 4)
+
+    # 9. 转 DataFrame + CSV bytes
+    df_out = rows_to_dataframe(rows)
+    _check("rows_to_dataframe 返回 DataFrame", isinstance(df_out, pd.DataFrame))
+    csv_out = rows_to_csv_bytes(rows)
+    _check("rows_to_csv_bytes 返回 bytes", isinstance(csv_out, bytes) and len(csv_out) > 0)
+    _check("rows_to_csv_bytes 含 BOM（Excel 兼容）", csv_out.startswith(b"\xef\xbb\xbf"))
+
+    # 10. 进度回调
+    progress_calls = []
+    evaluate_batch(df.iloc[:2], ctr_mode="demo",
+                   progress_cb=lambda d, t: progress_calls.append((d, t)))
+    _check("progress_cb 被调用", len(progress_calls) >= 2)
+
+
+# ============================================================
+# 33) Phase 4.3 — 04 历史洞察（PRD §4.4 七大分析）
+# ============================================================
+_section("33) 04 历史洞察（PRD §4.4）")
+
+def _make_insights_df():
+    """构造最小可用历史数据：5 个 plan × 3 记录 + 触达/点击/日期/owner。"""
+    import pandas as pd
+    from services.text_analyzer import add_tokens
+    rows = [
+        # plan A：高 CTR
+        ("A", "新品小卡", "APP Push", "owner1", "2026-08-01", 1000, 30, "新品小卡来啦", "新品优惠 + 限定小卡，点击查看详情"),
+        ("A", "新品小卡", "APP Push", "owner1", "2026-08-02", 1100, 35, "新品小卡来啦", "新品优惠 + 限定小卡，点击查看详情"),
+        ("A", "新品小卡", "APP Push", "owner1", "2026-08-03", 1200, 40, "新品小卡来啦", "新品优惠 + 限定小卡，点击查看详情"),
+        # plan B：中 CTR
+        ("B", "早餐优惠", "APP Push", "owner1", "2026-08-01", 2000, 40, "早安", "早餐 8 折优惠"),
+        ("B", "早餐优惠", "APP Push", "owner1", "2026-08-02", 2100, 42, "早安", "早餐 8 折优惠"),
+        ("B", "早餐优惠", "APP Push", "owner1", "2026-08-03", 2200, 45, "早安", "早餐 8 折优惠"),
+        # plan C：低 CTR
+        ("C", "夜宵推荐", "站内信", "owner2", "2026-08-01", 1500, 15, "夜宵", "夜宵不知道吃什么"),
+        ("C", "夜宵推荐", "站内信", "owner2", "2026-08-02", 1600, 16, "夜宵", "夜宵不知道吃什么"),
+        ("C", "夜宵推荐", "站内信", "owner2", "2026-08-03", 1700, 17, "夜宵", "夜宵不知道吃什么"),
+        # plan D：owner2 高 CTR
+        ("D", "新品上市", "企微 1v1", "owner2", "2026-08-01", 3000, 120, "新品上市", "专属福利：新品小卡立即领取"),
+        ("D", "新品上市", "企微 1v1", "owner2", "2026-08-02", 3100, 125, "新品上市", "专属福利：新品小卡立即领取"),
+        ("D", "新品上市", "企微 1v1", "owner2", "2026-08-03", 3200, 130, "新品上市", "专属福利：新品小卡立即领取"),
+    ]
+    df = pd.DataFrame(rows, columns=[
+        "Plan ID", "Plan名称", "渠道", "owner", "发送日期",
+        "触达成功", "点击人次", "标题", "正文",
+    ])
+    df["发送日期"] = pd.to_datetime(df["发送日期"])
+    return add_tokens(df)
+
+
+def test_historical_insights():
+    import pandas as pd
+    from services.analytics.high_effort_plans import rank_plans
+    from services.text_analyzer import (
+        word_frequency, emoji_frequency, compare_token,
+    )
+    from services.analytics.similarity import find_similar_plans
+    from services.analytics.daily_trend import daily_aggregate, daily_summary
+    from services.analytics.owner_compare import owner_compare
+
+    df = _make_insights_df()
+    _check("构造测试数据 ≥ 10 行", len(df) >= 10)
+    _check("add_tokens 含 _tokens", "_tokens" in df.columns)
+
+    # 1. 高效 Plan 排行
+    rank = rank_plans(df, min_reach=2000, top_n=10)
+    _check("rank_plans 返回 DataFrame", isinstance(rank, pd.DataFrame))
+    _check("rank_plans 含必要列", all(c in rank.columns for c in (
+        "plan_id", "加权CTR%", "触达成功", "点击",
+    )))
+    if not rank.empty:
+        _check("rank_plans 按 CTR 降序",
+               rank["加权CTR%"].iloc[0] >= rank["加权CTR%"].iloc[-1])
+
+    # 2. 高低表现词
+    wf = word_frequency(df, min_plans=3)
+    _check("word_frequency 返回 DataFrame", isinstance(wf, pd.DataFrame))
+    if not wf.empty:
+        _check("word_frequency 含差值列", "差值" in wf.columns)
+        cmp = compare_token(df, wf.iloc[0, 0])
+        _check("compare_token 返回 dict", isinstance(cmp, dict))
+        _check("compare_token 含 ctr_with", "ctr_with" in cmp)
+
+    # 3. Emoji 表现
+    ef = emoji_frequency(df, min_plans=3)
+    _check("emoji_frequency 返回 DataFrame", isinstance(ef, pd.DataFrame))
+
+    # 4. 标题字数（_make_insights_df 没切桶，仅校验 rank 自带 title_len_mean）
+    _check("rank_plans 含字数均值列", "标题字数均值" in rank.columns)
+
+    # 5. 历史相似
+    sim = find_similar_plans(df, "新品", "新品优惠点击查看", top_k=3)
+    _check("find_similar_plans 返回 DataFrame", hasattr(sim, "empty"))
+    if not sim.empty:
+        _check("find_similar_plans 含 similarity 列", "similarity" in sim.columns)
+
+    # 6. 每日趋势
+    ds = daily_summary(df)
+    _check("daily_summary 返回 dict", isinstance(ds, dict))
+    _check("daily_summary 含总触达", "总触达" in ds)
+    da = daily_aggregate(df)
+    _check("daily_aggregate 返回 DataFrame", isinstance(da, pd.DataFrame))
+    if not da.empty:
+        _check("daily_aggregate 含 date 列", "date" in da.columns)
+        _check("daily_aggregate 含加权CTR%列", "加权CTR%" in da.columns)
+
+    # 7. Owner 对比
+    oc = owner_compare(df, min_plans=2, min_reach=2000)
+    _check("owner_compare 返回 DataFrame", isinstance(oc, pd.DataFrame))
+    if not oc.empty:
+        _check("owner_compare 含 owner + 加权CTR%",
+               "owner" in oc.columns and "加权CTR%" in oc.columns)
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -1240,6 +1502,12 @@ def main():
     test_prompts()
     test_phase3_imports()
     test_pages_import()
+    # Phase 4.1: 02 文案诊断
+    test_diagnosis_page()
+    # Phase 4.2: 03 批量评估
+    test_batch_evaluation()
+    # Phase 4.3: 04 历史洞察
+    test_historical_insights()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

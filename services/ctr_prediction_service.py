@@ -68,15 +68,24 @@ def predict_one(
     coupon: Optional[str] = None,
     mode: str = "demo",
 ) -> PredictionResult:
-    """单条文案 CTR 预测（入口 B 用）。"""
-    fake_task = TaskInput(
-        product_benefit="(诊断模式)", audience="(诊断)", channel=channel,
-        objective="(诊断)", stage="(诊断)", scene="(诊断)", tone="(诊断)",
-        plan_type=plan_type or "未知", coupon=coupon or "未知",
-    )
-    from core.schemas import Candidate
-    c = Candidate(id="X", strategy="diagnose", title=title, body=body)
-    return predict_for_candidates([c], fake_task, mode=mode)[0]
+    """单条文案 CTR 预测（PRD §4.0 入口 B 用）。
+
+    脱离 AI 生成上下文：仅 title+body+channel 即可，不构造 Candidate（避免 id=A/B/C 限制）。
+    """
+    adapter = CTRPredictionAdapter(mode=mode)
+    row = {
+        "channel": channel,
+        "title": title,
+        "body": body,
+        "plan_type": plan_type if plan_type and plan_type != "未知" else None,
+        "coupon": coupon if coupon and coupon != "未知" else None,
+        "owner": None,
+        "title_len": len(title),
+    }
+    results = adapter.predict_batch([row])
+    if not results:
+        return PredictionResult.unavailable("CTR Adapter 返回空")
+    return results[0]
 
 
 __all__ = ["predict_for_candidates", "predict_one"]

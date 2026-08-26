@@ -75,7 +75,9 @@
 - **2026-08-24**：修复 setup_and_run.bat 第 6 次闪退——LF 换行改 CRLF（commit `25b1a30`）；新铁律：所有 Windows bat 必须 CRLF（Write 工具默认 LF 是陷阱）
 - **2026-08-24**：Phase 3.1 基础设施——6 service + 2 prompt + 1 repository + 2 yaml + core/schemas 增补 + ui/styles 增 6 class；`tests/verify.py` 152 → 222 PASS
 - **2026-08-24**：Phase 3.2 页面 + 多页——`pages/01_content_studio.py` 三栏主流程 + `pages/02-04_*.py` Phase 4 占位 + `app.py` 改 pages/ 自动发现入口（修复 st.Page 自引用递归 bug）；`tests/verify.py` 222 → 230 PASS
-- **下一步**：Phase 4（02 文案诊断 / 03 批量评估 / 04 历史洞察 + 渠道预览补全 + pytest 版测试）
+- **2026-08-26**：Phase 4 完成——`pages/02_copy_diagnosis.py`（入口 B 单条诊断 + 规则/词语/相似/CTR/AI 改写五位一体）+ `pages/03_batch_evaluation.py`（入口 C CSV/Excel 批量评估 + 结果导出）+ `pages/04_historical_insights.py`（七 Tab 洞察：高效 Plan/高低词/Emoji/字数/相似/趋势/Owner）+ `services/batch_evaluation_service.py` 新建；01 渠道预览从占位升级到高保真（加品牌头部 + 渠道特征）；`tests/verify.py` 230 → 290 PASS（新增 §31/§32/§33 共 60 用例）；额外产出 `docs/feedback-ctr.md`（CTR 反哺闭环思考笔记）+ 评审并改写 `Downloads/PRD-content-gen-demo.md` v0.1 → v0.2
+- **2026-08-26**：CTR Adapter bug 修复——`adapters/ctr_predictor_adapter/_demo_pred` 在 `_bl_str="未知"` 时 `bl*100` 抛 TypeError，新增 bl=None 兜底分支；`services/ctr_prediction_service.predict_one` 重写，不构造 Candidate（避免 id=A/B/C 限制），直接走 row dict 路径；`services/copy_analysis_service.diagnose` 补 problems/suggestions 字段（调 diagnose_problems 拼装）
+- **下一步**：Phase 5（feedback.db + 上传页 + calibrate_baseline 自动化；详见 docs/feedback-ctr.md）
 
 ---
 
@@ -109,11 +111,25 @@
 - [x] `pages/01_content_studio.py` 三栏主流程（PRD §4.1）
 - [x] `pages/02_copy_diagnosis.py` + `03_batch_evaluation.py` + `04_historical_insights.py` Phase 4 占位
 - [x] `app.py` 改 `pages/` 自动发现入口（避 st.Page 自引用递归 bug）
-- [ ] `pages/02_copy_diagnosis.py` 实现（PRD §4.2 入口 B）
-- [ ] `pages/03_batch_evaluation.py` 实现（PRD §4.3 入口 C）
-- [ ] `pages/04_historical_insights.py` 实现（PRD §4.4）
-- [ ] pytest 版测试（CLAUDE.md §4.4 留待 Phase 4 接服务层一起补）
-- [ ] 渠道预览补全：企微 1v1 / 短信 / 站内信 完整版（首版仅 APP Push + 占位）
+
+### Phase 4 — 三个业务页面实现 ✅ 已完成（2026-08-26）
+- [x] `pages/02_copy_diagnosis.py` — 输入 title/body/channel → 规则 + 词语 + 相似 + CTR 入口 B + AI 改写
+- [x] `services/batch_evaluation_service.py` — CSV/Excel 解析 + 批量评估（rule + CTR + 建议）+ CSV 导出
+- [x] `pages/03_batch_evaluation.py` — 上传 → 预览 → 进度条评估 → 结果表 + 汇总 + 下载
+- [x] `pages/04_historical_insights.py` — 七 Tab 洞察（rank_plans / word_frequency / emoji_frequency / title_len / find_similar_plans / daily_aggregate / owner_compare）
+- [x] 01_content_studio 渠道预览升级：APP Push 加 McDonald's + 时间戳头；企微加品牌头；短信加发件人号；站内信加品牌头
+- [x] CTR Adapter bug 修复：`_demo_pred` 在 `_bl_str="未知"` 时 bl=None 兜底；`predict_one` 重写不走 Candidate
+- [x] `services/copy_analysis_service.diagnose` 补 problems/suggestions 字段
+- [x] verify.py 290 PASS（新增 §31/§32/§33 共 60 用例）
+- [ ] pytest 版测试（CLAUDE.md §4.4 留待 Phase 5 接 feedback.db 一起补）
+
+### Phase 5 — CTR 反哺闭环（待启动，详见 docs/feedback-ctr.md）
+- [ ] `pages/05_feedback.py` — 真实结果录入/上传页
+- [ ] `data/feedback.db` schema（task_signature join 锚点）
+- [ ] `core/schemas.GenerationRecord` 加 signature 字段
+- [ ] `tools/calibrate_baseline.py` 升级接 feedback.db + 指数滑动
+- [ ] `data/ctr_baseline_v3.x.json` 多版本化
+- [ ] `config/dimension_weights.yaml`（Phase 6）
 
 ### 待业务确认（PRD §26，12 项）
 第一场 Demo 主渠道 / 人群-阶段-场景枚举值 / 字数上限 / 禁用词清单 / 校准状态 / 内网 LLM 接口 / 企微 1v1 预览支持 / 完整文案存储
@@ -169,6 +185,21 @@ open(p, 'wb').write(fixed)
 `diagnose_score(...)` 返回 `{"diag": local_diagnose_dict, ...}`。调用 `diagnose_problems(title, body, diag)` 时 `diag` 必须是 **local_diagnose dict**（含 `len_title` / `len_body` / `emoji_count` / `hit_words` / `miss_top`），不是 score 顶层 dict。
 - 正确写法：`diagnose_problems(t, b, score_result["diag"])`
 - 错误写法：`diagnose_problems(t, b, score_result)` → `KeyError: 'len_title'`
+
+### Candidate.id=A/B/C 校验（2026-08-26 实战）
+`Candidate.__post_init__` 强制 id ∈ {"A","B","C"}（PRD §9.2 输出 schema）。所以 `predict_one` 之类的入口 B 不能走 Candidate 包装，必须直接构造 row dict 调 `adapter.predict_batch`：
+- 错：`Candidate(id="X", strategy="diagnose", ...)` → `ValueError`
+- 对：`adapter.predict_batch([{"channel":..., "title":..., "body":..., ...}])`
+
+### CTR Adapter _demo_pred bl=None 兜底（2026-08-26 实战）
+原 `_demo_pred` 第 184 行直接 `bl*100:.2f`，但 `baseline_lookup` 找不到维度组合时 `_safe_ctr("未知")` 返回 None，`None*100` 抛 TypeError。
+- 入口 B 触发率 100%（无历史数据时必然 bl=None）
+- 修复：bl=None 时显示"无基准"；pred_ctr 兜底 0.02
+
+### verify.py CSV bytes literal 限制（2026-08-26 实战）
+Python `b"..."` 字面量只能含 ASCII。中文字符串测试数据要 `.encode("utf-8")`：
+- 错：`b"title,body,channel\n标题,内容,APP Push\n"` → `SyntaxError`
+- 对：`"title,body,channel\n标题,内容,APP Push\n".encode("utf-8")`
 
 ### verify.py 用例数从 82 → 152（2026-08-24 实战）
 Phase 2 新增 11 个测试函数（§13-23，共 70 用例）。跑测试要 `PYTHONIOENCODING=utf-8`，否则 `_check()` 的 emoji 中文会撞 GBK codec（不是 bug，但中断 print 流导致用例数不准）。
