@@ -213,6 +213,74 @@ def inject_base_css() -> None:
             color: #6b5400;
         }}
         .warning-banner b {{ color: #8a6d00; }}
+
+        /* ====== 企微 1v1 聊天气泡（仿企业微信） ====== */
+        .wechat-bubble-wrap {{
+            display: flex;
+            align-items: flex-start;
+            gap: 0.6rem;
+            max-width: 380px;
+            margin: 0.4rem auto;
+        }}
+        .wechat-bubble-wrap .wc-avatar {{
+            width: 40px;
+            height: 40px;
+            border-radius: 6px;
+            background: #DA291C;
+            color: #FFC72C;
+            font-weight: 800;
+            font-size: 1.3rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            font-family: 'Arial Black', sans-serif;
+        }}
+        .wechat-bubble {{
+            background: #FFFFFF;
+            border: 1px solid #E5E5E5;
+            border-radius: 6px;
+            padding: 0.7rem 0.9rem;
+            flex: 1;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }}
+        .wechat-bubble .wc-name {{
+            font-weight: 600;
+            font-size: 0.82em;
+            color: #666;
+            margin-bottom: 0.3rem;
+        }}
+        .wechat-bubble .wc-title {{
+            font-weight: 700;
+            font-size: 1.02em;
+            color: #111;
+            margin-bottom: 0.3rem;
+            line-height: 1.35;
+        }}
+        .wechat-bubble .wc-body {{
+            color: #555;
+            font-size: 0.88em;
+            line-height: 1.5;
+            margin-bottom: 0.4rem;
+        }}
+        .wechat-bubble .wc-meta {{
+            font-size: 0.7em;
+            color: #999;
+            text-align: right;
+            margin-top: 0.3rem;
+        }}
+
+        /* ====== LLM 未配置 banner（暗黄提示） ====== */
+        .llm-warning {{
+            background: #FFF3CD;
+            border-left: 4px solid #FFC107;
+            border-radius: {RADIUS_SM};
+            padding: 0.6rem 1rem;
+            margin: 0.6rem 0;
+            font-size: 0.88em;
+            color: #856404;
+        }}
+        .llm-warning b {{ color: #664d03; }}
         </style>
         """,
         unsafe_allow_html=True,

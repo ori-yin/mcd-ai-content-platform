@@ -10,8 +10,12 @@ from __future__ import annotations
 
 import streamlit as st
 
+from ui.llm_status import render_banner
 from ui.theme_tokens import MCD_RED, MCD_GOLD
 
+
+# LLM 未配置提示（业务确认 #10，全留空时显示）
+render_banner()
 
 st.markdown(
     f"""

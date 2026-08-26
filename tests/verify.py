@@ -1817,6 +1817,70 @@ def test_calibrate_baseline():
 
 
 # ============================================================
+# §38 LLM 配置状态检测（业务确认 #10 + Phase 6 P0）
+# ============================================================
+def test_llm_status():
+    """ui/llm_status 极简 yaml 解析 + 全空/部分空/全填 三态判断。"""
+    import sys, importlib
+    # 显式 import 进 sys.modules（from 形式不会自动注册）
+    import ui.llm_status as ls
+    _check("llm_status 模块存在", ls is not None)
+
+    # 1) 默认全空（仓库初始状态）
+    _check("默认 is_configured() == False", ls.is_configured() is False)
+    _check("默认 missing_fields() 4 字段",
+           set(ls.missing_fields()) == {"provider", "base_url", "model", "api_key"})
+
+    # 2) 用临时 yaml 文件覆盖路径（monkeypatch CONFIG_PATH）
+    import tempfile, textwrap
+    tmp = tempfile.mkdtemp(prefix="llm_status_test_")
+    try:
+        yaml_full = tmp + "/llm_settings.yaml"
+        with open(yaml_full, "w", encoding="utf-8") as f:
+            f.write(textwrap.dedent("""\
+                # 注释
+                provider: "openai"
+                base_url: "https://api.openai.com/v1"
+                model: "gpt-4o-mini"
+                api_key: "sk-test"
+                """))
+        ls.CONFIG_PATH = type(ls.CONFIG_PATH)(yaml_full)
+        _check("全填 is_configured() == True", ls.is_configured() is True)
+        _check("全填 missing_fields() == []", ls.missing_fields() == [])
+
+        # 部分空
+        with open(yaml_full, "w", encoding="utf-8") as f:
+            f.write(textwrap.dedent("""\
+                provider: "openai"
+                model: "gpt-4o-mini"
+                """))
+        _check("部分空 is_configured() == False", ls.is_configured() is False)
+        _check("部分空 missing_fields 2 字段",
+               set(ls.missing_fields()) == {"base_url", "api_key"})
+
+        # 全空（注释 + 空格）
+        with open(yaml_full, "w", encoding="utf-8") as f:
+            f.write(textwrap.dedent("""\
+                # 仅注释
+                provider: ""
+                base_url: ""
+                model: ""
+                api_key: ""
+                """))
+        _check("显式全空 is_configured() == False", ls.is_configured() is False)
+
+        # yaml 不存在
+        ls.CONFIG_PATH = type(ls.CONFIG_PATH)(tmp + "/nonexistent.yaml")
+        _check("yaml 缺失 is_configured() == False", ls.is_configured() is False)
+        _check("yaml 缺失 missing 4 字段",
+               len(ls.missing_fields()) == 4)
+    finally:
+        import gc as _gc, shutil as _sh
+        _gc.collect()
+        _sh.rmtree(tmp, ignore_errors=True)
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -1872,6 +1936,8 @@ def main():
     test_feedback_service()
     # Phase 5 P2: calibrate_baseline 自动化
     test_calibrate_baseline()
+    # Phase 6 P0: LLM 配置状态检测（业务确认 #10）
+    test_llm_status()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

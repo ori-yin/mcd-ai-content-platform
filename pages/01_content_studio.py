@@ -44,6 +44,7 @@ from services.rule_engine import load_rules, check_candidates
 from services.ctr_prediction_service import predict_for_candidates
 from services.similarity_service import find_similar, summarize_similar
 from services.record_service import save_generation
+from ui.llm_status import render_banner
 from ui.plotly_helpers import rate_value
 from ui.styles import inject_base_css
 
@@ -60,6 +61,9 @@ st.set_page_config(
 )
 
 inject_base_css()
+
+# LLM 未配置提示（业务确认 #10）
+render_banner()
 
 st.markdown(
     """
@@ -370,11 +374,16 @@ def _render_channel_preview(task: TaskInput, c: Candidate):
             f'</div>'
         )
     elif ch == "企微 1v1":
+        # 仿企业微信聊天气泡（头像 + 服务名 + 卡片 + 时间戳）
         preview_html = (
-            f'<div class="preview-card">'
-            f'<div style="font-size:0.78em;opacity:0.6;margin-bottom:0.4rem;">麦当劳客服 · 现在</div>'
-            f'<div class="pv-body">{body}</div>'
-            f'<div class="pv-meta">企微 1v1 · 立即查看</div>'
+            f'<div class="wechat-bubble-wrap">'
+            f'<div class="wc-avatar">M</div>'
+            f'<div class="wechat-bubble">'
+            f'<div class="wc-name">麦当劳会员服务</div>'
+            f'<div class="wc-title">{title}</div>'
+            f'<div class="wc-body">{body}</div>'
+            f'<div class="wc-meta">今天 {datetime.now().strftime("%H:%M")} · 已送达</div>'
+            f'</div>'
             f'</div>'
         )
     elif ch == "短信":
