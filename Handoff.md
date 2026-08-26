@@ -174,8 +174,6 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 - **用例**：473 PASS / 0 FAIL（`python tests/verify.py`）= 45 passed（`pytest tests/verify.py`，双路一致）
 - **首要任务**：第二梯队 #1/#2/#4/#7 待业务确认；L1 LightGBM / P4 签名关联 候选 — 详 §6.2 / §6.3
 - **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿）+ `docs/feedback-ctr.md`
-- **不动**：业务确认前不接真实反馈数据；不启用灰态字段（product_benefit/objective）
-- 详情：§5 决策记录 / §6.1 Phase 历史 / §6.2 待业务确认 / §6.3 候选
 
 ### 6.1 Phase 历史（已完成）
 
@@ -194,72 +192,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 8** pytest 迁移（CLAUDE.md §4.4 工程债） | pytest.ini / _RUNNING_UNDER_PYTEST 标志 / _check 失败抛 AssertionError / 双路一致（pytest 43 passed + CLI 428 PASS） | **428（CLI）/ 43（pytest）** |
 | **Phase 6 P4** Handoff §6.3 纯工程候选扫掉 | config/dimension_weights.yaml + train_dimension_weights.py / feedback_lookup.py + 5 文件改动 / §43+§44 共 45 用例 | **473（CLI）/ 45（pytest）** |
 
-### Phase 1 — CTR Adapter（核心复用层） ✅ 已完成
-- [x] 抽 `get_baseline_ctr` / `get_time_multiplier` / `build_context_for_llm` 等到 `adapters/ctr_predictor_adapter/`
-- [x] 拆 `call_llm_batch` 为 `enrich_rows_for_llm` + `ProviderRouter`
-- [x] 写 `PredictionResult` dataclass + `CTRPredictionAdapter` 接口
-- [x] `tests/test_ctr_adapter.py` + verify.py 用例（verify.py 82 用例全过；pytest 版按 CLAUDE.md §4.4 留待 Phase 2/3 接服务层一起补）
-
-### Phase 2 — copy-analyzer Adapter + 缺失分析 ✅ 已完成
-- [x] 抽 `data.py` 纯函数 → `services/data_loader.py`（load_sheet / map_columns / parse_message / build）
-- [x] 抽 `analyzer.py` 纯函数 + 替 `@st.cache_data` → `services/text_analyzer.py`（@functools.lru_cache 仿 ctr_predictor_adapter 模式）
-- [x] `dict_counts(staging_dict, staging_ban)` 改为参数注入（UI 层从 session_state 取出传入）
-- [x] 抽 `ai_service.py` 纯函数 → `adapters/llm_adapter.py`（call_llm 接收 ProviderRouter，不直接 SDK）
-- [x] 从零实现 4 个缺失分析 → `services/analytics/`（rank_plans / find_similar_plans / daily_aggregate / owner_compare）
-- [x] verify.py 加 11 个测试函数（§13-23）共 70 用例；总计 **152 PASS, 0 FAIL**
-
-### Phase 3 — 业务页面（进行中）
-- [x] `services/rule_engine.py` — 字数 / 必带 / 禁词 / 风险词 / 格式 / 重复 6 类规则，Pass/Warn/Fail 三态
-- [x] `services/generation_service.py` — Demo 模式稳定占位 + LLM 模式（router 注入）
-- [x] `services/ctr_prediction_service.py` — 包 CTRPredictionAdapter
-- [x] `services/similarity_service.py` — 包 find_similar_plans
-- [x] `services/copy_analysis_service.py` — 包 diagnose_score
-- [x] `services/record_service.py` + `repositories/sqlite_repository.py` — SQLite `data/records.db`
-- [x] `prompts/copy_generation.py` + `prompts/copy_rewrite.py` — Prompt 版本管理 v1.0
-- [x] `config/channel_rules.yaml` + `config/brand_rules.yaml` — 渠道字数 / 必带 / 风险 / 禁词
-- [x] `core/schemas.py` 增补 — `TaskInput` / `Candidate` / `RuleItem` / `RuleResult` / `GenerationRecord`
-- [x] `ui/styles.py` 增 6 class — candidate-card / rule-pass/rule-fail/rule-warn / preview-card / kpi-tile / warning-banner
-- [x] `pages/01_content_studio.py` 三栏主流程（PRD §4.1）
-- [x] `pages/02_copy_diagnosis.py` + `03_batch_evaluation.py` + `04_historical_insights.py` Phase 4 占位
-- [x] `app.py` 改 `pages/` 自动发现入口（避 st.Page 自引用递归 bug）
-
-### Phase 4 — 三个业务页面实现 ✅ 已完成（2026-08-26）
-- [x] `pages/02_copy_diagnosis.py` — 输入 title/body/channel → 规则 + 词语 + 相似 + CTR 入口 B + AI 改写
-- [x] `services/batch_evaluation_service.py` — CSV/Excel 解析 + 批量评估（rule + CTR + 建议）+ CSV 导出
-- [x] `pages/03_batch_evaluation.py` — 上传 → 预览 → 进度条评估 → 结果表 + 汇总 + 下载
-- [x] `pages/04_historical_insights.py` — 七 Tab 洞察（rank_plans / word_frequency / emoji_frequency / title_len / find_similar_plans / daily_aggregate / owner_compare）
-- [x] 01_content_studio 渠道预览升级：APP Push 加 McDonald's + 时间戳头；企微加品牌头；短信加发件人号；站内信加品牌头
-- [x] CTR Adapter bug 修复：`_demo_pred` 在 `_bl_str="未知"` 时 bl=None 兜底；`predict_one` 重写不走 Candidate
-- [x] `services/copy_analysis_service.diagnose` 补 problems/suggestions 字段
-- [x] verify.py 290 PASS（新增 §31/§32/§33 共 60 用例）
-- [ ] pytest 版测试（CLAUDE.md §4.4 留待 Phase 5 接 feedback.db 一起补）
-
-### Phase 5 — CTR 反哺闭环（最小闭环 P0+P1+P2）✅ 已完成（2026-08-26）
-- [x] **P0 record 指纹**：`core/schemas.task_signature()` + `GenerationRecord.signature` + sqlite_repository 自动迁移加列 + 索引
-- [x] **P1 feedback 库**：`repositories/feedback_repository` + `services/feedback_service` + `pages/05_feedback.py`
-- [x] **P2 baseline 校准自动化**：`tools/calibrate_baseline.py` 三段策略 + `data/ctr_baseline_v3.x.json` 多版本化 + .bak 备份
-- [x] `tools/push_via_api.py` 修 token 泄露（改读环境变量）
-- [x] verify.py 339 PASS, 0 FAIL（新增 §34/§35/§36/§37 共 47 用例）
-
-### Phase 6 P0 — 业务确认 + 企微 1v1 + LLM 留空 ✅ 已完成（2026-08-26）
-- [x] PRD §26 12 项业务确认全部拍板（详见 `docs/architecture.md §五` 表格）
-- [x] **企微 1v1 聊天气泡预览**：`ui/styles.py` 加 `.wechat-bubble-wrap`（40×40 红底 M 头像 + 白色气泡卡片 + 时间戳），`pages/01_content_studio` 替换占位实现
-- [x] **LLM 配置留空**：`config/llm_settings.yaml`（provider/base_url/model/api_key 全空占位）+ `ui/llm_status.py` 检测器 + `.llm-warning` 样式，00_home/01/02/03 入口全加 banner
-- [x] verify.py 349 PASS, 0 FAIL（新增 §38 llm_status 10 用例）
-
-### Phase 6 P1 — 6 维度灰态 + 进阶弱化 + CTR 反哺免责 ✅ 已完成（2026-08-26）
-- [x] **决策 1**：6 维度前端灰态 — `product_benefit` + `objective` 控件 `disabled=True` + label「待开发·二期接入」+ help tooltip；TaskInput 必填 7→5（+ `PENDING_FIELDS`）；prompt 空时不拼这两行
-- [x] **决策 2**：4 附属页面弱化 — `ui/notice.render_advanced_notice` + `.advanced-notice` CSS；02/03/04/05 顶部 banner；`00_home` 重排核心/进阶两组卡片
-- [x] **决策 3**：CTR 反哺免责 — `ui/notice.render_ctr_feedback_notice` + 04/05 顶部 + 00_home 进阶区"演示口径"文案
-- [x] **不动**：app.py（避 st.Page 递归铁律）/ 后端反哺逻辑 / 任何页面删除（02-05 全弱化不剔除）
-- [x] verify.py 395 PASS, 0 FAIL（新增 §39 灰态 17 用例 + §40 弱化+免责 29 用例）
-
-### Phase 6 P2 — CTR 口径固化 v3.1（业务拍板） ✅ 已完成（2026-08-26）
-- [x] **Q1-Q6 拍板** — 详 `docs/ctr-kpi-definition-proposal-v0.2.md` §2
-- [x] **取数铁律** — `core/data_window.resolve_bi_dt_window()` 12 点前 INTERVAL 2 兜底
-- [x] **6 文件落地**：`ctr_baseline.json`（v3.0 → v3.1 + definition 注释）/ `baseline_lookup.py` / `ctr_prediction_service.py` / `feedback_repository.py` / `calibrate_baseline.py`（加 `--definition` flag）/ `docs/ctr-kpi-definition-proposal-v0.2.md`（新写，v0.1 保留作历史）
-- [x] **反哺批量回灌机制** — 沿用 Phase 5 管道，详 v0.2 §5
-- [x] verify.py 395 → **421 PASS, 0 FAIL**（新增 §41 口径固化 26 用例）
+> 详细 bullets 全部移入 §5 决策记录（按 commit hash 可追溯）。本表为速查。
 
 ### 6.2 待业务确认（按返工风险梯队）
 
@@ -278,7 +211,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.3 候选（详 §5.5 CTR Roadmap）
 
-**业务确认后启动**：
+**业务确认后启动**（下方 2 项候选 L1 + P4 待业务拍板；§6.3 原 P3 维度权重动态 + demo 数据回灌已在 Phase 6 P4 完成，见 §5）。
 
 #### L1 · LightGBM 回归替 baseline 查找表（详 §5.5）
 
@@ -369,10 +302,6 @@ records.db    feedback.db
 **建议节奏**：P4 先做（3 天）→ L1 后做（10 天）。先有"看"的能力，再上"用"的模型。
 
 ---
-
-**纯工程候选（无需业务拍）**：
-- [x] **P3** 维度权重动态 `config/dimension_weights.yaml` + `train_dimension_weights.py`（独立技术债）✅ 2026-08-26
-- [x] **demo 数据回灌**（feedback.db ≥ 50 plan 后 `_demo_pred` 优先本地聚合；决策文档已隐式"业务确认前不接真实数据"）✅ 2026-08-26
 
 ### 6.4 PRD §26 12 项已拍板 ✅ 2026-08-26
 详见 `docs/architecture.md §五`。按议题：
