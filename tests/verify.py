@@ -1847,6 +1847,7 @@ def test_llm_status():
                 api_key: "sk-test"
                 """))
         ls.CONFIG_PATH = type(ls.CONFIG_PATH)(yaml_full)
+        ls._load_yaml.cache_clear()
         _check("全填 is_configured() == True", ls.is_configured() is True)
         _check("全填 missing_fields() == []", ls.missing_fields() == [])
 
@@ -1856,6 +1857,7 @@ def test_llm_status():
                 provider: "openai"
                 model: "gpt-4o-mini"
                 """))
+        ls._load_yaml.cache_clear()
         _check("部分空 is_configured() == False", ls.is_configured() is False)
         _check("部分空 missing_fields 2 字段",
                set(ls.missing_fields()) == {"base_url", "api_key"})
@@ -1869,10 +1871,12 @@ def test_llm_status():
                 model: ""
                 api_key: ""
                 """))
+        ls._load_yaml.cache_clear()
         _check("显式全空 is_configured() == False", ls.is_configured() is False)
 
         # yaml 不存在
         ls.CONFIG_PATH = type(ls.CONFIG_PATH)(tmp + "/nonexistent.yaml")
+        ls._load_yaml.cache_clear()
         _check("yaml 缺失 is_configured() == False", ls.is_configured() is False)
         _check("yaml 缺失 missing 4 字段",
                len(ls.missing_fields()) == 4)
@@ -1887,7 +1891,7 @@ def test_llm_status():
 def test_phase6_p1_pending_fields():
     """验证 6 维度前端的"产品与权益"+"投放目标"灰态：
 
-    - core.schemas.TaskInput 不再把这两个列为必填，PENDING_FIELDS 元组存在
+    - core.schemas.TaskInput 不再把这两个列为必填（REQUIRED_FIELDS 5 项）
     - prompts.copy_generation 空时不拼接这两行（避免 prompt 出现空值）
     - pages/01_content_studio 控件 disabled + label 标识 + help 提示
     - services.generation_service.demo 模式 product_benefit="" 走默认值兜底
@@ -1896,12 +1900,6 @@ def test_phase6_p1_pending_fields():
 
     # ── 1) core.schemas.TaskInput ────────────────────────────
     from core.schemas import TaskInput
-    _check("PENDING_FIELDS 元组存在",
-           hasattr(TaskInput, "PENDING_FIELDS") and isinstance(TaskInput.PENDING_FIELDS, tuple))
-    _check("PENDING_FIELDS 含 product_benefit",
-           "product_benefit" in TaskInput.PENDING_FIELDS)
-    _check("PENDING_FIELDS 含 objective",
-           "objective" in TaskInput.PENDING_FIELDS)
     _check("REQUIRED_FIELDS 不再含 product_benefit",
            "product_benefit" not in TaskInput.REQUIRED_FIELDS)
     _check("REQUIRED_FIELDS 不再含 objective",

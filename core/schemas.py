@@ -193,8 +193,6 @@ class TaskInput:
     REQUIRED_FIELDS: tuple = (
         "audience", "channel", "stage", "scene", "tone",
     )
-    # Demo 阶段灰态字段：前端 disabled，后端不参与必填校验
-    PENDING_FIELDS: tuple = ("product_benefit", "objective")
 
     def __post_init__(self):
         # 必填校验（页面层也校验，这里兜底）

@@ -85,6 +85,14 @@
   - commit `f942765`（9 文件 / +411 行 / -18 行；working tree clean）
   - **下一步**：第一梯队还剩 #3 / #6 待业务拍板；走完启 P0/P1 反哺 demo 数据回灌（业务确认前仅 demo 走通流程）
 - **2026-08-26**：推送 GitHub — commit `f942765` 推到 ori-yin/mcd-ai-content-platform（公开仓库，按 memory 直连 github.com）
+- **2026-08-26**：Phase 6 P3 simplify 清理（`/simplify` 4 agent 并行 review）—— 净减 56 行（-122 / +66），9 文件改动，verify 421 → 418 PASS：
+  - **修 A `ui/llm_status.py`**：30 行手写 yaml 解析 → 1 行 `yaml.safe_load`（PyYAML 已在 `services/rule_engine.py` 用，无新依赖）；`_load_yaml()` 加 `@functools.lru_cache(maxsize=1)`，3 个入口共用单次读盘；测试 monkey-patch `CONFIG_PATH` 后需 `_load_yaml.cache_clear()`（4 处，见 §7 新增教训）
+  - **修 B 4 处 v3.1 docstring 缩成 1 行**：`baseline_lookup.py` / `ctr_prediction_service.py` / `feedback_repository.py` / `calibrate_baseline.py`——关键词保留（满足 §41 tests 守护），详细复述只留 `data/ctr_baseline.json:_definition_note` 一处 ground truth
+  - **修 C 删 `PENDING_FIELDS` 死元组**：schemas.py + tests/verify.py 删 3 个 `_check` 用例；`pages/01_content_studio` 控件逻辑不动（直接硬编码灰态字段名）
+  - **修 D `core/data_window.py`**：删 `_to_local` aware datetime 死分支 + `DEFAULT_TZ_OFFSET_HOURS` 常量 + `tz_offset_hours` 参数（从来不被调用）；`SNAPSHOT_CUTOFF_HOUR` 保留为 `cutoff_hour` 默认值
+  - **修 E `ui/notice.py`**：抽 `render_notice(prefix, body, css_class)`，2 个 wrapper (`render_advanced_notice` / `render_ctr_feedback_notice`) 调它；保留外部 API 不破坏 pages 调用方
+  - **跳过**：建 `core/ctr_definition.py`（altitude F1+F2，改动太大 ROI 不足）/ `CONFIG_DIR` 集中（reuse F3）/ 3 套 CSS 合并（reuse F6）/ banner 路由表（altitude F3）/ JSON 4 字段去重（被 §41 测试守护）/ `00_home` 跳转（Phase 7 候选）
+  - working tree clean，9 文件改动未 commit
 
 ### §5.5 CTR 准确率学习 Roadmap（2026-08-26 · 重要背景）
 
@@ -143,8 +151,8 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：Phase 6 P2 完成（CTR 口径固化 v3.1 拍板完成）
-- **用例**：421 PASS / 0 FAIL（`python tests/verify.py`）
+- **阶段**：Phase 6 P2 完成 + Phase 6 P3 simplify 清理完成（详见 §5 新增条目）
+- **用例**：418 PASS / 0 FAIL（`python tests/verify.py`，P3 删 3 个 PENDING_FIELDS 死用例）
 - **首要任务**：第一梯队剩 #3 反哺触发条件 / #6 反哺是否影响生成排序 — 详 §6.2
 - **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿）+ `docs/feedback-ctr.md`
 - **不动**：业务确认前不接真实反馈数据；不启用灰态字段（product_benefit/objective）
@@ -161,7 +169,8 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 5** CTR 反哺闭环 P0+P1+P2 | record signature 指纹 / feedback 库 / baseline 自动校准 | 339 |
 | **Phase 6 P0** 业务确认 + 企微 1v1 + LLM 留空 | PRD §26 12 项拍板 / wechat-bubble-wrap / llm_status.yaml + banner | 349 |
 | **Phase 6 P1** 灰态 + 进阶弱化 + CTR 免责 | 6 维度前端灰态 / 4 附属页 banner / ui/notice + render_ctr_feedback_notice | **395** |
-| **Phase 6 P2** CTR 口径固化 v3.1 | Q1-Q6 拍板 / bi_dt 铁律 / 6 文件落地 / 反哺批量回灌机制 | **421** |
+| **Phase 6 P2** CTR 口径固化 v3.1 | Q1-Q6 拍板 / bi_dt 铁律 / 6 文件落地 / 反哺批量回灌机制 | 421 |
+| **Phase 6 P3** simplify 清理（4 agent review） | yaml.safe_load 替手写解析 / v3.1 docstring 缩成 1 行 / 删 PENDING_FIELDS / _to_local 死分支 / notice.py 合并 helper | **418** |
 
 ### Phase 1 — CTR Adapter（核心复用层） ✅ 已完成
 - [x] 抽 `get_baseline_ctr` / `get_time_multiplier` / `build_context_for_llm` 等到 `adapters/ctr_predictor_adapter/`
@@ -400,6 +409,18 @@ Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置
 **严格按文档边界执行**——本轮没碰 P3/P4/demo 回灌/pytest 候选（虽然看着诱人），等业务确认 7 项清单再说。
 **启示**：用户或另一个 AI 留的"范围/边界/决策"文档 = 当前轮的 scope-control，**不要按"全局规划"自己加码**。
 **铁律**：接活前先 grep `/c/Users/a952462/Downloads/` 找决策/范围/边界 md 文件；找到了就以它为准，无就走 PRD / Handoff 默认。
+
+### `@lru_cache` + 测试 monkey-patch 陷阱（2026-08-26 · Phase 6 P3）
+`_load_yaml()` 加 `@functools.lru_cache(maxsize=1)` 后，测试 `ls.CONFIG_PATH = type(...)(新路径)` 改路径但 cache 仍命中首次调用的旧路径内容。
+- **症状**：3 个 `_check` 全 FAIL——"全填 is_configured() == True" / "全填 missing_fields() == []" / "部分空 missing_fields 2 字段"
+- **修法**：测试在每次 monkey-patch `CONFIG_PATH` 后调 `ls._load_yaml.cache_clear()`（4 处），让下次读取走新路径
+- **铁律**：测试里改任何被 `lru_cache` 捕获的依赖（路径 / env / module-level dict），改完必 `cache_clear()`——`@lru_cache` 是按参数 hash 的，**闭包内全局变量不在 hash key 里**
+
+### 手写 yaml 解析器 vs PyYAML（2026-08-26 · Phase 6 P3）
+`ui/llm_status.py` v1 用 30 行手写解析（4 类边界：整行注释 / 行内注释 / 引号包裹 / 空串）。Handoff §7 已录"行内 # 注释陷阱"教训——**那本身就是过度设计的代价**。
+- **现状**：`services/rule_engine.py:54-56` 已用 `yaml.safe_load` 加载 `channel_rules.yaml` / `brand_rules.yaml`，PyYAML 在 `requirements.txt` 已是依赖
+- **修法**：删 30 行手写解析，1 行 `yaml.safe_load` 替——4 类边界 PyYAML 自动处理，教训条目同时作废
+- **铁律**：项目里已有 yaml 用法就别自己造轮子；新模块加载 yaml 前先 grep `yaml.safe_load` 是否有先例
 
 ---
 

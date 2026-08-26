@@ -20,7 +20,7 @@ CLI 用法：
 约束：
 - 只覆盖"渠道"和"渠道_x_是否用券"两个核心维度（避免 schema 破坏）
 - 其它维度保持 v3.0 不动；扩展维度在 Phase 6 单独做
-- --definition 默认 v3.1（2026-08-26 业务拍板口径，详 docs/ctr-kpi-definition-proposal-v0.2.md）
+- --definition 默认 v3.1（口径详 docs/ctr-kpi-definition-proposal-v0.2.md）
 """
 
 from __future__ import annotations
