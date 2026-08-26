@@ -83,7 +83,12 @@
   - **P2 baseline 校准自动化**：`tools/calibrate_baseline.py` 三段策略——`n_plans<5` 跳过 / `5≤n_plans<20` 指数滑动 α=0.3 / `n_plans≥20` 全量覆盖；输出 `data/ctr_baseline_v3.x.json` + `.bak` 备份；`--dry-run / --min-reach / --db / --baseline` CLI
   - **token 教训**：`tools/push_via_api.py` 硬编码 GitHub token 触发 secret scanning 阻断 push，改成读环境变量 `GITHUB_TOKEN` / `GH_TOKEN` + `--token` 命令行参数；force-with-lease 推上去（远端 6 个重复 Phase 4 commit 被覆盖）
   - verify.py 290 → **339 PASS, 0 FAIL**（新增 §34 record指纹 11 + §35/§36 feedback_repository + feedback_service 20 + §37 calibrate_baseline 16）
-- **下一步**：Phase 6（按 docs/feedback-ctr.md §5 待办：维度权重 yaml / 端到端流程串联 / 历史洞察签名关联）
+- **2026-08-26**：Phase 6 P0 完成——**业务确认 12 项过完 + 企微 1v1 聊天气泡预览 + LLM 留空 banner**：
+  - **业务确认**：PRD §26 12 项全部拍板（详见 `docs/architecture.md §五` 表格）——Demo 主渠道 APP Push + 企微 1v1 同期；枚举值/字数/词表复用 yaml 配置；predictor 走 main 版；CTR 状态"未校准 / 机制就绪"；加 `confidence` 字段（PRD v0.2 §5.3 口径 A）；内网 LLM 暂留空；不存完整文案（合规稳）
+  - **企微 1v1 预览**：`ui/styles.py` 新增 `.wechat-bubble-wrap`（40×40 红底 M 头像 + 白色气泡卡片 + 时间戳"今天 HH:MM · 已送达"），`pages/01_content_studio` 替换占位实现
+  - **LLM 留空 banner**：新增 `config/llm_settings.yaml`（provider/base_url/model/api_key 4 字段全空占位）+ `ui/llm_status.py` 检测器（极简 yaml 解析，无 PyYAML 依赖）+ `.llm-warning` 样式（黄色左边框 banner），00_home/01/02/03 入口全加；banner 文案分两态（全空"未配置" vs 部分空"缺字段"）
+  - 验证：verify.py 339 → **349 PASS, 0 FAIL**（新增 §38 llm_status 10 用例）
+- **下一步**：Phase 6 候选——P3 维度权重动态 yaml / P4 历史洞察签名关联 / demo 数据回灌（详见 docs/feedback-ctr.md §9）
 
 ---
 
@@ -135,8 +140,18 @@
 - [x] **P2 baseline 校准自动化**：`tools/calibrate_baseline.py` 三段策略 + `data/ctr_baseline_v3.x.json` 多版本化 + .bak 备份
 - [x] `tools/push_via_api.py` 修 token 泄露（改读环境变量）
 - [x] verify.py 339 PASS, 0 FAIL（新增 §34/§35/§36/§37 共 47 用例）
-- [ ] `config/dimension_weights.yaml`（留 Phase 6）
-- [ ] 历史洞察页签 signature 关联展示（留 Phase 6）
+
+### Phase 6 P0 — 业务确认 + 企微 1v1 + LLM 留空 ✅ 已完成（2026-08-26）
+- [x] PRD §26 12 项业务确认全部拍板（详见 `docs/architecture.md §五` 表格）
+- [x] **企微 1v1 聊天气泡预览**：`ui/styles.py` 加 `.wechat-bubble-wrap`（40×40 红底 M 头像 + 白色气泡卡片 + 时间戳），`pages/01_content_studio` 替换占位实现
+- [x] **LLM 配置留空**：`config/llm_settings.yaml`（provider/base_url/model/api_key 全空占位）+ `ui/llm_status.py` 检测器 + `.llm-warning` 样式，00_home/01/02/03 入口全加 banner
+- [x] verify.py 349 PASS, 0 FAIL（新增 §38 llm_status 10 用例）
+
+### Phase 6 候选（详见 docs/feedback-ctr.md §9）
+- [ ] **P3 维度权重动态**：`config/dimension_weights.yaml` + `train_dimension_weights.py`
+- [ ] **P4 历史洞察签名关联**：04 七 Tab 加 signature 视角（"这个 Plan 的回流 CTR 是多少 / 历史相似文案平均 CTR"）
+- [ ] **demo 数据回灌**：feedback.db 累计 ≥ 50 plan 后，`_demo_pred` 优先用本地聚合 CTR 而不是写死 2%
+- [ ] pytest 版测试（CLAUDE.md §4.4 工程债）
 
 ### 待业务确认（PRD §26，12 项） ✅ 2026-08-26 已过完
 详细拍板结果见 `docs/architecture.md §五`。摘要：
@@ -222,6 +237,12 @@ Python `b"..."` 字面量只能含 ASCII。中文字符串测试数据要 `.enco
 - **症状**：`error: failed to push some refs ... (push declined due to repository rule violations)` + `path: tools/push_via_api.py:17` 提示"remove secret from commit(s)"
 - **修复**：token 改成从环境变量 `GITHUB_TOKEN` / `GH_TOKEN` 读，或 `--token` CLI 参数；amend commit 覆盖后 force-with-lease 推上去
 - **铁律**：任何工具脚本里**不要硬编码 token / API key / 私有证书**——既不安全也会被 GitHub 阻断 push
+
+### 极简 yaml 解析行内注释陷阱（2026-08-26 实战）
+`ui/llm_status._read_yaml` 第一版只 `partition(":")` + `strip`，没处理**行内 # 注释**。当 yaml 写 `provider: ""  # 例: "openai"` 时，注释文字被当成 value，结果 `is_configured()` 误判 True。
+- **症状**：默认全空状态 is_configured() 返回 True，missing_fields() 返回空
+- **修复**：value 端要先 `split("#", 1)[0]` 砍注释，再 strip + 去引号
+- **铁律**：手写 yaml 解析必须处理 4 类边界——整行 `#` 注释 / 行内 `#` 注释 / 引号包裹 / 空字符串
 
 ### verify.py 用例数从 82 → 152（2026-08-24 实战）
 Phase 2 新增 11 个测试函数（§13-23，共 70 用例）。跑测试要 `PYTHONIOENCODING=utf-8`，否则 `_check()` 的 emoji 中文会撞 GBK codec（不是 bug，但中断 print 流导致用例数不准）。
