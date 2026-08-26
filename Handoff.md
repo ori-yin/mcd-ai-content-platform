@@ -77,7 +77,13 @@
 - **2026-08-24**：Phase 3.2 页面 + 多页——`pages/01_content_studio.py` 三栏主流程 + `pages/02-04_*.py` Phase 4 占位 + `app.py` 改 pages/ 自动发现入口（修复 st.Page 自引用递归 bug）；`tests/verify.py` 222 → 230 PASS
 - **2026-08-26**：Phase 4 完成——`pages/02_copy_diagnosis.py`（入口 B 单条诊断 + 规则/词语/相似/CTR/AI 改写五位一体）+ `pages/03_batch_evaluation.py`（入口 C CSV/Excel 批量评估 + 结果导出）+ `pages/04_historical_insights.py`（七 Tab 洞察：高效 Plan/高低词/Emoji/字数/相似/趋势/Owner）+ `services/batch_evaluation_service.py` 新建；01 渠道预览从占位升级到高保真（加品牌头部 + 渠道特征）；`tests/verify.py` 230 → 290 PASS（新增 §31/§32/§33 共 60 用例）；额外产出 `docs/feedback-ctr.md`（CTR 反哺闭环思考笔记）+ 评审并改写 `Downloads/PRD-content-gen-demo.md` v0.1 → v0.2
 - **2026-08-26**：CTR Adapter bug 修复——`adapters/ctr_predictor_adapter/_demo_pred` 在 `_bl_str="未知"` 时 `bl*100` 抛 TypeError，新增 bl=None 兜底分支；`services/ctr_prediction_service.predict_one` 重写，不构造 Candidate（避免 id=A/B/C 限制），直接走 row dict 路径；`services/copy_analysis_service.diagnose` 补 problems/suggestions 字段（调 diagnose_problems 拼装）
-- **下一步**：Phase 5（feedback.db + 上传页 + calibrate_baseline 自动化；详见 docs/feedback-ctr.md）
+- **2026-08-26**：Phase 5 完成——CTR 反哺闭环最小三件套 P0+P1+P2：
+  - **P0 record 指纹**：`core/schemas.task_signature()` SHA1 截 12 位（channel/coupon/plan_type/audience/stage/scene + 标题桶/正文桶）；`generation_service.build_record` 自动算；`sqlite_repository` 老库自动 `ALTER TABLE ADD COLUMN signature` + 建索引（PRAGMA table_info 检查）
+  - **P1 feedback 库**：`repositories/feedback_repository`（SQLite `data/feedback.db`）+ `services/feedback_service`（CSV/Excel 解析 + 列名别名 + 兜底签名）+ `pages/05_feedback`（上传 + 汇总 + 与 generation_records join 检查）
+  - **P2 baseline 校准自动化**：`tools/calibrate_baseline.py` 三段策略——`n_plans<5` 跳过 / `5≤n_plans<20` 指数滑动 α=0.3 / `n_plans≥20` 全量覆盖；输出 `data/ctr_baseline_v3.x.json` + `.bak` 备份；`--dry-run / --min-reach / --db / --baseline` CLI
+  - **token 教训**：`tools/push_via_api.py` 硬编码 GitHub token 触发 secret scanning 阻断 push，改成读环境变量 `GITHUB_TOKEN` / `GH_TOKEN` + `--token` 命令行参数；force-with-lease 推上去（远端 6 个重复 Phase 4 commit 被覆盖）
+  - verify.py 290 → **339 PASS, 0 FAIL**（新增 §34 record指纹 11 + §35/§36 feedback_repository + feedback_service 20 + §37 calibrate_baseline 16）
+- **下一步**：Phase 6（按 docs/feedback-ctr.md §5 待办：维度权重 yaml / 端到端流程串联 / 历史洞察签名关联）
 
 ---
 
@@ -123,13 +129,14 @@
 - [x] verify.py 290 PASS（新增 §31/§32/§33 共 60 用例）
 - [ ] pytest 版测试（CLAUDE.md §4.4 留待 Phase 5 接 feedback.db 一起补）
 
-### Phase 5 — CTR 反哺闭环（待启动，详见 docs/feedback-ctr.md）
-- [ ] `pages/05_feedback.py` — 真实结果录入/上传页
-- [ ] `data/feedback.db` schema（task_signature join 锚点）
-- [ ] `core/schemas.GenerationRecord` 加 signature 字段
-- [ ] `tools/calibrate_baseline.py` 升级接 feedback.db + 指数滑动
-- [ ] `data/ctr_baseline_v3.x.json` 多版本化
-- [ ] `config/dimension_weights.yaml`（Phase 6）
+### Phase 5 — CTR 反哺闭环（最小闭环 P0+P1+P2）✅ 已完成（2026-08-26）
+- [x] **P0 record 指纹**：`core/schemas.task_signature()` + `GenerationRecord.signature` + sqlite_repository 自动迁移加列 + 索引
+- [x] **P1 feedback 库**：`repositories/feedback_repository` + `services/feedback_service` + `pages/05_feedback.py`
+- [x] **P2 baseline 校准自动化**：`tools/calibrate_baseline.py` 三段策略 + `data/ctr_baseline_v3.x.json` 多版本化 + .bak 备份
+- [x] `tools/push_via_api.py` 修 token 泄露（改读环境变量）
+- [x] verify.py 339 PASS, 0 FAIL（新增 §34/§35/§36/§37 共 47 用例）
+- [ ] `config/dimension_weights.yaml`（留 Phase 6）
+- [ ] 历史洞察页签 signature 关联展示（留 Phase 6）
 
 ### 待业务确认（PRD §26，12 项）
 第一场 Demo 主渠道 / 人群-阶段-场景枚举值 / 字数上限 / 禁用词清单 / 校准状态 / 内网 LLM 接口 / 企微 1v1 预览支持 / 完整文案存储
@@ -200,6 +207,12 @@ open(p, 'wb').write(fixed)
 Python `b"..."` 字面量只能含 ASCII。中文字符串测试数据要 `.encode("utf-8")`：
 - 错：`b"title,body,channel\n标题,内容,APP Push\n"` → `SyntaxError`
 - 对：`"title,body,channel\n标题,内容,APP Push\n".encode("utf-8")`
+
+### GitHub secret scanning 阻断 push（2026-08-26 实战）
+`tools/push_via_api.py` 硬编码 GitHub PAT 触发了 GitHub 的 secret scanning 规则 → push 被 `remote rejected`。
+- **症状**：`error: failed to push some refs ... (push declined due to repository rule violations)` + `path: tools/push_via_api.py:17` 提示"remove secret from commit(s)"
+- **修复**：token 改成从环境变量 `GITHUB_TOKEN` / `GH_TOKEN` 读，或 `--token` CLI 参数；amend commit 覆盖后 force-with-lease 推上去
+- **铁律**：任何工具脚本里**不要硬编码 token / API key / 私有证书**——既不安全也会被 GitHub 阻断 push
 
 ### verify.py 用例数从 82 → 152（2026-08-24 实战）
 Phase 2 新增 11 个测试函数（§13-23，共 70 用例）。跑测试要 `PYTHONIOENCODING=utf-8`，否则 `_check()` 的 emoji 中文会撞 GBK codec（不是 bug，但中断 print 流导致用例数不准）。

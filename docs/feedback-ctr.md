@@ -184,15 +184,21 @@ ctr_prediction_service.predict_for_candidates 加 weights_version 参数
 | UI 不知道用的是哪版 | CTR 卡片明示 baseline_version / weights_version |
 | 业务方不理解"反哺是什么" | P4 加解释 tooltip：「本次预测基于 v3.x 共 N 条 Plan 数据」 |
 
-## 8. 下一步行动（按用户拍板）
+## 8. 状态：P0 / P1 / P2 已完成 ✅（2026-08-26）
 
-本 session 仅**写思考笔记**，不动代码。Phase 4 三个页面（02/03/04）继续做。
+最小闭环三件套已上线（commit `33b64e7`）：
 
-下一 session 候选任务：
-- **P0**：在 `GenerationRecord` 加 `signature` 字段 + verify.py 用例
-- **P1**：新建 `pages/05_feedback_upload.py` + `data/feedback.db` schema
-- **P2**：升级 `tools/calibrate_baseline.py` 接 feedback.db
-- **P3**：新建 `config/dimension_weights.yaml` + `train_dimension_weights.py`
+- **P0 record 指纹** ✅：`core/schemas.task_signature()` SHA1 截 12 位；`GenerationRecord.signature` 字段；`generation_service.build_record` 自动算；`sqlite_repository` 老库自动迁移加列 + 索引
+- **P1 feedback 库** ✅：`repositories/feedback_repository`（SQLite `data/feedback.db`）+ `services/feedback_service`（CSV/Excel 解析 + 列名别名 + 兜底签名）+ `pages/05_feedback`（上传 + 汇总 + join 检查）
+- **P2 baseline 校准自动化** ✅：`tools/calibrate_baseline.py` 三段策略（n_plans<5 跳过 / 5-20 指数滑动 α=0.3 / ≥20 全量）；输出 `data/ctr_baseline_v3.x.json` + .bak 备份
+- verify.py **339 PASS, 0 FAIL**
+
+## 9. 留待 Phase 6（下一 session 候选）
+
+- **P3**：`config/dimension_weights.yaml` + `train_dimension_weights.py`（维度权重动态调整）
+- **P4 历史洞察签名关联**：04 七 Tab 加 signature 视角——"这个 Plan 的回流 CTR 是多少 / 历史相似文案平均 CTR"
+- **end-to-end 串联**：01 创作 → 02 诊断 → 03 批量评估 → 05 回流 → tools/calibrate_baseline → 下一轮 01 创作用新 baseline（构成"日复一日"业务闭环）
+- **数据回灌 demo**：当 feedback.db 累计 ≥ 50 plan 后，`adapters/ctr_predictor_adapter` 的 `_demo_pred` 应优先用本地聚合 CTR 而不是写死的 2%
 
 ---
 
