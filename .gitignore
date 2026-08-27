@@ -53,3 +53,6 @@ temp/
 
 # L1 LightGBM 模型文件（pkl 二进制，重训可复现，不入 git）
 data/lgbm_model_*.pkl
+
+# 一次性 GitHub Contents API 推送脚本（不入 git，需要时本地重生成）
+tools/push_*_via_api.py
