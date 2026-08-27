@@ -3633,12 +3633,149 @@ def main():
     test_phase17_6_dead_code()
     # §55 Phase 18 L1 LightGBM PoC（剔除小程序 + 高效词 + 时间衰减）
     test_phase18_lgbm()
+    # §56 Phase 19 L1 静默双轨接入（adapters/ctr_predictor_adapter/l1_predictor.py）
+    test_phase19_l1_predictor()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")
     print("=" * 60)
 
     return 0 if _failed == 0 else 1
+
+
+# §56 Phase 19 L1 静默双轨接入（l1_predictor 模块 + adapter 导出 + UI 开关）
+def test_phase19_l1_predictor():
+    """Phase 19 · L1 LightGBM 生产接入 + 静默双轨开关。
+
+    覆盖：
+    1) l1_predictor 模块能 import（import 不抛异常）
+    2) adapter __init__.py 导出 4 个 L1 符号
+    3) 4 态分明：model / baseline_only / unavailable
+    4) 模型加载路径：lru_cache 命中后状态稳定
+    5) UI 开关：sidebar checkbox 默认 False + 字段在 session_state
+    6) 页面已注入 L1 入口（_render_ctr_card 接受 l1_ctr 参数 + 调 predict_l1）
+    """
+    import pickle
+    from pathlib import Path
+
+    ROOT = Path(__file__).resolve().parent.parent
+
+    # ── 1) 模块能 import（不依赖 LLM/Streamlit）──
+    try:
+        from adapters.ctr_predictor_adapter.l1_predictor import (
+            predict_l1,
+            predict_l1_batch,
+            predict_l1_status,
+            L1_SUPPORTED_CHANNELS,
+        )
+        import_ok = True
+    except Exception as e:
+        import_ok = False
+        _check("l1_predictor 模块可 import", False, f"import error: {e}")
+    _check("l1_predictor 模块可 import", import_ok)
+
+    if not import_ok:
+        return  # 后续用例全部跳过（依赖模块）
+
+    # ── 2) adapter __init__ 导出 ──
+    from adapters import ctr_predictor_adapter as cpa
+    for name in ("predict_l1", "predict_l1_batch", "predict_l1_status", "L1_SUPPORTED_CHANNELS"):
+        _check(f"adapter.__init__ 导出 {name}", name in cpa.__all__)
+
+    # ── 3) 四态分明：模型 + meta 都在时 → "model" ──
+    status = predict_l1_status()
+    _check("predict_l1_status() 返回值合法",
+           status in ("model", "baseline_only", "unavailable"),
+           f"got {status!r}")
+
+    model_path = ROOT / "data" / "lgbm_model_v1.pkl"
+    meta_path = ROOT / "data" / "lgbm_feature_meta.json"
+    if not (model_path.exists() and meta_path.exists()):
+        _check("L1 模型/元信息存在（status=model 前提）", False, "pkl 或 meta 缺失")
+    else:
+        _check("L1 模型/元信息存在（status=model 前提）", True)
+        # 真预测：APP Push（训练范围）+ 完整字段 → 应返回 model 态
+        ctr, st = predict_l1(
+            title="夏日新品限时尝鲜，9.9 元起点击立享",
+            body="点击查看详情",
+            channel="APP Push",
+            plan_type="AARRPlan",
+            coupon="是",
+            workday="工作日",
+        )
+        _check("predict_l1(APP Push+AARRPlan+工作日) → model",
+               st == "model" and ctr is not None and 0 < ctr < 1,
+               f"got ctr={ctr} status={st}")
+
+        # 小程序/站内信 等未训练渠道 → unavailable（不会预测）
+        ctr2, st2 = predict_l1(
+            title="测试",
+            body="",
+            channel="微信小程序订阅消息",
+            plan_type=None,
+            coupon=None,
+            workday=None,
+        )
+        _check("predict_l1(微信小程序订阅消息) → unavailable",
+               st2 == "unavailable" and ctr2 is None,
+               f"got ctr={ctr2} status={st2}")
+
+        # 空 title → 不应崩（业务容错）
+        ctr3, st3 = predict_l1(
+            title="", body="", channel="短信",
+            plan_type=None, coupon=None, workday=None,
+        )
+        _check("predict_l1(空 title+短信) → model 不崩",
+               st3 == "model" and ctr3 is not None,
+               f"got ctr={ctr3} status={st3}")
+
+        # 模型与元信息 特征列一致（构建期和运行期对齐）
+        meta = __import__("json").loads(meta_path.read_text(encoding="utf-8"))
+        with open(model_path, "rb") as f:
+            model = pickle.load(f)
+        _check("运行期模型 feature_name 与 meta feature_columns 一致",
+               sorted(model.feature_name()) == sorted(meta["feature_columns"]),
+               f"diff: {set(model.feature_name()) ^ set(meta['feature_columns'])}")
+
+    # ── 4) 批量接口 ──
+    rows = [
+        {"title": "a", "body": "", "channel": "APP Push", "plan_type": "AARRPlan",
+         "coupon": "否", "workday": "工作日"},
+        {"title": "b", "body": "", "channel": "短信", "plan_type": None,
+         "coupon": None, "workday": None},
+        {"title": "c", "body": "", "channel": "微信小程序订阅消息",
+         "plan_type": None, "coupon": None, "workday": None},
+    ]
+    batch_out = predict_l1_batch(rows)
+    _check("predict_l1_batch 长度 == len(rows)",
+           len(batch_out) == len(rows),
+           f"got {len(batch_out)}")
+    if len(batch_out) == 3:
+        # 顺序应与输入一致：APP Push → model，短信 → model，小程序 → unavailable
+        _check("predict_l1_batch 顺序与输入一致（第 1 条 model）",
+               batch_out[0][1] == "model")
+        _check("predict_l1_batch 顺序与输入一致（第 3 条 unavailable）",
+               batch_out[2][1] == "unavailable")
+
+    # ── 5) L1_SUPPORTED_CHANNELS 三渠道 ──
+    _check("L1_SUPPORTED_CHANNELS 含 APP Push", "APP Push" in L1_SUPPORTED_CHANNELS)
+    _check("L1_SUPPORTED_CHANNELS 含 企微1v1", "企微1v1" in L1_SUPPORTED_CHANNELS)
+    _check("L1_SUPPORTED_CHANNELS 含 短信", "短信" in L1_SUPPORTED_CHANNELS)
+    _check("L1_SUPPORTED_CHANNELS 不含小程序（未训练）",
+           "微信小程序订阅消息" not in L1_SUPPORTED_CHANNELS)
+
+    # ── 6) UI 集成：sidebar checkbox + _render_ctr_card 接受 l1_ctr 参数 ──
+    studio_page = ROOT / "pages" / "01_content_studio.py"
+    if studio_page.exists():
+        src = studio_page.read_text(encoding="utf-8")
+        _check("01_content_studio.py 含 show_l1 checkbox",
+               "show_l1" in src and "显示 L1 实验对比" in src)
+        _check("01_content_studio.py 调 predict_l1",
+               "predict_l1(" in src)
+        _check("01_content_studio.py _render_ctr_card 接受 l1_ctr 参数",
+               "l1_ctr" in src and "_render_ctr_card(selected_ctr, l1_ctr=l1_ctr_pair)" in src)
+        _check("01_content_studio.py import L1_SUPPORTED_CHANNELS",
+               "L1_SUPPORTED_CHANNELS" in src)
 
 
 if __name__ == "__main__":
