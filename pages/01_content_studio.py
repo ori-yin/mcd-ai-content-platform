@@ -35,6 +35,7 @@ from typing import Optional
 import streamlit as st
 
 from core.data_window import classify_today_type
+from core.text_classifier import classify_coupon_in_text
 from core.schemas import (
     TaskInput, Candidate, RuleResult, PredictionResult,
     TARGET_AUDIENCE, OBJECTIVES, CHANNELS, STAGES, SCENES,
@@ -175,27 +176,36 @@ def _render_left_column(channel_rules: dict) -> Optional[TaskInput]:
             )
             plan_type = st.selectbox(
                 "Plan 类型", PLAN_TYPES,
-                index=PLAN_TYPES.index(cur.get("plan_type", "普通 Plan"))
+                index=PLAN_TYPES.index(cur.get("plan_type", "AARRPlan"))
                 if cur.get("plan_type") in PLAN_TYPES else 0,
             )
 
         c3, c4 = st.columns(2)
         with c3:
             coupon = st.selectbox(
-                "是否用券", COUPON_FLAGS,
+                "实际是否用券", COUPON_FLAGS,
                 index=COUPON_FLAGS.index(cur.get("coupon", "否"))
                 if cur.get("coupon") in COUPON_FLAGS else 1,
+                help="plan 维度的用券标记（form 字段，主导 CTR）",
             )
         with c4:
+            text_has_coupon = st.selectbox(
+                "标题正文是否带券",
+                ["否", "是"],
+                index=1 if cur.get("text_has_coupon") == "是" else 0,
+                help="文案粒度——标题或正文是否含券词/折扣词/链接词（Phase 12 #11）",
+            )
+
+        # Phase 11 · 工作日类型（保留位）+ Phase 12 #10 SCENES 改选填（这里不显示 SCENES 由内容推断）
+        c5, _ = st.columns([1, 3])
+        with c5:
             # Phase 11 · 用户口径 2026-08-27：去掉日期选择器，只选工作日/非工作日
-            # 默认按今日自动算（classify_today_type 走 weekday 逻辑）
-            # 法定节假日 / 调休 暂不支持，详 Handoff §6.2 #12
             _default_today_type = classify_today_type()
             planned_send_date = st.selectbox(
                 "计划投放日期类型",
                 ["工作日", "非工作日"],
                 index=0 if _default_today_type == "工作日" else 1,
-                help="按计划投放当天选择：周一~周五=工作日，周六周日=非工作日；暂不支持法定节假日细分",
+                help="周一~周五=工作日，周六周日=非工作日；暂不支持法定节假日细分",
             )
 
         extra_requirements = st.text_area(
@@ -223,6 +233,7 @@ def _render_left_column(channel_rules: dict) -> Optional[TaskInput]:
             "coupon": coupon,
             "planned_send_date": str(planned_send_date) if planned_send_date else None,
             "extra_requirements": extra_requirements.strip(),
+            "text_has_coupon": text_has_coupon,
         }
         try:
             task = TaskInput.from_form(form_dict)
