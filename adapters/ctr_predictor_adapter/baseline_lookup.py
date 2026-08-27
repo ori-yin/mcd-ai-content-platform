@@ -58,11 +58,17 @@ def get_baseline_ctr(
     plan_type: Optional[str] = None,
     owner: Optional[str] = None,
     char_range: Optional[str] = None,
+    text_has_coupon: Optional[str] = None,
     baseline: Optional[dict] = None,
 ) -> Optional[float]:
-    """按优先级回退查找 CTR：标题字数 > 计划类型 > Owner > 用券 > 工作日 > 渠道整体。
+    """按优先级回退查找 CTR：标题字数 > 计划类型 > Owner > 用券(实际) > 文案含券词 > 工作日 > 渠道整体。
 
     来源：ctr_predictor.py:54-85
+    Phase 12 改动：
+    - L76 修 "普通Plan"→"常规Plan" bug（baseline JSON 实际用"常规Plan"，
+      之前这条永远走 fallback）
+    - 新增 text_has_coupon 参数（Phase 12 #11 用券双字段之一；
+      baseline JSON 暂无"渠道_x_文案含券词"维度 key → 走兜底）
     """
     ch = channel.strip()
     d = get_baseline(baseline=baseline).get("dimensions", {})
@@ -73,7 +79,7 @@ def get_baseline_ctr(
             d["渠道_x_标题字数"]["data"][f"{ch}_{char_range}"], "渠道_x_标题字数")
 
     # 渠道 × 计划类型
-    if plan_type in ("AARRPlan", "普通Plan") and f"{ch}_{plan_type}" in d.get("渠道_x_计划类型", {}).get("data", {}):
+    if plan_type in ("AARRPlan", "常规Plan") and f"{ch}_{plan_type}" in d.get("渠道_x_计划类型", {}).get("data", {}):
         return _apply_dimension_weights(
             d["渠道_x_计划类型"]["data"][f"{ch}_{plan_type}"], "渠道_x_计划类型")
 
@@ -82,11 +88,17 @@ def get_baseline_ctr(
         return _apply_dimension_weights(
             d["渠道_x_预算owner"]["data"][f"{ch}_{owner}"], "渠道_x_预算owner")
 
-    # 渠道 × 是否用券
+    # 渠道 × 实际是否用券（form 字段，plan 维度）
     if coupon in ("是", "否"):
         v = d.get("渠道_x_是否用券", {}).get("data", {}).get(f"{ch}_{coupon}")
         if v:
             return _apply_dimension_weights(v, "渠道_x_是否用券")
+
+    # 渠道 × 标题正文是否带券词（文案粒度，Phase 12 #11）
+    if text_has_coupon in ("是", "否"):
+        v = d.get("渠道_x_文案含券词", {}).get("data", {}).get(f"{ch}_{text_has_coupon}")
+        if v:
+            return _apply_dimension_weights(v, "渠道_x_文案含券词")
 
     # 渠道 × 工作日类型
     if workday in ("工作日", "非工作日"):
