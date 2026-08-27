@@ -153,12 +153,12 @@ class PredictionResult:
 # ── 任务输入（PRD §6.2 左栏 11 字段）─────────────────────────────────
 TARGET_AUDIENCE = ("常规大盘", "新品兴趣人群", "近期活跃用户", "沉默召回人群", "高价值会员")
 OBJECTIVES      = ("建立认知", "提升点击", "促进领券", "促进下单", "用户召回", "新品种草")
-CHANNELS        = ("APP Push", "企微 1v1", "短信", "站内信")
+CHANNELS        = ("APP Push", "企微1v1", "短信", "微信小程序订阅消息")  # Phase 12 #8/#9 用户拍板：删"站内信" + 加"微信小程序订阅消息" + "企微 1v1" → "企微1v1"（跟数据源连写）
 STAGES          = ("活动预热", "活动上线", "活动爆发", "活动收尾")
 SCENES          = ("早餐", "午餐", "下午茶", "晚餐", "夜宵", "周末聚会", "其他")
 TONES           = ("直接利益型", "场景种草型", "品牌互动型", "行动号召型")
 ACTIONS         = ("点击", "领券", "下单", "回流", "到店", "查看详情")
-PLAN_TYPES      = ("普通 Plan", "AARR Plan", "未知")
+PLAN_TYPES      = ("AARRPlan", "常规Plan", "未知")  # Phase 12 #9 用户拍板 2026-08-27：按数据源连写命名
 COUPON_FLAGS    = ("是", "否", "未知")
 
 
@@ -166,12 +166,17 @@ COUPON_FLAGS    = ("是", "否", "未知")
 class TaskInput:
     """左栏"定义经营任务"输入（PRD §6.2）。
 
-    必填 5 项：audience / channel / stage / scene / tone
+    必填 4 项：audience / channel / stage / tone
+              ↑ scene 从必填改为选填（Phase 12 #10 用户拍板 2026-08-27：
+                场景由文案内容推断；form SCENES 字段保留但允许空）
     可选 4 项（Demo 阶段·灰态）：product_benefit / objective
               ↑ 这两个前端 disabled，后端空字符串兜底，
                 generation_service 在缺失时走 Demo 默认占位，
                 不报错、不阻塞。等领导 demo 后业务确认枚举值再启用（PRD §26 #1/#2）。
-    可选 4 项：expected_action / plan_type / coupon / planned_send_date
+    可选 5 项：expected_action / plan_type / coupon / planned_send_date / scene
+    用券双字段（Phase 12 #11 用户拍板）：
+      - coupon          "实际是否用券"（form 字段，plan 维度）
+      - text_has_coupon "标题正文是否带券"（文案推断，文案粒度）
     附加：extra_requirements
 
     字段名沿用 PRD §9.1 输入 schema（snake_case），便于未来落库 JSON。
@@ -179,23 +184,24 @@ class TaskInput:
     audience: str
     channel: str
     stage: str
-    scene: str
     tone: str
     expected_action: str = ""
     plan_type: str = "未知"
-    coupon: str = "未知"
+    coupon: str = "未知"           # "实际是否用券"（form 字段，plan 维度）
     planned_send_date: Optional[str] = None   # 工作日类型标签："工作日"|"非工作日"（Phase 11 · 2026-08-27 用户简化拍板）。
                                               # 历史：v3.1 之前是 ISO 日期字符串；Handoff §6.2 #12 用户口径
                                               #   不要日期选择器，改为 selectbox 2 值；字段名保留以避免破坏
                                               #   records.db 老 schema 兼容（下游 baseline_lookup 走 row["工作日类型"]
                                               #   不消费本字段，实际是孤儿字段）。
+    scene: str = ""                # Phase 12 #10 用户拍板：scene 从必填改为选填
     extra_requirements: str = ""
     # Demo 阶段灰态字段必须在尾部（dataclass 要求：no-default 字段在前）
     product_benefit: str = ""     # 前端 disabled，后端空串兜底
     objective: str = ""           # 前端 disabled，后端空串兜底
+    text_has_coupon: str = ""     # Phase 12 #11 用户拍板："标题正文是否带券"（文案推断）
 
     REQUIRED_FIELDS: tuple = (
-        "audience", "channel", "stage", "scene", "tone",
+        "audience", "channel", "stage", "tone",
     )
 
     def __post_init__(self):
@@ -223,13 +229,14 @@ class TaskInput:
             channel=form_data.get("channel") or "",
             objective=form_data.get("objective") or "",
             stage=form_data.get("stage") or "",
-            scene=form_data.get("scene") or "",
             tone=form_data.get("tone") or "",
             expected_action=form_data.get("expected_action") or "",
             plan_type=form_data.get("plan_type") or "未知",
             coupon=form_data.get("coupon") or "未知",
             planned_send_date=form_data.get("planned_send_date") or None,
+            scene=form_data.get("scene") or "",
             extra_requirements=(form_data.get("extra_requirements") or "").strip(),
+            text_has_coupon=form_data.get("text_has_coupon") or "",
         )
 
 
