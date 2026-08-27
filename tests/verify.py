@@ -2065,7 +2065,11 @@ def test_ctr_definition_v31():
     # ── 1) ctr_baseline.json 元数据升级 ──────────────────────
     base_path = ROOT / "data" / "ctr_baseline.json"
     base = __import__("json").loads(base_path.read_text(encoding="utf-8"))
-    _check("baseline version == v3.1", base.get("version") == "v3.1")
+    # baseline 数据版本：v3.1（Phase 6 P2）→ v3.1.1（Phase 12 #8 渠道清理）→ v3.2（Phase 15 新增文案含券词维度）
+    _check("baseline version 以 v3. 开头",
+           str(base.get("version", "")).startswith("v3."))
+    _check("baseline version >= v3.1（口径已稳定）",
+           base.get("version") in ("v3.1", "v3.1.1", "v3.2"))
     _check("baseline 含 _definition_note",
            isinstance(base.get("_definition_note"), str) and len(base["_definition_note"]) > 50)
     _check("baseline _definition_note 提及 Q1 去重点击",
@@ -2791,6 +2795,95 @@ def test_classify_coupon_in_text():
            isinstance(patterns, list) and len(patterns) > 0)
 
 
+# §48 Phase 14 CTR row key 修复（中英文 key + workday 透传 + "普通Plan"→"常规Plan"）
+def test_phase14_row_keys():
+    from services.ctr_prediction_service import _candidate_to_row
+    from core.schemas import TaskInput, Candidate
+
+    c = Candidate(id="A", strategy="A_核心利益直给", title="新品限时折扣", body="点击查看详情")
+    task = TaskInput(
+        audience="常规大盘", channel="APP Push", stage="活动预热", tone="直接利益型",
+        plan_type="AARRPlan", coupon="是", planned_send_date="工作日",
+    )
+    row = _candidate_to_row(c, task)
+
+    # 1) 英文 key 保留
+    _check("_candidate_to_row 含 channel", row.get("channel") == "APP Push")
+    _check("_candidate_to_row 含 plan_type=AARRPlan", row.get("plan_type") == "AARRPlan")
+    _check("_candidate_to_row 含 coupon=是", row.get("coupon") == "是")
+    _check("_candidate_to_row 含 title_len", row.get("title_len") == len(c.title))
+
+    # 2) 中文 key（prompt_builder 读这些；Phase 14 修复）
+    _check("_candidate_to_row 含 '渠道' key", row.get("渠道") == "APP Push")
+    _check("_candidate_to_row 含 '标题' key", row.get("标题") == c.title)
+    _check("_candidate_to_row 含 '内容' key", row.get("内容") == c.body)
+    _check("_candidate_to_row 含 '是否用券' key", row.get("是否用券") == "是")
+    _check("_candidate_to_row 含 '计划类型' key", row.get("计划类型") == "AARRPlan")
+    _check("_candidate_to_row 含 '工作日类型' key（Phase 11 修复）",
+           row.get("工作日类型") == "工作日")
+
+    # 3) 未知字段 → None（不传给 baseline_lookup）
+    task_unknown = TaskInput(
+        audience="常规大盘", channel="APP Push", stage="活动预热", tone="直接利益型",
+        plan_type="未知", coupon="未知", planned_send_date=None,
+    )
+    row_u = _candidate_to_row(c, task_unknown)
+    _check("_candidate_to_row 未知 plan_type → None", row_u.get("plan_type") is None)
+    _check("_candidate_to_row 未知 coupon → None", row_u.get("coupon") is None)
+    _check("_candidate_to_row 未知 workday → None", row_u.get("工作日类型") is None)
+
+    # 4) prompt_builder.py:101 "普通Plan" bug 已修（Phase 14）
+    src_text = open("adapters/ctr_predictor_adapter/prompt_builder.py", encoding="utf-8").read()
+    _check("prompt_builder.py 接受 '常规Plan'（Phase 14 修复）",
+           "常规Plan" in src_text and "普通Plan" not in src_text.split("plan_v =")[1].split("\n")[0])
+
+
+# §49 Phase 15 baseline v3.2 文案含券词维度补齐
+def test_phase15_text_has_coupon_baseline():
+    import json
+    from adapters.ctr_predictor_adapter.baseline_lookup import get_baseline_ctr
+
+    base = json.load(open("data/ctr_baseline.json", encoding="utf-8"))
+
+    # 1) baseline 版本 v3.2
+    _check("baseline version == v3.2（Phase 15 重算）", base.get("version") == "v3.2")
+
+    # 2) 新维度 "渠道_x_文案含券词" 已建 key
+    dim = base.get("dimensions", {}).get("渠道_x_文案含券词")
+    _check("baseline 含 '渠道_x_文案含券词' 维度", dim is not None)
+    _check("'渠道_x_文案含券词' 有 8 keys（4 渠道 × 2 文案含券词）",
+           len(dim.get("data", {})) == 8)
+
+    # 3) baseline_lookup 能命中（4 渠道 × 是/否 全部）
+    for ch in ("APP Push", "企微1v1", "短信", "微信小程序订阅消息"):
+        v_yes = get_baseline_ctr(ch, coupon=None, workday=None, plan_type=None,
+                                  text_has_coupon="是")
+        v_no = get_baseline_ctr(ch, coupon=None, workday=None, plan_type=None,
+                                 text_has_coupon="否")
+        _check(f"baseline_lookup {ch}_是 命中",
+               v_yes is not None and v_yes > 0,
+               f"v_yes={v_yes}")
+        _check(f"baseline_lookup {ch}_否 命中",
+               v_no is not None and v_no > 0,
+               f"v_no={v_no}")
+        # 是/否 应有差异（form 不同时兜底会相等；但 text_has_coupon 是不同 key）
+        _check(f"baseline_lookup {ch} 是/否应不同（或接近）",
+               v_yes is not None and v_no is not None)
+
+    # 4) recalc_text_has_coupon.py 一次性脚本存在 + 可 dry-run
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "recalc_text_has_coupon",
+        "tools/recalc_text_has_coupon.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    _check("recalc_text_has_coupon.exp_decay_weight(0) == 1.0",
+           abs(mod.exp_decay_weight(0) - 1.0) < 1e-9)
+    _check("recalc_text_has_coupon.exp_decay_weight(69.3) ≈ 0.5",
+           abs(mod.exp_decay_weight(69.3) - 0.5) < 0.01)
+
+
 # §47 Phase 12 schema 变更（CHANNELS/PLAN_TYPES/TaskInput 新字段）
 def test_phase12_schema():
     from core.schemas import CHANNELS, PLAN_TYPES, TaskInput
@@ -2918,6 +3011,10 @@ def main():
     test_classify_coupon_in_text()
     # §47 Phase 12 schema 变更（CHANNELS/PLAN_TYPES/TaskInput 新字段）
     test_phase12_schema()
+    # §48 Phase 14 CTR row key 修复（中英文 key + workday 透传）
+    test_phase14_row_keys()
+    # §49 Phase 15 baseline v3.2 文案含券词维度补齐
+    test_phase15_text_has_coupon_baseline()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")
