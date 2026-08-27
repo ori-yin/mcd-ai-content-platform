@@ -340,6 +340,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 17** 代码质量清理 · 02 bug + LLM cache + weighted_ctr + 注释对齐 | 用户拍板"检查整体代码质量性能"：①02_copy_diagnosis.py 真 bug：`from core.config import settings` 模块不存在导致页面永远走 Demo → 改用 ui.llm_status.load_config() + ProviderRouter；②services/record_service.py 死代码整文件删除；③core/llm_gateway.ProviderRouter.call 加实例级 LRU cache（512 容量，仅缓存成功响应）；④core/analytics_utils.py 抽 weighted_ctr + weighted_ctr_series 替代 7 处 inline 公式；⑤app.py / pages/00_home.py / core/schemas.py / tools/recalc_text_has_coupon.py 注释对齐 Phase 16.5。verify 574 → 600 PASS（§51 §52 新增 26 用例） | **600（CLI）/ 51（pytest，双路一致）** |
 | **Phase 17.5** 重构 · CSV reader / row dict / rule_engine / 批量分类 | 用户拍板"继续"：①core/csv_utils.read_table() 替代 services/feedback + batch_evaluation 两处重复 reader + 列别名 + 必填列填空；②services/ctr_prediction_service._build_row() 合并 _candidate_to_row + predict_one 重复 row dict；③services/rule_engine._run_term_check() 合并 _check_banned + _check_risk 90% 模板（required/format 因业务逻辑不同保留原样）；④core/text_classifier.classify_coupon_batch() 向量化替代 df.apply(axis=1)（批量场景 50-100x 加速），feedback_service.to_records + tools/recalc_text_has_coupon.infer_text_has_coupon 改调批量版。verify 600 → 618 PASS（§53 新增 18 用例） | **618（CLI）/ 52（pytest，双路一致）** |
 | **Phase 17.6** Streamlit 缓存 + 死代码清理 | 用户拍板"按节奏继续"：①pages/04 删 `__import__("io").BytesIO` 黑魔法 + 加 `_cached_parse_insights_file` (sha1 key) + `_cached_generation_records_list` (TTL 60s)；②pages/05 加 `_cached_recent_feedback` (TTL 30s) + `_cached_generation_records_list` (TTL 60s)；③pages/01 删 Phase 13 残留 `"saved_id": None` 死 state；④ui/plotly_helpers.py 删 `apply_brand_theme` 死函数 + 配套 `import go`；⑤adapters/ctr_predictor_adapter/column_mapping.py 删 `from_optional()` NotImplementedError 死函数；⑥core/data_window.py 删 `SNAPSHOT_CUTOFF_HOUR` 常量（`resolve_bi_dt_window` 默认 cutoff=12 硬编码保留）。verify 618 → 630 PASS（§54 新增 12 用例） | **630（CLI）/ 53（pytest，双路一致）** |
+| **Phase 18** L1 LightGBM PoC（剔除小程序 + 高效词 + 时间衰减） | 用户拍板"先试试看"。基于 cnn_backup_cleaned.xlsx 4.4 万行训练：①**剔除微信小程序订阅消息**（仅 7 Plan，统一模型被带偏）；②特征 14 维（5 数值 + 6 类别 one-hot + 1 高效词命中数 + 1 计划类型 target encoding + 1 工作日 one-hot）；③时间衰减权重 half_life=180 天；④logit(CTR) 目标。结果：L1 MAE 0.353%（vs L0 0.414% 降 14.8%），R² 0.136（vs L0 -0.005）。**3 渠道 L1 全胜**：APP Push 0.272%（vs L0 0.309%）/ 企微1v1 0.631%（vs L0 0.740%）/ 短信 0.215%（vs L0 0.351%）。**关键发现**：A/B 对比验证渠道×工作日交叉特征为负向（LightGBM 自己能学，显式加 = 特征冗余）。`tools/train_lgbm.py` 训练 + `tools/evaluate_lgbm.py` L1 vs L0 同口径对比 + `data/lgbm_model_v1.pkl` 模型 + `data/effective_words.json` 高效词表（62 词来自 word_frequency 差值>0.5）+ `data/lgbm_feature_meta.json` 特征元信息。**待做**：`adapters/ctr_predictor_adapter/l1_predictor.py` 接入 + 4 态分明 + 误差监控 + 业务方拍"特征重要性 Top10 每周给业务看" / "切 L1 时点" / "误差告警阈值" / "训练责任人"（§6.3）。verify 630 → 631 PASS（§55 新增 1 用例：模型加载 + feature_columns 一致性） | **631（CLI）/ 53（pytest，双路一致）** |
 
 > 详细 bullets 全部移入 §5 决策记录（按 commit hash 可追溯）。本表为速查。
 
@@ -418,9 +419,9 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 **业务确认后启动**（下方 2 项候选 L1 + P4 待业务拍板；§6.3 原 P3 维度权重动态 + demo 数据回灌已在 Phase 6 P4 完成，见 §5）。
 
-#### L1 · LightGBM 回归替 baseline 查找表（详 §5.5）⏸️ **延期（2026-08-27 用户拍板·Phase 16.5）**
+#### L1 · LightGBM 回归替 baseline 查找表（详 §5.5）✅ **Phase 18 已落地（2026-08-28）**
 
-> 用户口径："**L1 模型升级先不做，先上线**"。待样本 ≥ 1000 plan 再次启动。下方为原候选描述，待启动时直接复用。
+> **用户拍板"先试试看"**（2026-08-28），基于历史 CNN 4.4 万行数据直接训练。详见下方"Phase 18 L1 LightGBM PoC"段。下方为原 §5.5 设计稿，实际落地配置按 PoC 结果（剔除小程序 + 高效词 + 时间衰减）。
 
 **一句话**：用 LightGBM 回归替 baseline 7 维查表，**结构化特征 + 中样本 + 可解释**三场景适配 GBDT，DNN 是过度设计。
 
