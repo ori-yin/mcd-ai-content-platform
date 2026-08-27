@@ -2678,6 +2678,71 @@ def test_demo_feedback():
         _sh.rmtree(tmp, ignore_errors=True)
 
 
+# §45 Phase 11 工作日/非工作日 2 值分类（Handoff §6.2 #12 用户简化拍板 2026-08-27）
+# 口径：周一~周五 → "工作日"；周六、周日 → "非工作日"；不处理法定节假日/调休
+def test_workday_classification():
+    from datetime import date, datetime as _dt
+    from core.data_window import classify_date_type, classify_today_type
+
+    # ── 1) 周一 ~ 周五 → 工作日 ──
+    # 用具体已知日期：2026-08-24 是周一
+    _check("2026-08-24 周一 → 工作日",
+           classify_date_type("2026-08-24") == "工作日")
+    _check("2026-08-25 周二 → 工作日",
+           classify_date_type("2026-08-25") == "工作日")
+    _check("2026-08-26 周三 → 工作日",
+           classify_date_type("2026-08-26") == "工作日")
+    _check("2026-08-27 周四 → 工作日",
+           classify_date_type("2026-08-27") == "工作日")
+    _check("2026-08-28 周五 → 工作日",
+           classify_date_type("2026-08-28") == "工作日")
+
+    # ── 2) 周六、周日 → 非工作日 ──
+    _check("2026-08-29 周六 → 非工作日",
+           classify_date_type("2026-08-29") == "非工作日")
+    _check("2026-08-30 周日 → 非工作日",
+           classify_date_type("2026-08-30") == "非工作日")
+
+    # ── 3) 多输入类型 ──
+    _check("date 对象输入 → 工作日",
+           classify_date_type(date(2026, 8, 24)) == "工作日")
+    _check("datetime 对象输入 → 非工作日",
+           classify_date_type(_dt(2026, 8, 29, 12, 0)) == "非工作日")
+    _check("datetime 对象（带时间部分）→ 工作日",
+           classify_date_type(_dt(2026, 8, 24, 23, 59)) == "工作日")
+
+    # ── 4) 边界：weekday 临界值（5=周六, 6=周日）──
+    _check("weekday=5 周六 → 非工作日",
+           classify_date_type(date(2026, 8, 29)) == "非工作日")
+    _check("weekday=6 周日 → 非工作日",
+           classify_date_type(date(2026, 8, 30)) == "非工作日")
+    _check("weekday=4 周五 → 工作日",
+           classify_date_type(date(2026, 8, 28)) == "工作日")
+
+    # ── 5) 跨年场景（不变性）──
+    _check("2025-12-29 周一 → 工作日",
+           classify_date_type("2025-12-29") == "工作日")
+    _check("2027-01-01 周五 → 工作日（2027 元旦暂未做节假日处理，按 weekday 兜底）",
+           classify_date_type("2027-01-01") == "工作日")
+    _check("2027-01-02 周六 → 非工作日",
+           classify_date_type("2027-01-02") == "非工作日")
+
+    # ── 6) classify_today_type 返回值合法 ──
+    today_type = classify_today_type()
+    _check("classify_today_type() 返回值 ∈ {'工作日','非工作日'}",
+           today_type in ("工作日", "非工作日"))
+
+    # ── 7) 错误格式字符串 → ValueError（防御性）──
+    try:
+        classify_date_type("not-a-date")
+        _check("错误格式字符串应抛 ValueError", False, "未抛异常")
+    except ValueError:
+        _check("错误格式字符串抛 ValueError", True)
+    except Exception as e:
+        _check(f"错误格式字符串应抛 ValueError 而非 {type(e).__name__}", False,
+               f"got {type(e).__name__}: {e}")
+
+
 # ============================================================
 # Main
 # ============================================================
@@ -2748,6 +2813,8 @@ def main():
     test_dimension_weights()
     # §44 demo 数据回灌（Handoff §6.3 demo 回灌 · Phase-B）
     test_demo_feedback()
+    # §45 Phase 11 工作日/非工作日 2 值分类（Handoff §6.2 #12 用户简化拍板）
+    test_workday_classification()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")
