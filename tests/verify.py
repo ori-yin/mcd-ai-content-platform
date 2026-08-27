@@ -3213,6 +3213,126 @@ def test_phase17_weighted_ctr_utility():
            f"残留:\n{r1.stdout}")
 
 
+# §53 Phase 17.5 重构（CSV reader / row dict / rule_engine / 批量分类）
+def test_phase17_5_refactors():
+    """Phase 17.5 · 用户拍板"继续"后的清理：
+
+    - core/csv_utils.read_table() 替代 services/feedback + batch_evaluation 两处重复 reader
+    - core/text_classifier.classify_coupon_batch() 向量化替代 df.apply(axis=1)
+    - services/rule_engine._run_term_check() 合并 _check_banned + _check_risk
+    - services/ctr_prediction_service._build_row() 合并 _candidate_to_row + predict_one
+    """
+    import io as _io
+    import pandas as _pd
+    from core.csv_utils import read_table
+    from core.text_classifier import (
+        classify_coupon_in_text, classify_coupon_batch,
+    )
+
+    # ── 1) csv_utils.read_table 扩展名分发 + 列别名 ──
+    # CSV 路径（用 ASCII 列名测）
+    csv_bytes = b"title,body,channel\nhi,hello,APP Push\n"
+    df_csv = read_table(csv_bytes, "test.csv",
+                        col_aliases={"title": ["title"], "body": ["body"],
+                                     "channel": ["channel"]},
+                        required_cols=("title", "body", "channel"))
+    _check("read_table CSV 识别 title/body/channel",
+           set(["title", "body", "channel"]).issubset(df_csv.columns))
+
+    # 别名匹配（不同大小写 → 不匹配；用混合大小写别名）
+    df_alias = read_table(b"Title,Body,Channel\nfoo,bar,baz",
+                          "test.csv",
+                          col_aliases={"title": ["title"], "body": ["body"],
+                                       "channel": ["channel"]},
+                          required_cols=("title", "body", "channel"))
+    _check("read_table 别名精确小写匹配",
+           df_alias.loc[0, "title"] == "foo")
+
+    # 缺列填空
+    df_fill = read_table(b"foo,bar\n1,2", "test.csv",
+                         required_cols=("title", "body"))
+    _check("read_table 缺 required_cols 自动填空",
+           "title" in df_fill.columns and "body" in df_fill.columns)
+
+    # ── 2) classify_coupon_batch 与逐行版语义一致 ──
+    titles = _pd.Series(["限时 5 折", "新品上市", "立减 10 元", "新菜单"])
+    bodies = _pd.Series(["详情点击", "欢迎品尝", "快来抢购", "看看"])
+    batch_out = classify_coupon_batch(titles, bodies)
+    single_out = [classify_coupon_in_text(t, b) for t, b in zip(titles, bodies)]
+    _check("classify_coupon_batch 与单条版语义一致",
+           batch_out == single_out,
+           f"batch={batch_out}, single={single_out}")
+    _check("classify_coupon_batch 长度 == 输入",
+           len(batch_out) == len(titles))
+    _check("classify_coupon_batch 至少识别出 2 条含券",
+           batch_out.count("是") >= 2)
+
+    # ── 3) rule_engine._run_term_check 三态 ──
+    from services.rule_engine import _run_term_check
+    # 空词表 → 空 PASS
+    items_empty = _run_term_check([], "some text", "cat",
+                                  "fail", "no terms", "pass", "hit {terms}")
+    _check("_run_term_check 空词表 → pass",
+           items_empty[0].severity == "pass" and items_empty[0].message == "no terms")
+
+    # 命中 → fail + suggestion
+    items_hit = _run_term_check(["bad", "evil"], "this is bad",
+                                "cat", "fail", "none", "pass",
+                                "hit {terms}", suggestion="改写")
+    _check("_run_term_check 命中 → fail + suggestion",
+           items_hit[0].severity == "fail"
+           and "bad" in items_hit[0].message
+           and items_hit[0].suggestion == "改写")
+
+    # 未命中 → pass
+    items_miss = _run_term_check(["bad"], "clean text",
+                                 "cat", "warn", "none", "all clean", "hit {terms}")
+    _check("_run_term_check 未命中 → pass",
+           items_miss[0].severity == "pass" and items_miss[0].message == "all clean")
+
+    # ── 4) _check_banned / _check_risk 仍工作（走 _run_term_check）──
+    from services.rule_engine import _check_banned, _check_risk
+    items_banned = _check_banned("折扣优惠", "新品上市",
+                                 {"banned_terms": ["优惠"]})
+    _check("_check_banned 命中优惠 → fail",
+           items_banned[0].severity == "fail")
+    items_risk = _check_risk("限时特惠", "新品上市",
+                             {"risk_terms": ["特惠"]})
+    _check("_check_risk 命中特惠 → warn",
+           items_risk[0].severity == "warn")
+    # 空词表 → pass
+    items_empty2 = _check_banned("x", "y", {"banned_terms": []})
+    _check("_check_banned 空词表 → pass",
+           items_empty2[0].severity == "pass")
+
+    # ── 5) ctr_prediction_service._build_row 中英文 key 双输出 ──
+    from services.ctr_prediction_service import _build_row
+    from core.schemas import TaskInput, Candidate
+    task = TaskInput(audience="x", channel="APP Push",
+                     stage="y", tone="z", coupon="是", plan_type="常规Plan",
+                     planned_send_date="工作日")
+    cand = Candidate(id="A", strategy="s", title="t1", body="b1")
+    row = _build_row(title="t1", body="b1", channel="APP Push",
+                     plan_v="常规Plan", coupon_v="是", workday_v="工作日",
+                     task=task, candidate=cand)
+    _check("_build_row 含英文 key（channel/title/body）",
+           all(k in row for k in ("channel", "title", "body")))
+    _check("_build_row 含中文 key（渠道/标题/内容）",
+           all(k in row for k in ("渠道", "标题", "内容")))
+    _check("_build_row 计划类型透传",
+           row["plan_type"] == "常规Plan" and row["计划类型"] == "常规Plan")
+    _check("_build_row 工作日透传",
+           row["工作日类型"] == "工作日")
+    _check("_build_row 含 _signature",
+           isinstance(row["_signature"], str) and len(row["_signature"]) == 12)
+
+    # ── 6) predict_one 走 _build_row 后仍出 PredictionResult ──
+    from services.ctr_prediction_service import predict_one
+    res = predict_one(title="测试", body="详情", channel="APP Push")
+    _check("predict_one 返回 PredictionResult",
+           hasattr(res, "result_type") and hasattr(res, "pred_ctr"))
+
+
 # §47 Phase 12 schema 变更（CHANNELS/PLAN_TYPES/TaskInput 新字段）
 def test_phase12_schema():
     from core.schemas import CHANNELS, PLAN_TYPES, TaskInput
@@ -3350,6 +3470,8 @@ def main():
     test_phase17_quality_cleanup()
     # §52 Phase 17 weighted_ctr 合并到 core.analytics_utils
     test_phase17_weighted_ctr_utility()
+    # §53 Phase 17.5 代码质量清理（CSV reader / row dict / rule_engine / jieba 批量）
+    test_phase17_5_refactors()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

@@ -189,60 +189,64 @@ def _check_required(title: str, body: str, channel: str, brand_rules: dict) -> l
     return items
 
 
+# ── 通用词表检查（Phase 17.5 抽）────────────────────────────────
+def _run_term_check(
+    terms: list,
+    text: str,
+    category: str,
+    hit_severity: str,
+    empty_msg: str,
+    pass_msg: str,
+    hit_msg: str,
+    suggestion: str = "",
+) -> list:
+    """Phase 17.5 抽：_check_banned / _check_risk 共享的"取词表 → 遍历命中"模板。
+
+    - terms 空 → 返回 [RuleItem(category, PASS, empty_msg)]
+    - 命中 → 返回 [RuleItem(category, hit_severity, hit_msg)] + 可选 suggestion
+    - 未命中 → 返回 [RuleItem(category, PASS, pass_msg)]
+    """
+    if not terms:
+        return [RuleItem(category=category, severity=SEVERITY_PASS, message=empty_msg)]
+    hits = [t for t in terms if t in text]
+    if hits:
+        item = RuleItem(
+            category=category,
+            severity=hit_severity,
+            message=hit_msg.format(terms=", ".join(hits)),
+        )
+        if suggestion:
+            item.suggestion = suggestion
+        return [item]
+    return [RuleItem(category=category, severity=SEVERITY_PASS, message=pass_msg)]
+
+
 # ── 禁词检查 ──────────────────────────────────────────────────────────
 def _check_banned(title: str, body: str, brand_rules: dict) -> list:
-    items = []
-    banned = brand_rules.get("banned_terms", [])
-    if not banned:
-        return [RuleItem(
-            category="禁词",
-            severity=SEVERITY_PASS,
-            message="当前无禁词",
-        )]
-    text = title + body
-    hits = [t for t in banned if t in text]
-    if hits:
-        items.append(RuleItem(
-            category="禁词",
-            severity=SEVERITY_FAIL,
-            message=f"命中禁词：{', '.join(hits)}",
-            suggestion="请删除或替换为中性表达",
-        ))
-    else:
-        items.append(RuleItem(
-            category="禁词",
-            severity=SEVERITY_PASS,
-            message="未命中禁词",
-        ))
-    return items
+    return _run_term_check(
+        terms=brand_rules.get("banned_terms", []),
+        text=title + body,
+        category="禁词",
+        hit_severity=SEVERITY_FAIL,
+        empty_msg="当前无禁词",
+        pass_msg="未命中禁词",
+        hit_msg="命中禁词：{terms}",
+        suggestion="请删除或替换为中性表达",
+    )
 
 
 # ── 风险词检查 ────────────────────────────────────────────────────────
 def _check_risk(title: str, body: str, brand_rules: dict) -> list:
-    items = []
-    risks = brand_rules.get("risk_terms", [])
-    if not risks:
-        return [RuleItem(
-            category="风险词",
-            severity=SEVERITY_PASS,
-            message="当前无风险词",
-        )]
-    text = title + body
-    hits = [t for t in risks if t in text]
-    if hits:
-        items.append(RuleItem(
-            category="风险词",
-            severity=SEVERITY_WARN,
-            message=f"命中风险词：{', '.join(hits)}",
-            suggestion="可考虑用更安全的中性表达",
-        ))
-    else:
-        items.append(RuleItem(
-            category="风险词",
-            severity=SEVERITY_PASS,
-            message="未命中风险词",
-        ))
-    return items
+    return _run_term_check(
+        terms=brand_rules.get("risk_terms", []),
+        text=title + body,
+        category="风险词",
+        hit_severity=SEVERITY_WARN,
+        empty_msg="当前无风险词",
+        pass_msg="未命中风险词",
+        hit_msg="命中风险词：{terms}",
+        suggestion="可考虑用更安全的中性表达",
+    )
 
 
 # ── 标点 / 格式检查 ────────────────────────────────────────────────────

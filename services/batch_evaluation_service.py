@@ -25,6 +25,7 @@ import pandas as pd
 from core.schemas import CHANNELS, RuleResult, PredictionResult
 from services.rule_engine import load_rules, check_one
 from services.ctr_prediction_service import predict_one
+from core.csv_utils import read_table
 
 
 # 列名别名（兼容多种命名）
@@ -41,41 +42,13 @@ def parse_batch_file(file_bytes: bytes, filename: str = "") -> pd.DataFrame:
     """读 CSV/Excel 文件 → DataFrame。自动识别 .csv / .xlsx。
 
     返回的列：title / body / channel（其他列原样保留）。
+    Phase 17.5 改：底层走 core.csv_utils.read_table()。
     """
-    name = (filename or "").lower()
-    if name.endswith(".csv"):
-        df = pd.read_csv(io.BytesIO(file_bytes))
-    elif name.endswith((".xlsx", ".xls")):
-        df = pd.read_excel(io.BytesIO(file_bytes))
-    else:
-        # 默认按 csv 试一次
-        try:
-            df = pd.read_csv(io.BytesIO(file_bytes))
-        except Exception:
-            df = pd.read_excel(io.BytesIO(file_bytes))
-
-    # 列名标准化
-    rename = {}
-    lower_cols = {str(c).strip().lower(): c for c in df.columns}
-    for target, aliases in _COL_ALIASES.items():
-        if target in df.columns:
-            continue
-        for a in aliases:
-            if a.lower() in lower_cols:
-                rename[lower_cols[a.lower()]] = target
-                break
-    if rename:
-        df = df.rename(columns=rename)
-
-    # 缺列填空
-    for col in ("title", "body", "channel"):
-        if col not in df.columns:
-            df[col] = ""
-
-    # 字符串化（防止 int64 等混入）
-    for col in ("title", "body", "channel"):
-        df[col] = df[col].astype(str).fillna("").str.strip()
-    return df
+    return read_table(
+        file_bytes, filename,
+        col_aliases=_COL_ALIASES,
+        required_cols=("title", "body", "channel"),
+    )
 
 
 def _build_suggestion(rule: RuleResult, ctr: PredictionResult) -> str:

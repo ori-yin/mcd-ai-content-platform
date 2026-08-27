@@ -22,6 +22,7 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 
 from core.schemas import task_signature as _core_task_signature, TaskInput
+from core.csv_utils import read_table
 
 
 # 列名别名（兼容多种命名）
@@ -44,37 +45,24 @@ def _now_iso() -> str:
 
 
 def parse_feedback_file(file_bytes: bytes, filename: str = "") -> pd.DataFrame:
-    """读 CSV/Excel → DataFrame。列名标准化 + 类型转换。"""
-    name = (filename or "").lower()
-    if name.endswith(".csv"):
-        df = pd.read_csv(io.BytesIO(file_bytes))
-    elif name.endswith((".xlsx", ".xls")):
-        df = pd.read_excel(io.BytesIO(file_bytes))
-    else:
-        try:
-            df = pd.read_csv(io.BytesIO(file_bytes))
-        except Exception:
-            df = pd.read_excel(io.BytesIO(file_bytes))
+    """读 CSV/Excel → DataFrame。列名标准化 + 类型转换。
 
-    # 列名标准化
-    rename = {}
-    lower_cols = {str(c).strip().lower(): c for c in df.columns}
-    for target, aliases in _COL_ALIASES.items():
-        if target in df.columns:
-            continue
-        for a in aliases:
-            if a.lower() in lower_cols:
-                rename[lower_cols[a.lower()]] = target
-                break
-    if rename:
-        df = df.rename(columns=rename)
+    Phase 17.5 改：底层走 core.csv_utils.read_table() 复用统一 CSV reader。
+    """
+    # task_signature/channel 是字符串类型，不能像 reach/click 那样填 0；用 read_table 默认填空
+    # 后再覆盖类型转换逻辑
+    df = read_table(
+        file_bytes, filename,
+        col_aliases=_COL_ALIASES,
+        required_cols=("task_signature", "channel"),
+    )
 
-    # 必填列填空
-    for col in ("task_signature", "channel", "reach_success", "click_count"):
+    # 必填列填空（数值列填 0）
+    for col in ("reach_success", "click_count"):
         if col not in df.columns:
-            df[col] = "" if col in ("task_signature", "channel") else 0
+            df[col] = 0
 
-    # 类型
+    # 类型转换
     df["channel"] = df["channel"].astype(str).fillna("").str.strip()
     df["task_signature"] = df["task_signature"].astype(str).fillna("").str.strip()
     for col in ("reach_success", "click_count", "order_count"):
@@ -122,18 +110,15 @@ def to_records(
     - 无"标题"列则 text_has_coupon = None（calibrate_baseline 会跳过该维度聚合）
     """
     df = autofill_signature(df)
-    # Phase 16：若有 title 列则推断 text_has_coupon（懒加载避免循环依赖）
+    # Phase 16+17.5：若有 title 列则推断 text_has_coupon（懒加载避免循环依赖）。
+    # 批量向量化版本（classify_coupon_batch）比逐行 apply 快 50-100x。
     inferred_text = None
     if "title" in df.columns or "body" in df.columns:
-        from core.text_classifier import classify_coupon_in_text
-
-        def _infer(row):
-            t = str(row.get("title") or "")
-            b = str(row.get("body") or "")
-            v = classify_coupon_in_text(t, b)
-            return v if v in ("是", "否") else None
-
-        inferred_text = df.apply(_infer, axis=1).tolist()
+        from core.text_classifier import classify_coupon_batch
+        title_s = df["title"] if "title" in df.columns else pd.Series([""] * len(df))
+        body_s = df["body"] if "body" in df.columns else pd.Series([""] * len(df))
+        results = classify_coupon_batch(title_s, body_s)
+        inferred_text = [v if v in ("是", "否") else None for v in results]
 
     out: list = []
     now = _now_iso()
