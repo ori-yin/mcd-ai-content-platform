@@ -38,6 +38,8 @@ logs/
 data/*.db
 data/*.sqlite
 data/*.sqlite3
+data/cnn_backup_cleaned.xlsx
+data/cnn_backup_cleaned.parquet
 
 # 临时文件
 *.bak
