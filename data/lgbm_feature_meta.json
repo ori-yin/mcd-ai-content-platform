@@ -1,0 +1,95 @@
+{
+  "feature_columns": [
+    "title_len",
+    "content_len",
+    "has_emoji",
+    "has_digit",
+    "has_question",
+    "eff_word_count",
+    "channel_APP_Push",
+    "channel_企微1v1",
+    "channel_短信",
+    "coupon_未知",
+    "workday_type_",
+    "ch_x_wd_APP_Push_",
+    "ch_x_wd_企微1v1_",
+    "ch_x_wd_短信_",
+    "plan_type_te"
+  ],
+  "ctr_p95": 0.01909904259174574,
+  "min_reach": 50,
+  "n_plans": 3590,
+  "target_transform": "logit",
+  "trained_at": "2026-08-28T07:08:21",
+  "plan_type_te_map": {
+    "AARRPlan": 0.006583252680966842,
+    "常规Plan": 0.004853479260794962
+  },
+  "plan_type_global_mean": 0.0057773902728227,
+  "best_iteration": 66,
+  "best_val_mae": 0.9602848326406991,
+  "time_decay_half_life_days": 180,
+  "test_metrics": {
+    "overall_mae_pct": 0.3436488704628025,
+    "overall_rmse_pct": 0.8555597803777326,
+    "overall_r2": 0.08057312818969042,
+    "by_channel": {
+      "APP Push": {
+        "n_plans": 467,
+        "mae": 0.002440941692045164,
+        "mape": 8.170834361190915,
+        "true_ctr_mean": 0.004193914460089437,
+        "pred_ctr_mean": 0.0023674398867775588,
+        "mae_pct": 0.2440941692045164,
+        "true_ctr_pct": 0.4193914460089437,
+        "pred_ctr_pct": 0.23674398867775587,
+        "mape_pct": 817.0834361190915
+      },
+      "企微1v1": {
+        "n_plans": 189,
+        "mae": 0.006417821217822973,
+        "mape": 154.24248167304972,
+        "true_ctr_mean": 0.008988298171832295,
+        "pred_ctr_mean": 0.003297134335138453,
+        "mae_pct": 0.6417821217822973,
+        "true_ctr_pct": 0.8988298171832295,
+        "pred_ctr_pct": 0.3297134335138453,
+        "mape_pct": 15424.248167304973
+      },
+      "短信": {
+        "n_plans": 62,
+        "mae": 0.0018469501543433614,
+        "mape": 125.95358597020993,
+        "true_ctr_mean": 0.0023200278781526818,
+        "pred_ctr_mean": 0.0009463396610131018,
+        "mae_pct": 0.18469501543433614,
+        "true_ctr_pct": 0.23200278781526817,
+        "pred_ctr_pct": 0.09463396610131018,
+        "mape_pct": 12595.358597020993
+      }
+    },
+    "by_reach_bucket": {
+      "小(<1k)": {
+        "n_plans": 17,
+        "mae": 0.020753770694125324,
+        "mape": 481.06742031871454,
+        "mae_pct": 2.0753770694125326,
+        "mape_pct": 48106.74203187146
+      },
+      "中(1k-10k)": {
+        "n_plans": 46,
+        "mae": 0.008174499583354903,
+        "mape": 98.50474468302218,
+        "mae_pct": 0.8174499583354903,
+        "mape_pct": 9850.474468302218
+      },
+      "大(>10k)": {
+        "n_plans": 655,
+        "mae": 0.002654286728684681,
+        "mape": 42.85094139266932,
+        "mae_pct": 0.26542867286846805,
+        "mape_pct": 4285.094139266932
+      }
+    }
+  }
+}
