@@ -34,6 +34,8 @@ _COL_ALIASES = {
     "reach_success":  ["reach_success", "reach", "触达成功", "触达"],
     "click_count":    ["click_count", "click", "点击", "点击人次"],
     "order_count":    ["order_count", "order", "下单", "下单人次"],
+    "title":          ["title", "标题"],
+    "body":           ["body", "内容", "正文"],
 }
 
 
@@ -113,11 +115,29 @@ def to_records(
     df: pd.DataFrame,
     source: str = "",
 ) -> List[Dict[str, Any]]:
-    """DataFrame → list[dict]，可直接写入 feedback_repository。"""
+    """DataFrame → list[dict]，可直接写入 feedback_repository。
+
+    Phase 16 · 2026-08-27 新增 text_has_coupon 推断：
+    - 如果 DataFrame 有"标题"列，调 classify_coupon_in_text 推断每行的"是"/"否"
+    - 无"标题"列则 text_has_coupon = None（calibrate_baseline 会跳过该维度聚合）
+    """
     df = autofill_signature(df)
+    # Phase 16：若有 title 列则推断 text_has_coupon（懒加载避免循环依赖）
+    inferred_text = None
+    if "title" in df.columns or "body" in df.columns:
+        from core.text_classifier import classify_coupon_in_text
+
+        def _infer(row):
+            t = str(row.get("title") or "")
+            b = str(row.get("body") or "")
+            v = classify_coupon_in_text(t, b)
+            return v if v in ("是", "否") else None
+
+        inferred_text = df.apply(_infer, axis=1).tolist()
+
     out: list = []
     now = _now_iso()
-    for _, row in df.iterrows():
+    for i, (_, row) in enumerate(df.iterrows()):
         r = {
             "task_signature": str(row.get("task_signature") or "").strip(),
             "channel":        str(row.get("channel") or "").strip(),
@@ -129,6 +149,7 @@ def to_records(
             "order_count":    int(row.get("order_count") or 0),
             "source":         source,
             "imported_at":    now,
+            "text_has_coupon": (inferred_text[i] if inferred_text is not None else None),
         }
         out.append(r)
     return out

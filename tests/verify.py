@@ -1784,7 +1784,8 @@ def test_calibrate_baseline():
             ]
             fr.save_batch(records)
 
-            by_cp, by_ch = cb.aggregate_feedback(str(fr.DB_PATH))
+            agg = cb.aggregate_feedback(str(fr.DB_PATH))
+            by_cp, by_ch = agg[0], agg[1]
             _check("aggregate 返回 3 个 (channel, coupon)", len(by_cp) == 3)
             _check("aggregate APP Push 触达 = 30000",
                    by_cp[("APP Push", "否")]["reach"] == 30000)
@@ -2884,6 +2885,150 @@ def test_phase15_text_has_coupon_baseline():
            abs(mod.exp_decay_weight(69.3) - 0.5) < 0.01)
 
 
+# §50 Phase 16 calibrate_baseline 扩 text/workday 维度
+def test_phase16_calibrate_text_workday():
+    """Phase 16 用户口径：扩 calibrate_baseline 覆盖 2 维度（text_has_coupon + workday），
+    不动 owner/title_len。
+    """
+    import importlib.util
+    import sqlite3
+    import tempfile
+    from pathlib import Path
+
+    # 1) tools/calibrate_baseline.py 新签名：返回 4 元组（by_cp, by_ch, by_text, by_workday）
+    spec = importlib.util.spec_from_file_location(
+        "calibrate_baseline", "tools/calibrate_baseline.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # 2) 用临时 feedback.db 跑 aggregate_feedback 验证 4 维度聚合
+    tmpdir = tempfile.mkdtemp()
+    db_path = f"{tmpdir}/test_feedback.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        CREATE TABLE feedback_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_signature TEXT NOT NULL,
+            channel TEXT NOT NULL,
+            coupon TEXT,
+            plan_type TEXT,
+            sent_date TEXT,
+            reach_success INTEGER NOT NULL DEFAULT 0,
+            click_count INTEGER NOT NULL DEFAULT 0,
+            order_count INTEGER NOT NULL DEFAULT 0,
+            source TEXT,
+            imported_at TEXT,
+            text_has_coupon TEXT
+        );
+    """)
+    # 4 行：覆盖 channel × text × workday 组合
+    rows = [
+        # ("sig", "channel", "coupon", "plan", "date", reach, click, thc)
+        ("s1", "APP Push",   "未知", "常规Plan", "2026-08-24", 5000, 250, "是"),  # 工作日（周一）
+        ("s2", "APP Push",   "未知", "常规Plan", "2026-08-29", 5000, 100, "否"),  # 工作日（周六）
+        ("s3", "企微1v1",    "未知", "常规Plan", "2026-08-25", 5000, 150, "是"),  # 工作日（周二）
+        ("s4", "企微1v1",    "未知", "常规Plan", "2026-08-30", 5000, 120, "否"),  # 工作日（周日）
+    ]
+    for r in rows:
+        conn.execute("""INSERT INTO feedback_records
+            (task_signature, channel, coupon, plan_type, sent_date,
+             reach_success, click_count, text_has_coupon)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", r)
+    conn.commit()
+    conn.close()
+
+    by_cp, by_ch, by_text, by_workday = mod.aggregate_feedback(db_path)
+
+    # 3) by_cp（channel, coupon=未知）
+    _check("aggregate_feedback by_cp 含 2 渠道",
+           len(by_cp) == 2,
+           f"got {len(by_cp)}")
+    _check("by_cp 触达 = 10000（2 行 × 5000）",
+           by_cp[("APP Push", "未知")]["reach"] == 10000)
+
+    # 4) by_ch
+    _check("by_ch 4 行总触达 = 20000",
+           sum(v["reach"] for v in by_ch.values()) == 20000)
+
+    # 5) by_text 维度（Phase 16 新增；走 text_has_coupon 列）
+    _check("by_text 含 4 keys（2 渠道 × 2 文案含券词）",
+           len(by_text) == 4,
+           f"got {len(by_text)}")
+    _check("by_text (APP Push, 是).ctr == 250/5000",
+           by_text[("APP Push", "是")]["ctr"] == 0.05,
+           f"got {by_text[('APP Push', '是')]}")
+    _check("by_text (APP Push, 否).ctr == 100/5000",
+           by_text[("APP Push", "否")]["ctr"] == 0.02)
+
+    # 6) by_workday 维度（Phase 16 新增；从 sent_date 推 weekday）
+    _check("by_workday 含 keys（2 渠道 × 工作日/非工作日）",
+           len(by_workday) >= 2,
+           f"got {len(by_workday)}")
+    # 8/24 (周一)、8/25 (周二)、8/29 (周六)、8/30 (周日) → core.data_window.classify_date_type 决定
+    # 不深究具体是"工作日"还是"非工作日"，只验证 by_workday 是 dict 且 n_plans > 0
+    for (ch, wd), v in by_workday.items():
+        _check(f"by_workday ({ch}, {wd}) n_plans > 0",
+               v["n_plans"] > 0, f"got {v}")
+
+    # 7) calibrate() 接受 by_text + by_workday 参数
+    base = {"version": "v3.0", "dimensions": {
+        "渠道":            {"description": "兜底", "data": {"APP Push": 0.04, "企微1v1": 0.03}},
+        "渠道_x_是否用券":  {"description": "test", "data": {"APP Push_未知": 0.04, "企微1v1_未知": 0.03}},
+        "渠道_x_文案含券词": {"description": "Phase 16", "data": {}},
+        "渠道_x_工作日类型": {"description": "Phase 16", "data": {}},
+    }}
+    new_base, changes = mod.calibrate(base, by_cp, by_ch, by_text, by_workday,
+                                     min_reach=1000, definition="v3.1")
+    _check("calibrate() 返回版本号升级 v3.0 → v3.1",
+           new_base["version"] == "v3.1",
+           f"got {new_base['version']}")
+    _check("calibrate() _definition_version 写入 v3.1",
+           new_base.get("_definition_version") == "v3.1")
+    _check("calibrate() 含 渠道×文案含券词 维度变更",
+           any("渠道×文案含券词" in c for c in changes),
+           f"changes={changes}")
+    _check("calibrate() 含 渠道×工作日类型 维度变更",
+           any("渠道×工作日类型" in c for c in changes),
+           f"changes={changes}")
+    # 渠道×文案含券词 数据应被填入（4 keys）
+    text_data = new_base["dimensions"]["渠道_x_文案含券词"]["data"]
+    _check("calibrate() 渠道×文案含券词 写入 4 keys",
+           len(text_data) == 4, f"got {text_data}")
+
+    # 8) 老库 ALTER 兼容（feedback_repository.get_connection）
+    # 模拟"无 text_has_coupon 列的老库" → 重新建一个不含该列的表 → get_connection 应 ALTER ADD COLUMN
+    legacy_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False).name
+    conn2 = sqlite3.connect(legacy_db)
+    conn2.executescript("""
+        CREATE TABLE feedback_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_signature TEXT NOT NULL,
+            channel TEXT NOT NULL,
+            coupon TEXT,
+            plan_type TEXT,
+            sent_date TEXT,
+            reach_success INTEGER NOT NULL DEFAULT 0,
+            click_count INTEGER NOT NULL DEFAULT 0,
+            order_count INTEGER NOT NULL DEFAULT 0,
+            source TEXT,
+            imported_at TEXT
+        );
+    """)
+    conn2.commit()
+    conn2.close()
+    # 清理 tmpdir；保留 legacy_db（NamedTemporaryFile delete=False 需手工清理）
+    import shutil as _shutil
+    _shutil.rmtree(tmpdir)
+
+    from repositories.feedback_repository import get_connection as _gc
+    conn = _gc(legacy_db)
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(feedback_records)").fetchall()]
+    _check("feedback_repository ALTER 兼容：老库补 text_has_coupon 列",
+           "text_has_coupon" in cols, f"cols={cols}")
+    conn.close()
+    Path(legacy_db).unlink()
+
+
 # §47 Phase 12 schema 变更（CHANNELS/PLAN_TYPES/TaskInput 新字段）
 def test_phase12_schema():
     from core.schemas import CHANNELS, PLAN_TYPES, TaskInput
@@ -3015,6 +3160,8 @@ def main():
     test_phase14_row_keys()
     # §49 Phase 15 baseline v3.2 文案含券词维度补齐
     test_phase15_text_has_coupon_baseline()
+    # §50 Phase 16 calibrate_baseline 扩 text/workday 维度
+    test_phase16_calibrate_text_workday()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

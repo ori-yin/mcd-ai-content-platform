@@ -17,9 +17,14 @@ CLI 用法：
     python tools/calibrate_baseline.py --min-reach 1000  # 触达过滤阈值
     python tools/calibrate_baseline.py --definition v3.1  # 校准口径版本标注
 
-约束：
-- 只覆盖"渠道"和"渠道_x_是否用券"两个核心维度（避免 schema 破坏）
-- 其它维度保持 v3.0 不动；扩展维度在 Phase 6 单独做
+约束（Phase 16 · 2026-08-27 扩展）：
+- 覆盖 4 个维度：
+  - 渠道（兜底）
+  - 渠道 × 是否用券（form coupon）
+  - 渠道 × 文案含券词（Phase 16 新增；text_has_coupon 字段）
+  - 渠道 × 工作日类型（Phase 16 新增；从 sent_date 推算 weekday）
+- 不覆盖：标题字数 / 计划类型 / Owner（保持 v3.0 不动；用户口径"其他不用"）
+- text_has_coupon / sent_date 缺失时该维度聚合自动 skip
 - --definition 默认 v3.1（口径详 docs/ctr-kpi-definition-proposal-v0.2.md）
 """
 
@@ -48,11 +53,30 @@ ALPHA_HIGH = 1.0             # n_plans ≥ 20 时
 DEFINITION_DEFAULT = "v3.1"  # 校准口径版本（详 docs/ctr-kpi-definition-proposal-v0.2.md）
 
 
+# ── 工具函数（Phase 16 新增）─────────────────────────────────
+def _sent_date_to_workday_type(sent_date: str) -> str:
+    """从 sent_date（'YYYY-MM-DD'）推工作日类型："工作日" | "非工作日"。
+
+    复用 core/data_window.classify_date_type 纯 weekday 逻辑（>=5 = 非工作日）。
+    """
+    if not sent_date:
+        return ""
+    try:
+        from core.data_window import classify_date_type  # 延迟导入避免循环依赖
+        return classify_date_type(sent_date)
+    except Exception:
+        return ""
+
+
 # ── 回流数据聚合 ────────────────────────────────────────────────
-def aggregate_feedback(db_path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, dict]]:
-    """从 feedback.db 聚合：
-    1) (channel, coupon) → {reach, click, n_plans}
-    2) channel → {reach, click, n_plans}
+def aggregate_feedback(db_path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, dict],
+                                          Dict[Tuple[str, str], dict], Dict[Tuple[str, str], dict]]:
+    """从 feedback.db 聚合 4 个维度（Phase 16）：
+
+    1) by_cp: (channel, coupon) → {reach, click, n_plans}
+    2) by_ch: channel → {reach, click, n_plans}
+    3) by_text: (channel, text_has_coupon) → {reach, click, n_plans}（Phase 16 新增）
+    4) by_workday: (channel, workday_type) → {reach, click, n_plans}（Phase 16 新增；workday 从 sent_date 推）
 
     每个 channel 的 n_plans = 该 channel 下独立 signature 数（近似 plan 数）。
     """
@@ -60,7 +84,7 @@ def aggregate_feedback(db_path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
-        # 按 (channel, coupon) 聚合
+        # 1) (channel, coupon) 聚合
         by_cp: dict = {}
         rows = conn.execute("""
             SELECT channel, COALESCE(coupon, '未知') AS coupon,
@@ -70,7 +94,6 @@ def aggregate_feedback(db_path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, 
             FROM feedback_records
             GROUP BY channel, coupon, task_signature
         """).fetchall()
-        # 第一遍：按 (ch, coupon) 累积
         for r in rows:
             key = (r["channel"], r["coupon"])
             by_cp.setdefault(key, {"reach": 0, "click": 0, "sigs": set()})
@@ -78,7 +101,6 @@ def aggregate_feedback(db_path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, 
             by_cp[key]["click"] += int(r["click"] or 0)
             by_cp[key]["sigs"].add(r["task_signature"])
 
-        # 转 n_plans + ctr
         by_cp_out: dict = {}
         for (ch, cp), v in by_cp.items():
             n_plans = len(v["sigs"])
@@ -88,14 +110,8 @@ def aggregate_feedback(db_path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, 
                 "n_plans": n_plans, "ctr": ctr,
             }
 
-        # 按 channel 聚合（不区分 coupon）
+        # 2) channel 聚合（拿 sig 集合）
         by_ch: dict = {}
-        for (ch, _cp), v in by_cp_out.items():
-            by_ch.setdefault(ch, {"reach": 0, "click": 0, "sigs": set()})
-            by_ch[ch]["reach"] += v["reach"]
-            by_ch[ch]["click"] += v["click"]
-            # 不在 by_cp 里记 sig，这里重新查
-        # 第二遍：按 channel 单独聚合（拿 sig 集合）
         rows2 = conn.execute("""
             SELECT channel, task_signature,
                    SUM(reach_success) AS reach,
@@ -118,7 +134,70 @@ def aggregate_feedback(db_path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, 
                 "reach": v["reach"], "click": v["click"],
                 "n_plans": n_plans, "ctr": ctr,
             }
-        return by_cp_out, by_ch_out
+
+        # 3) (channel, text_has_coupon) 聚合（Phase 16）
+        by_text: dict = {}
+        # 先检查表有没有 text_has_coupon 列
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(feedback_records)").fetchall()]
+        if "text_has_coupon" in cols:
+            rows3 = conn.execute("""
+                SELECT channel, COALESCE(text_has_coupon, '') AS text_has_coupon,
+                       task_signature,
+                       SUM(reach_success) AS reach,
+                       SUM(click_count) AS click
+                FROM feedback_records
+                WHERE text_has_coupon IS NOT NULL AND text_has_coupon != ''
+                GROUP BY channel, text_has_coupon, task_signature
+            """).fetchall()
+            for r in rows3:
+                thc = r["text_has_coupon"]
+                if thc not in ("是", "否"):
+                    continue
+                key = (r["channel"], thc)
+                by_text.setdefault(key, {"reach": 0, "click": 0, "sigs": set()})
+                by_text[key]["reach"] += int(r["reach"] or 0)
+                by_text[key]["click"] += int(r["click"] or 0)
+                by_text[key]["sigs"].add(r["task_signature"])
+
+        by_text_out: dict = {}
+        for (ch, thc), v in by_text.items():
+            n_plans = len(v["sigs"])
+            ctr = v["click"] / v["reach"] if v["reach"] > 0 else 0.0
+            by_text_out[(ch, thc)] = {
+                "reach": v["reach"], "click": v["click"],
+                "n_plans": n_plans, "ctr": ctr,
+            }
+
+        # 4) (channel, workday_type) 聚合（Phase 16；从 sent_date 推）
+        by_workday: dict = {}
+        rows4 = conn.execute("""
+            SELECT channel, sent_date, task_signature,
+                   SUM(reach_success) AS reach,
+                   SUM(click_count) AS click
+            FROM feedback_records
+            WHERE sent_date IS NOT NULL AND sent_date != ''
+            GROUP BY channel, sent_date, task_signature
+        """).fetchall()
+        for r in rows4:
+            wd = _sent_date_to_workday_type(r["sent_date"])
+            if wd not in ("工作日", "非工作日"):
+                continue
+            key = (r["channel"], wd)
+            by_workday.setdefault(key, {"reach": 0, "click": 0, "sigs": set()})
+            by_workday[key]["reach"] += int(r["reach"] or 0)
+            by_workday[key]["click"] += int(r["click"] or 0)
+            by_workday[key]["sigs"].add(r["task_signature"])
+
+        by_workday_out: dict = {}
+        for (ch, wd), v in by_workday.items():
+            n_plans = len(v["sigs"])
+            ctr = v["click"] / v["reach"] if v["reach"] > 0 else 0.0
+            by_workday_out[(ch, wd)] = {
+                "reach": v["reach"], "click": v["click"],
+                "n_plans": n_plans, "ctr": ctr,
+            }
+
+        return by_cp_out, by_ch_out, by_text_out, by_workday_out
     finally:
         conn.close()
 
@@ -135,12 +214,20 @@ def _calibrate_value(new: float, old: float, n_plans: int) -> Tuple[float, str]:
 
 
 def calibrate(baseline: dict, by_cp: dict, by_ch: dict,
-              min_reach: int, definition: str = DEFINITION_DEFAULT) -> Tuple[dict, list]:
+              by_text: dict = None, by_workday: dict = None,
+              min_reach: int = MIN_REACH_DEFAULT,
+              definition: str = DEFINITION_DEFAULT) -> Tuple[dict, list]:
     """返回 (new_baseline, changes) — changes 是 diff 列表。
+
+    Phase 16 · 2026-08-27 扩展：
+    - by_text / by_workday 可选；为 None 或空 dict 时该维度聚合跳过
+    - 覆盖 4 个维度：渠道 / 渠道×用券 / 渠道×文案含券词 / 渠道×工作日类型
 
     definition: 校准口径版本标注（默认 v3.1），写入 json 的 _definition_version
     与 _definition_ref 字段，便于校准溯源（详 docs/ctr-kpi-definition-proposal-v0.2.md）。
     """
+    by_text = by_text or {}
+    by_workday = by_workday or {}
     new_baseline = json.loads(json.dumps(baseline))  # 深拷贝
     changes: list = []
 
@@ -168,6 +255,32 @@ def calibrate(baseline: dict, by_cp: dict, by_ch: dict,
         merged, note = _calibrate_value(v["ctr"], old, v["n_plans"])
         data_cp[key] = round(merged, 6)
         changes.append(f"[渠道×用券/{key}] {note}")
+
+    # 3) 渠道_x_文案含券词维度（Phase 16）
+    dim_text = new_baseline.get("dimensions", {}).get("渠道_x_文案含券词", {})
+    data_text = dim_text.get("data", {})
+    for (ch, thc), v in by_text.items():
+        if v["reach"] < min_reach:
+            changes.append(f"[渠道×文案含券词/{ch}_{thc}] 触达 {v['reach']}<{min_reach} 跳过")
+            continue
+        key = f"{ch}_{thc}"
+        old = float(data_text.get(key, 0.0))
+        merged, note = _calibrate_value(v["ctr"], old, v["n_plans"])
+        data_text[key] = round(merged, 6)
+        changes.append(f"[渠道×文案含券词/{key}] {note}")
+
+    # 4) 渠道_x_工作日类型维度（Phase 16）
+    dim_wd = new_baseline.get("dimensions", {}).get("渠道_x_工作日类型", {})
+    data_wd = dim_wd.get("data", {})
+    for (ch, wd), v in by_workday.items():
+        if v["reach"] < min_reach:
+            changes.append(f"[渠道×工作日类型/{ch}_{wd}] 触达 {v['reach']}<{min_reach} 跳过")
+            continue
+        key = f"{ch}_{wd}"
+        old = float(data_wd.get(key, 0.0))
+        merged, note = _calibrate_value(v["ctr"], old, v["n_plans"])
+        data_wd[key] = round(merged, 6)
+        changes.append(f"[渠道×工作日类型/{key}] {note}")
 
     # 更新元信息
     new_baseline["version"] = _bump_version(baseline.get("version", "v3.0"))
@@ -223,13 +336,16 @@ def main():
         print(f"[FAIL] feedback.db 不存在：{db_path}")
         sys.exit(1)
 
-    by_cp, by_ch = aggregate_feedback(db_path)
+    by_cp, by_ch, by_text, by_workday = aggregate_feedback(db_path)
     n_ch = len(by_ch)
     n_cp = len(by_cp)
+    n_text = len(by_text)
+    n_wd = len(by_workday)
     total_reach = sum(v["reach"] for v in by_ch.values())
     print(f"[INFO] 回流数据：{n_ch} 渠道 / {n_cp} 渠道×用券组合 / 总触达 {total_reach:,}")
 
-    new_baseline, changes = calibrate(baseline, by_cp, by_ch, args.min_reach, args.definition)
+    new_baseline, changes = calibrate(baseline, by_cp, by_ch, by_text, by_workday,
+                                      args.min_reach, args.definition)
 
     print(f"\n[CHANGES] {len(changes)} 条（按 n_plans 阈值 {MIN_PLANS_DEFAULT} / 20）")
     for c in changes:

@@ -42,11 +42,13 @@ CREATE TABLE IF NOT EXISTS feedback_records (
     click_count INTEGER NOT NULL DEFAULT 0,
     order_count INTEGER NOT NULL DEFAULT 0,
     source TEXT,
-    imported_at TEXT
+    imported_at TEXT,
+    text_has_coupon TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_feedback_sig ON feedback_records(task_signature);
 CREATE INDEX IF NOT EXISTS idx_feedback_channel ON feedback_records(channel);
 CREATE INDEX IF NOT EXISTS idx_feedback_date ON feedback_records(sent_date);
+CREATE INDEX IF NOT EXISTS idx_feedback_text ON feedback_records(text_has_coupon);
 """
 
 
@@ -60,8 +62,20 @@ def get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
     p = db_path or str(DB_PATH)
     conn = sqlite3.connect(p)
     conn.row_factory = sqlite3.Row
+    # 老库（无 text_has_coupon 列）需先 ALTER，否则 CREATE INDEX 会报
+    # "no such column"（SQLite 不容忍缺失列，不像 PG）。
+    # 先做最小检查；老库 ADD COLUMN 后再 executescript(SCHEMA)。
+    try:
+        cols = [r[1] for r in conn.execute(
+            "PRAGMA table_info(feedback_records)").fetchall()]
+        if cols and "text_has_coupon" not in cols:
+            conn.execute(
+                "ALTER TABLE feedback_records ADD COLUMN text_has_coupon TEXT")
+            conn.commit()
+    except sqlite3.OperationalError:
+        # 表还不存在（首次启动），让 SCHEMA 自己建
+        pass
     conn.executescript(SCHEMA)
-    conn.commit()
     return conn
 
 
@@ -69,7 +83,7 @@ def save(record: dict, db_path: Optional[str] = None) -> int:
     """保存一条回流数据。返回 id。
 
     record 必填：task_signature / channel / reach_success / click_count
-    可选：coupon / plan_type / sent_date / order_count / source / imported_at
+    可选：coupon / plan_type / sent_date / order_count / source / imported_at / text_has_coupon
     """
     required = ("task_signature", "channel", "reach_success", "click_count")
     for k in required:
@@ -83,8 +97,8 @@ def save(record: dict, db_path: Optional[str] = None) -> int:
             INSERT INTO feedback_records
                 (task_signature, channel, coupon, plan_type,
                  sent_date, reach_success, click_count, order_count,
-                 source, imported_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 source, imported_at, text_has_coupon)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record["task_signature"],
@@ -97,6 +111,7 @@ def save(record: dict, db_path: Optional[str] = None) -> int:
                 int(record.get("order_count") or 0),
                 record.get("source"),
                 record.get("imported_at"),
+                record.get("text_has_coupon"),
             ),
         )
         conn.commit()
@@ -123,6 +138,7 @@ def save_batch(records: List[dict], db_path: Optional[str] = None) -> int:
                 int(r.get("order_count") or 0),
                 r.get("source"),
                 r.get("imported_at"),
+                r.get("text_has_coupon"),
             )
             for r in records
         ]
@@ -131,8 +147,8 @@ def save_batch(records: List[dict], db_path: Optional[str] = None) -> int:
             INSERT INTO feedback_records
                 (task_signature, channel, coupon, plan_type,
                  sent_date, reach_success, click_count, order_count,
-                 source, imported_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 source, imported_at, text_has_coupon)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
