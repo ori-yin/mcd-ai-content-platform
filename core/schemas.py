@@ -184,7 +184,11 @@ class TaskInput:
     expected_action: str = ""
     plan_type: str = "未知"
     coupon: str = "未知"
-    planned_send_date: Optional[str] = None   # ISO 日期字符串，未填为 None
+    planned_send_date: Optional[str] = None   # 工作日类型标签："工作日"|"非工作日"（Phase 11 · 2026-08-27 用户简化拍板）。
+                                              # 历史：v3.1 之前是 ISO 日期字符串；Handoff §6.2 #12 用户口径
+                                              #   不要日期选择器，改为 selectbox 2 值；字段名保留以避免破坏
+                                              #   records.db 老 schema 兼容（下游 baseline_lookup 走 row["工作日类型"]
+                                              #   不消费本字段，实际是孤儿字段）。
     extra_requirements: str = ""
     # Demo 阶段灰态字段必须在尾部（dataclass 要求：no-default 字段在前）
     product_benefit: str = ""     # 前端 disabled，后端空串兜底
