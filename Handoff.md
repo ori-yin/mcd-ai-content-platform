@@ -113,6 +113,19 @@
   - verify.py 428 → **473 PASS, 0 FAIL**（§43 dimension_weights 20 用例 + §44 demo_feedback 25 用例）/ pytest 43 → **45 passed**（双路一致）
   - 本地拆 2 commit（`c83981f` 代码 + `c616354` Handoff §6.3 checkbox），远端通过 Contents API 合并推（`538f00f` 一次性合并 commit）；CLI emoji 撞 GBK → ASCII `[OK] [SKIP]` 替 ✓
 
+- **2026-08-27**：Phase 11 第三梯队 #12 简化落地（用户口径当天降级）：
+  - **用户拍板反转**：第三梯队 #12 原拍板稿是 3 值（法定节假日/非工作日/工作日，需节假日字典），用户当天改口径——**不要日期选择器**，法定节假日暂搁，**只 selectbox 2 值（工作日/非工作日）**
+  - 落地 4 文件：
+    - `core/data_window.py`：加 `classify_date_type(target)` + `classify_today_type()`（纯 weekday 逻辑，`>=5`=非工作日；不依赖节假日字典、不处理调休）
+    - `pages/01_content_studio.py:189`：`st.date_input` → `st.selectbox` 二选一；默认值按今日自动算
+    - `core/schemas.py:187`：`TaskInput.planned_send_date` 字段名保留（孤儿字段，下游 baseline_lookup 走 `row["工作日类型"]` 不消费本字段），注释更新为"工作日/非工作日 标签"
+    - `tests/verify.py §45`：18 个用例（5 工作日 + 2 非工作日 + 3 输入类型 + 3 边界 + 3 跨年 + 1 today 合法 + 1 错误抛错）
+  - **baseline JSON 不动**——现有 `渠道_x_工作日类型` 2 值 key（`data/ctr_baseline.json:135-146`）正好对齐，无需新增 3 值维度；节假日日期被算进"非工作日"
+  - **后续扩展路径**：要支持法定节假日时，建 `data/holidays.yaml` + `classify_date_type` 加节假日优先级分支，baseline 加 3 值 key
+  - verify.py 473 → **491 PASS, 0 FAIL**（§45 新增 18 用例，CLI 与 pytest 双路一致）
+  - **不动**：Handoff §6.2 第三梯队 #8/#9/#10/#11（仍等用户喂数据）/ 法定节假日字典 / baseline JSON / `pages/05_feedback` / 反哺管道
+  - 完整变更记录在 `git log` 后续 commit 中
+
 - **2026-08-26**：第二梯队 #1/#2 业务拍板落档（**不动代码，纯文档同步**）：
   - **#1 产品与权益**：单字段 `product_benefit` → 拆 `product_category` + `benefit_type` 两字段；枚举 10 产品 + 8 权益（含「自定义输入」兜底）；必填；参与生成；jieba 词典与 yaml 枚举解耦并行（jieba = 内容运营维护单品词典，yaml = 产品经理维护业务大类，自演化机制闭环）
   - **#2 投放目标**：PRD 6 值收敛到 4 值（品牌认知 / 点击驱动 / 转化促成 / 用户召回）；**支持多选**（逗号分隔，max 3，union 合并 tone_bias/must_avoid）；必填；参与生成 + 影响 strategy 优先级 + tone 词库；不约束 product（软引导）
@@ -189,10 +202,10 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：Phase 6 P4 + 第二梯队 #1/#2 业务拍板落档（**不动代码**，决策文档在 `Downloads/`）
-- **用例**：473 PASS / 0 FAIL（`python tests/verify.py`）= 45 passed（`pytest tests/verify.py`，双路一致）
-- **首要任务**：第二梯队 #4（CTR 校准频率）/#7（附属页面范围 + 字典维护 UI）待业务确认；L1 LightGBM / P4 签名关联 候选 — 详 §6.2 / §6.3
-- **决策文档**：`Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`（**新增**）
+- **阶段**：Phase 11 完成（#12 工作日/非工作日 2 值落地） + **等用户喂数据**驱动第三梯队 #8/#9/#10/#11
+- **用例**：491 PASS / 0 FAIL（`python tests/verify.py`，473 → 491）= pytest 双路一致
+- **首要任务**：第三梯队 **#8/#9/#10/#11 等用户喂数据后决策** — 详 §6.2
+- **决策文档**：`Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`
 - **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿）+ `docs/feedback-ctr.md`
 
 ### 6.1 Phase 历史（已完成）
@@ -212,6 +225,8 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 8** pytest 迁移（CLAUDE.md §4.4 工程债） | pytest.ini / _RUNNING_UNDER_PYTEST 标志 / _check 失败抛 AssertionError / 双路一致（pytest 43 passed + CLI 428 PASS） | **428（CLI）/ 43（pytest）** |
 | **Phase 6 P4** Handoff §6.3 纯工程候选扫掉 | config/dimension_weights.yaml + train_dimension_weights.py / feedback_lookup.py + 5 文件改动 / §43+§44 共 45 用例 | **473（CLI）/ 45（pytest）** |
 | **Phase 9** 第二梯队 #1/#2 业务拍板落档 | `Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`；Handoff §5/§6.0/§6.1/§6.2 同步；**不动代码** | **473（不动）** |
+| **Phase 10** 第三梯队 #8-#13 维度设计迭代（用户口径） | schema 与 baseline 错位修正（CHANNELS 缺微信小程序订阅 / Plan 类型命名三套混乱）+ 投放日期→工作日/非工作日/节假日下拉 + 场景/用券从 form 字段改内容关键词推断 + 指数衰减已实现（λ=0.01 半衰期 69.3 天）+ 下次迭代目标=写具体阈值 | **不动代码，待拍板** |
+| **Phase 11** 第三梯队 #12 简化落地（用户口径 2026-08-27） | 用户当天把 #12 从 3 值拍板稿降级为 2 值（不要日期选择器，法定节假日暂搁）；core/data_window.py 加 classify_date_type/classify_today_type 纯 weekday 函数；pages/01_content_studio.py:189 date_input → selectbox 2 值；core/schemas.py 注释更新；tests/verify.py §45 加 18 用例（491 PASS） | **491（CLI）/ 46（pytest，双路一致）** |
 
 > 详细 bullets 全部移入 §5 决策记录（按 commit hash 可追溯）。本表为速查。
 
@@ -229,6 +244,45 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 - [x] **#2** 投放目标 维度枚举 + 是否参与生成 —— ✅ **Phase 9 已拍板**，详 `Downloads/decision-objective-2026-08-26.md`（6 值 → 4 值收敛：品牌认知 / 点击驱动 / 转化促成 / 用户召回；**支持多选，逗号分隔，max 3，union 合并**；必填 + 参与生成 + 影响 strategy+tone，不约束 product；baseline 新增 objective_x_渠道 = 90 key，7 级回退兜底）
 - [ ] **#4** CTR 校准频率（手动 / T+1 / 周）
 - [ ] **#7** 02-05 附属页面**是否纳入正式版**（含字典维护 UI `pages/06_settings.py` 议题）
+
+**第三梯队（用户口径 · Phase 10 拍板稿 · 2026-08-27 用户会话提）**
+
+> 用户视角：维度设计需贴近业务实际，不是 form 字段堆积。**核心观点**：CTR 真实影响因子在**文案内容**（标题/正文是否带券、含场景关键词）而不是 form 字段值；投放日期影响系数靠工作日类型推算，不需要具体日期。
+
+#### 已拍板（已落地 Phase 11 · 2026-08-27）
+
+- [x] **#12 工作日/非工作日 2 值（用户简化拍板 2026-08-27 · Phase 11 已落地）**
+  - **原始拍板稿是 3 值（法定节假日/非工作日/工作日），用户当天简化成 2 值**——不要日期选择器，法定节假日暂不做
+  - 替换 date_input → selectbox 二选一：**工作日 / 非工作日**
+  - 默认值按今天自动算（`classify_today_type()` 走 weekday 逻辑，周一~周五=工作日，周六周日=非工作日）
+  - baseline JSON **不动**——现有 "渠道_x_工作日类型" 2 值 key（`data/ctr_baseline.json:135-146`）正好对齐，无需新增 3 值维度
+  - 落地文件：
+    - `core/data_window.py` 加 `classify_date_type(target) → "工作日"|"非工作日"` + `classify_today_type()` 工具函数（纯 weekday 逻辑，不依赖节假日字典）
+    - `pages/01_content_studio.py:189` date_input → selectbox 2 值；默认按今日自动算
+    - `core/schemas.py:187` `TaskInput.planned_send_date` 字段名保留（孤儿字段，下游 0 消费），注释更新为"工作日/非工作日 标签"
+    - `tests/verify.py §45` 加 18 个用例（5 工作日 + 2 非工作日 + 3 输入类型 + 3 边界 + 3 跨年 + 1 today 合法 + 1 错误抛错）
+  - 法定节假日 / 调休 暂不支持；baseline_lookup.py 现有 2 值 key 仍按"工作日/非工作日"统计（节假日日期会被算进"非工作日"）
+
+#### 等用户喂数据再决策（不动手）
+
+- [ ] **#8 渠道枚举补全** —— baseline JSON 已有 6 渠道（`APP Push / 微信小程序订阅消息 / 短信 / 微信公众号推文 / 企微1v1 / 微信订阅`），schema 只有 4 渠道（`APP Push / 企微 1v1 / 短信 / 站内信`）
+  - 待用户喂数据时确认：①"微信小程序订阅消息"和"微信订阅"是同一渠道两名字还是两个不同渠道？②"微信公众号推文"和"微信订阅"区别？③"站内信"在 baseline 里没有，要删 schema 这条还是补 baseline？
+- [ ] **#9 Plan 类型命名统一 + 去"未知"** —— schema "普通 Plan" / baseline "常规Plan" / lookup "普通Plan" 三套命名混乱
+  - 待用户喂数据时确认统一命名（建议 `normal_plan / aarr_plan` 小写无空格）+ 旧数据兼容映射
+- [ ] **#10 场景字段从 form 改内容关键词推断** —— `SCENES` 是 form 字段，baseline **没有**"渠道_x_场景"维度
+  - 待用户喂数据时确认：①关键词词典放哪（建议 `config/scene_keywords.yaml`）②form 场景字段完全去掉（必填 5 → 必填 4）还是保留 form + 内容兜底 ③baseline 是否新增维度
+- [ ] **#11 用券维度从 form 字段改文案内容推断** —— 当前 baseline 用 form `coupon` 字段（`data/ctr_baseline.json:38-52`）
+  - 用户口径"再思考一下"——**暂搁置**等用户喂数据时再决定：①是否真的"标题带券词 CTR 显著高"（需真实数据验证）②关键词词典范围 ③form 字段处理
+
+#### 已确认无需动
+
+- [x] **#13 指数衰减（EMA）已实现** —— baseline JSON（`data/ctr_baseline.json:8-12`）已含 `calibration_lambda=0.01 / half_life_days=69.3 / weighted_method=exponential_decay`；`_note` 写"越靠近 2026-08-16 的数据权重越高"
+
+#### 第三梯队 · 下次迭代目标
+
+- 用户口径：**下次 session 喂数据 → 写入具体阈值**
+- 落地路径：①用户给数据（Plan × CTR × 触达）→ ②按第三梯队已拍板项对齐 schema/baseline → ③`pages/05_feedback` 上传 / 直接走 `tools/calibrate_baseline.py --db data/feedback.db` → ④重算 `data/ctr_baseline.json` → ⑤下次 demo/真实预测就用新值
+- 已落地前置：#12 工作日/非工作日 2 值（Phase 11）
 
 ### 6.3 候选（详 §5.5 CTR Roadmap）
 
@@ -497,7 +551,7 @@ Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置
 | `C:\ideon\mcd-ai-content-platform\data\feedback.db` | 真实 CTR 回流 SQLite（Phase 5 P1） |
 | `C:\ideon\mcd-ai-content-platform\config\llm_settings.yaml` | LLM Provider 留空配置（Phase 6 P0） |
 | `C:\ideon\mcd-ai-content-platform\docs\ctr-kpi-definition-proposal-v0.2.md` | **CTR 口径拍板稿 v3.1（业务已对齐）** |
-| `C:\ideon\mcd-ai-content-platform\core\data_window.py` | **bi_dt 取数时间基准（12 点前 INTERVAL 2 兜底）** |
+| `C:\ideon\mcd-ai-content-platform\core\data_window.py` | **bi_dt 取数时间基准（12 点前 INTERVAL 2 兜底）+ classify_date_type / classify_today_type（Phase 11 工作日/非工作日 2 值分类）** |
 | `C:\ideon\mcd-ai-content-platform\config\channel_rules.yaml` | 4 渠道字数上限 |
 | `C:\ideon\mcd-ai-content-platform\config\brand_rules.yaml` | 必带 / 风险 / 禁词 |
 | `C:\ideon\mcd-ai-content-platform\prompts\copy_generation.py` | 生成候选 prompt v1.0 |
@@ -510,19 +564,20 @@ Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置
 
 ## 9. 新 Session 第一步
 
-1. 读本 Handoff（项目记忆）
+1. 读本 Handoff（项目记忆，重点 **§6.0 快照 + §6.2 第三梯队**）
 2. 读 `CLAUDE.md`（架构 + 约束）
 3. 读 `PRD.md §4.0 / §13.5 / §15.A`（三处补充）
-4. 跑 `python tests/verify.py`（**473 PASS / 0 FAIL**）
+4. 跑 `python tests/verify.py`（**491 PASS / 0 FAIL**，CLI 与 pytest 双路一致）
 5. 看 `docs\ctr-kpi-definition-proposal-v0.2.md`（**当前 v3.1 拍板口径**）
-6. 当前是 **Phase 6 P4 完成 · §6.3 纯工程候选扫掉 · 等第二梯队 #1/#2/#4/#7 + L1/P4 拍板**
+6. 当前是 **Phase 11 完成 · #12 工作日/非工作日 2 值已落地 · 等用户喂数据驱动 #8/#9/#10/#11**
 
 ---
 
 ## 10. Self-check
 
 - [x] 临时文件全清（`_*.py / *.bak / *.log / *.pyc`）— `tools/_push_phase6p4_once.py` 一次性脚本已删
-- [x] `python tests/verify.py` 全过（473 PASS / 0 FAIL）
+- [x] `python tests/verify.py` 全过（**491 PASS / 0 FAIL**，Phase 11 §45 新增 18 用例）
 - [x] `python -m py_compile $(git ls-files '*.py')` 全过
 - [x] 关键改动进 commit（如 git 化）
 - [x] UI 无 emoji，沟通全中文
+- [x] Phase 11 Handoff §5/§6.0/§6.1/§6.2 同步（#12 状态从 3 值拍板稿改成 2 值已落地；baseline JSON 不动已说明）
