@@ -113,6 +113,37 @@
   - verify.py 428 → **473 PASS, 0 FAIL**（§43 dimension_weights 20 用例 + §44 demo_feedback 25 用例）/ pytest 43 → **45 passed**（双路一致）
   - 本地拆 2 commit（`c83981f` 代码 + `c616354` Handoff §6.3 checkbox），远端通过 Contents API 合并推（`538f00f` 一次性合并 commit）；CLI emoji 撞 GBK → ASCII `[OK] [SKIP]` 替 ✓
 
+- **2026-08-27**：Phase 15 baseline v3.2 重算 + row key 修复（用户口径）：
+  - **用户口径**：CTR 不响应 form 字段是设计/数据双因——① baseline JSON 没建"渠道_x_文案含券词"维度 key ② baseline_lookup.py 接受 7 维回退，但 row key 与 prompt_builder 读 key 不一致（plan_type/coupon/owner 3 字段读不到）
+  - **新增一次性脚本 `tools/recalc_text_has_coupon.py`**：从 `data/cnn_backup_cleaned.xlsx`（48307 行）按指数衰减 λ=0.01 半衰期 69.3 天聚合"渠道 × 文案含券词"维度 8 keys，写入 baseline JSON v3.1.1 → v3.2：
+    ```
+    APP Push_是 / APP Push_否         (n_plans=1777/734, reach=76亿/28亿, CTR=0.16%/0.19%)
+    企微1v1_是 / 企微1v1_否           (n_plans=640/364, reach=10亿/3亿, CTR=0.75%/0.57%)
+    微信小程序订阅消息_是/_否           (n_plans=82/42, reach=1.2亿/0.9亿, CTR=3.33%/3.17%)
+    短信_是 / 短信_否                  (n_plans=336/59, reach=3.5亿/0.1亿, CTR=0.38%/0.14%)
+    ```
+  - **关键发现**：文案含券词对 CTR 影响**渠道差异极大**——
+    - APP Push 文案带券反而低（0.16% < 0.19%）→ 用户可能因文案"打折味"反感
+    - 企微1v1/微信小程序订阅/短信 文案带券高 1.32x / 1.05x / 2.77x
+    - 印证 Phase 12 #11 用户假设反转：文案含券词不是统一方向影响，每个渠道不同
+  - **`baseline_lookup.py` row key 修复**（Phase 14）：
+    - `_candidate_to_row` 同时输出中英文 key（`channel/coupon/plan_type` + `渠道/是否用券/计划类型`），避免 prompt_builder 读 key 不到
+    - 新增 `workday` 字段透传（之前 TaskInput.planned_send_date 是孤儿字段）
+    - `prompt_builder.py:101` 修 `"普通Plan"` → `"常规Plan"`（与 baseline_lookup.py:82 对齐）
+  - **测试**：verify.py §48 row key 9 用例 + §49 baseline v3.2 验证 14 用例 + §50 baseline version 断言松绑
+  - verify.py 525 → **557 PASS, 0 FAIL**（pytest 双路一致）
+  - **baseline JSON 自动备份**：`ctr_baseline.bak.json`（Phase 15 跑前的 v3.1.1 版本）
+  - **不动**：calibrate_baseline.py（仍只覆盖 2 个维度；feedback.db 是空的） / feedback_records 表 schema / 02/03/04 业务页
+  - commit + push via Contents API（github.com 仍被墙）
+
+- **2026-08-27**：Phase 14 CTR 不响应 form 字段排查（用户报告）：
+  - 用户报"选了具体指标 CTR 没变"
+  - 排查发现 2 类根因：
+    1. **row key 不匹配**：`_candidate_to_row` 输出英文 key（`plan_type/coupon/owner`），但 `prompt_builder.py:95/98/99` 读中文 key（`是否用券/计划类型/预算Owner`）—— 3 字段永远读不到
+    2. **workday 孤儿字段**：`TaskInput.planned_send_date` 是孤儿字段（Handoff §11 Phase 11 拍板时发现），下游 0 消费
+  - 修复：`_candidate_to_row` 中英文 key 双输出 + workday 透传
+  - 与 Phase 15 合并落地（同一组测试 §48）
+
 - **2026-08-27**：Phase 13 工具定位重定义 · UI 3 按钮砍齐（用户口径）：
   - **用户重新定义工具定位**：CTR 评估**辅助决策**工具，不是选文案工作流
   - **流程重定义**：
@@ -262,8 +293,8 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：Phase 13 完成（UI 3 按钮砍齐 + records.db UI 不调用 + Candidate 字段重构）
-- **用例**：525 PASS / 0 FAIL（`python tests/verify.py`，522 → 525）= pytest 双路一致
+- **阶段**：Phase 15 完成（baseline v3.2 重算 + row key 修复）
+- **用例**：557 PASS / 0 FAIL（`python tests/verify.py`，525 → 557）= pytest 双路一致
 - **首要任务**：清理后 4 渠道数据可走 `tools/calibrate_baseline.py --db data/feedback.db` 重算 baseline（v3.1.1）/ SCENES 内容推断工具函数待补
 - **决策文档**：`Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`
 - **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿；v3.1.1 渠道清理已落档）+ `docs/feedback-ctr.md`
@@ -289,6 +320,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 11** 第三梯队 #12 简化落地（用户口径 2026-08-27） | 用户当天把 #12 从 3 值拍板稿降级为 2 值（不要日期选择器，法定节假日暂搁）；core/data_window.py 加 classify_date_type/classify_today_type 纯 weekday 函数；pages/01_content_studio.py:189 date_input → selectbox 2 值；core/schemas.py 注释更新；tests/verify.py §45 加 18 用例（491 PASS） | **491（CLI）/ 46（pytest，双路一致）** |
 | **Phase 12** 第三梯队 #8/#9/#10/#11 全部落地 + #11 用户假设反转 | 用户喂 CNN0827 后 4 项一拍板：①#8 渠道清洗（无需渠道+微信公众号推文）；②#9 Plan 命名连写；③#10 SCENES 必填改选填；④#11 用券双字段（保留 form + 新增文案推断）；baseline_lookup "普通Plan"→"常规Plan" bug 顺手修；9 文件落地含 text_classifier/coupon_keywords/clean_cnn_backup；verify 491 → 522 PASS | **522（CLI）/ 47（pytest，双路一致）** |
 | **Phase 13** 工具定位重定义 · UI 3 按钮砍齐 | 用户拍板"工具只是 CTR 评估辅助决策，业务方看后自己导入生产系统，不会点保存" → 删除 编辑候选/恢复 AI 原文/保存当前选择 3 按钮 + Candidate.title_edited/body_edited 字段 + effective_*/is_edited/reset_edit 全删；引用方 4 文件（ctr_prediction_service/generation_service/rule_engine/01_content_studio）全改 effective_* → title/body；records.db 保留（train_dimension_weights.py 未来用），UI 不调用；verify 522 → 525 PASS | **525（CLI）/ 47（pytest，双路一致）** |
+| **Phase 14+15** baseline v3.2 重算 + row key 修复（CTR 响应 form 字段） | 用户报告"选了具体指标 CTR 没变" → 排查发现 2 类根因：① _candidate_to_row 输出英文 key 但 prompt_builder 读中文 key（plan_type/coupon/owner 3 字段全 miss）+ workday 孤儿字段；② baseline JSON 没建"渠道_x_文案含券词"维度 key。修：① _candidate_to_row 中英文 key 双输出 + workday 透传 + prompt_builder.py:101 "普通Plan"→"常规Plan"；② 一次性脚本 tools/recalc_text_has_coupon.py 从 cnn_backup_cleaned.xlsx（48307 行）按指数衰减 λ=0.01 半衰期 69.3 天聚合 8 keys 写 baseline v3.2（APP Push_是/否 0.16%/0.19% 等）。文案含券词对 CTR 渠道差异极大，印证 Phase 12 #11 用户假设反转。verify 525 → 557 PASS | **557（CLI）/ 49（pytest，双路一致）** |
 
 > 详细 bullets 全部移入 §5 决策记录（按 commit hash 可追溯）。本表为速查。
 
