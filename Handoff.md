@@ -113,6 +113,38 @@
   - verify.py 428 → **473 PASS, 0 FAIL**（§43 dimension_weights 20 用例 + §44 demo_feedback 25 用例）/ pytest 43 → **45 passed**（双路一致）
   - 本地拆 2 commit（`c83981f` 代码 + `c616354` Handoff §6.3 checkbox），远端通过 Contents API 合并推（`538f00f` 一次性合并 commit）；CLI emoji 撞 GBK → ASCII `[OK] [SKIP]` 替 ✓
 
+- **2026-08-27**：Phase 13 工具定位重定义 · UI 3 按钮砍齐（用户口径）：
+  - **用户重新定义工具定位**：CTR 评估**辅助决策**工具，不是选文案工作流
+  - **流程重定义**：
+    ```
+    业务方看 3 候选 + CTR 估计 → 自己决定采纳哪条 → 不入库
+                                                ↓
+    业务方自己导入生产系统投放 → 一周后导出 Excel → 上传 pages/05_feedback
+                                                ↓
+    tools/calibrate_baseline.py 每周一手动跑一次 → 新 baseline JSON
+                                                ↓
+    下周 CTR 预测更准（指数滑动 α=0.3 / 1.0；详见 docs/ctr-feedback-schedule.md）
+    ```
+  - **3 按钮全砍**：
+    - ❌ 编辑候选 A → 无人用文案（业务方看后自己导入），编辑后 CTR 不重跑（`pages/01_content_studio.py:334-340` 只重算规则，CTR `ctr_results` 永远是生成时那版）
+    - ❌ 恢复 AI 原文 → 依赖"编辑过"才能恢复，编辑砍了没意义
+    - ❌ 保存当前选择 → records.db 是死数据（grep 验证：pages/02/03/04 没人读，pages/05_feedback 走独立 feedback.db 链路）
+  - **`records.db` 保留但 UI 不调用**：
+    - `GenerationRecord` / `record_service` / `sqlite_repository` / `task_signature` 全部保留（`tools/train_dimension_weights.py:97` 未来会读 records.db 关联 feedback.db 做维度权重训练；Handoff §6.3 L3 轻量模型升级）
+    - UI 不暴露"保存当前选择"入口，业务方不点击 → records.db 不增长
+  - **`Candidate` 字段重构**：
+    - 删除：`title_edited` / `body_edited` 字段 + `effective_title` / `effective_body` / `is_edited` 属性 + `reset_edit()` 方法
+    - 引用方改：`ctr_prediction_service.py:35-36` + `generation_service.py:55` + `rule_engine.py:355,360` + `pages/01_content_studio.py:282-283,391-392,630` 全改 `effective_*` → `title/body`
+    - `task_signature` 算 `c.title / c.body` 长度桶（line 405-406）
+  - **`pages/01_content_studio.py` 改动**：
+    - 删 `_render_edit_area()` 整段（line 304-341），新增轻量 `_render_rule_panel()`（保留 PRD §8.4 规则诊断）
+    - 删 `_save_current()` 整段（line 553-571）+ 顶部 docstring 同步简化
+    - 清 import：`build_record` / `save_generation`
+  - **测试**：verify.py §17 effective_title/is_edited/reset_edit 7 用例 → 8 用例 `hasattr(c, "title_edited")` 校验（确保字段不再存在）
+  - verify.py 522 → **525 PASS, 0 FAIL**（pytest 双路一致）
+  - **不动**：baseline JSON / `services/record_service` / `services/generation_service.build_record` / `repositories/sqlite_repository` / `tools/train_dimension_weights.py` / `pages/05_feedback` / 反哺管道
+  - commit + push via Contents API（github.com 仍被墙）
+
 - **2026-08-27**：Phase 12 schema "未知"兜底字段拍板（用户口径）：
   - **PLAN_TYPES 保留"未知"**：schema `PLAN_TYPES = ("AARRPlan", "常规Plan", "未知")` 中"未知"是 **form 字段默认值兜底**，不是数据源枚举（数据源只有 2 值，distinct=2）；删它会导致 form 不填时抛错，UI 必须强制选——失去 UX 防御性
   - **COUPON_FLAGS 保留"未知"**：同上，schema 兜底；数据源"是否用券"也只有 2 值
@@ -230,8 +262,8 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：Phase 12 完成（#8/#9/#10/#11 三梯队落地 + #11 用户假设反转保留双字段）
-- **用例**：522 PASS / 0 FAIL（`python tests/verify.py`，491 → 522）= pytest 双路一致
+- **阶段**：Phase 13 完成（UI 3 按钮砍齐 + records.db UI 不调用 + Candidate 字段重构）
+- **用例**：525 PASS / 0 FAIL（`python tests/verify.py`，522 → 525）= pytest 双路一致
 - **首要任务**：清理后 4 渠道数据可走 `tools/calibrate_baseline.py --db data/feedback.db` 重算 baseline（v3.1.1）/ SCENES 内容推断工具函数待补
 - **决策文档**：`Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`
 - **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿；v3.1.1 渠道清理已落档）+ `docs/feedback-ctr.md`
@@ -256,6 +288,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 10** 第三梯队 #8-#13 维度设计迭代（用户口径） | schema 与 baseline 错位修正（CHANNELS 缺微信小程序订阅 / Plan 类型命名三套混乱）+ 投放日期→工作日/非工作日/节假日下拉 + 场景/用券从 form 字段改内容关键词推断 + 指数衰减已实现（λ=0.01 半衰期 69.3 天）+ 下次迭代目标=写具体阈值 | **不动代码，待拍板** |
 | **Phase 11** 第三梯队 #12 简化落地（用户口径 2026-08-27） | 用户当天把 #12 从 3 值拍板稿降级为 2 值（不要日期选择器，法定节假日暂搁）；core/data_window.py 加 classify_date_type/classify_today_type 纯 weekday 函数；pages/01_content_studio.py:189 date_input → selectbox 2 值；core/schemas.py 注释更新；tests/verify.py §45 加 18 用例（491 PASS） | **491（CLI）/ 46（pytest，双路一致）** |
 | **Phase 12** 第三梯队 #8/#9/#10/#11 全部落地 + #11 用户假设反转 | 用户喂 CNN0827 后 4 项一拍板：①#8 渠道清洗（无需渠道+微信公众号推文）；②#9 Plan 命名连写；③#10 SCENES 必填改选填；④#11 用券双字段（保留 form + 新增文案推断）；baseline_lookup "普通Plan"→"常规Plan" bug 顺手修；9 文件落地含 text_classifier/coupon_keywords/clean_cnn_backup；verify 491 → 522 PASS | **522（CLI）/ 47（pytest，双路一致）** |
+| **Phase 13** 工具定位重定义 · UI 3 按钮砍齐 | 用户拍板"工具只是 CTR 评估辅助决策，业务方看后自己导入生产系统，不会点保存" → 删除 编辑候选/恢复 AI 原文/保存当前选择 3 按钮 + Candidate.title_edited/body_edited 字段 + effective_*/is_edited/reset_edit 全删；引用方 4 文件（ctr_prediction_service/generation_service/rule_engine/01_content_studio）全改 effective_* → title/body；records.db 保留（train_dimension_weights.py 未来用），UI 不调用；verify 522 → 525 PASS | **525（CLI）/ 47（pytest，双路一致）** |
 
 > 详细 bullets 全部移入 §5 决策记录（按 commit hash 可追溯）。本表为速查。
 
