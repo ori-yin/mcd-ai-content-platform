@@ -34,7 +34,7 @@ CLAUDE.md §4 红线：
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
 
 import streamlit as st
 
@@ -49,6 +49,9 @@ from services.generation_service import generate, GenerationError, rank_candidat
 from services.rule_engine import load_rules, check_candidates
 from services.ctr_prediction_service import predict_for_candidates
 from services.similarity_service import find_similar, summarize_similar
+from adapters.ctr_predictor_adapter import (
+    predict_l1, predict_l1_status, L1_SUPPORTED_CHANNELS,
+)
 from ui.llm_status import render_banner
 from ui.plotly_helpers import rate_value
 from ui.styles import inject_base_css
@@ -69,6 +72,28 @@ inject_base_css()
 
 # LLM 未配置提示（业务确认 #10）
 render_banner()
+
+# ── Sidebar（Phase 19 L1 静默双轨开关）───────────────────────────
+# 默认关：业务侧看到的 CTR 仍然是 CTRPredictionAdapter（demo / LLM）的口径。
+# 管理员开启时，CTR 卡片额外显示"L1 LightGBM 实验对比"行，便于与 L0 baseline 对照。
+with st.sidebar:
+    st.markdown("### 实验开关")
+    l1_status = predict_l1_status()
+    if l1_status == "model":
+        l1_help = f"L1 模型已加载；支持渠道：{'、'.join(L1_SUPPORTED_CHANNELS)}"
+    else:
+        l1_help = f"L1 模型当前不可用（status={l1_status}），开启也不会预测"
+    st.session_state["show_l1"] = st.checkbox(
+        "显示 L1 实验对比（仅管理员）",
+        value=st.session_state.get("show_l1", False),
+        help=l1_help,
+        key="show_l1_checkbox",
+    )
+    if st.session_state["show_l1"]:
+        st.caption(
+            f"L1 状态：{l1_status}；CTR 卡片将额外显示一列"
+            f"\"L1 预测 CTR\"，与现有基准对比；不影响主流程。",
+        )
 
 st.markdown(
     """
@@ -93,6 +118,7 @@ def _init_state():
         "ctr_results": [],            # list[PredictionResult]
         "similar_summary": {},        # dict
         "last_generated_signature": "",
+        "show_l1": False,             # Phase 19 L1 静默双轨开关（仅管理员）
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -344,13 +370,25 @@ def _render_right_column(task: TaskInput, channel_rules: dict):
     selected_rule: RuleResult = rule_results[selected_idx] if selected_idx < len(rule_results) else RuleResult()
     selected_ctr: Optional[PredictionResult] = ctr_results[selected_idx] if selected_idx < len(ctr_results) else None
 
+    # ── Phase 19 L1 静默双轨：仅管理员开启时跑 L1 预测
+    l1_ctr_pair: Optional[Tuple[Optional[float], str]] = None
+    if st.session_state.get("show_l1"):
+        l1_ctr_pair = predict_l1(
+            title=selected.title,
+            body=selected.body,
+            channel=task.channel,
+            plan_type=task.plan_type,
+            coupon=task.coupon,
+            workday=task.planned_send_date,
+        )
+
     # ── 渠道预览（PRD §8.2 P0 = APP Push）
     _render_channel_preview(task, selected)
 
     st.markdown("---")
 
     # ── 卡片一：CTR 参考（PRD §8.3）
-    _render_ctr_card(selected_ctr)
+    _render_ctr_card(selected_ctr, l1_ctr=l1_ctr_pair)
 
     # ── 卡片二：投放理由（PRD §8.3）
     _render_reason_card(task, selected, selected_rule)
@@ -422,11 +460,20 @@ def _render_channel_preview(task: TaskInput, c: Candidate):
     st.markdown(preview_html, unsafe_allow_html=True)
 
 
-def _render_ctr_card(ctr: Optional[PredictionResult]):
+def _render_ctr_card(ctr: Optional[PredictionResult],
+                     l1_ctr: Optional[Tuple[Optional[float], str]] = None):
+    """CTR 参考卡片。
+
+    l1_ctr: Phase 19 双轨开关。None 或 (None, _) 时不显示 L1 行；
+            元组来自 predict_l1(...) 返回值：(pred_ctr, status)。
+    """
     st.markdown("**CTR 参考结果**")
     if ctr is None:
         st.markdown('<div class="warning-banner">CTR 参考：暂不可用</div>',
                     unsafe_allow_html=True)
+        # 即便主 CTR 不可用，若 L1 开启也可显示 L1 行
+        if l1_ctr is not None:
+            _render_l1_inline(l1_ctr)
         return
     label = ctr.label
     if ctr.result_type == "unavailable":
@@ -434,6 +481,8 @@ def _render_ctr_card(ctr: Optional[PredictionResult]):
             f'<div class="warning-banner">CTR 参考：暂不可用；原因：{ctr.error or "无足够基准数据"}</div>',
             unsafe_allow_html=True,
         )
+        if l1_ctr is not None:
+            _render_l1_inline(l1_ctr)
         return
     parts = []
     if ctr.pred_ctr is not None:
@@ -450,6 +499,32 @@ def _render_ctr_card(ctr: Optional[PredictionResult]):
                 unsafe_allow_html=True)
     if ctr.suggestion:
         st.caption(f"建议：{ctr.suggestion}")
+    if l1_ctr is not None:
+        _render_l1_inline(l1_ctr)
+
+
+def _render_l1_inline(l1_ctr: Tuple[Optional[float], str]):
+    """L1 单行展示（实验对比，不影响主结论）。
+
+    输入：predict_l1() 返回的 (pred_ctr, status)
+        - status="model"         → 显示具体 CTR
+        - status="baseline_only" → 显示"L1 模型暂不可用"
+        - status="unavailable"   → 显示具体原因（不支持的渠道 / 特征构造失败）
+    """
+    ctr, status = l1_ctr
+    if status == "model" and ctr is not None:
+        st.markdown(
+            f'<div class="l1-pill"><span class="l1-label">L1 实验预测</span>'
+            f'<span class="l1-value">{rate_value(ctr)}</span>'
+            f'<span class="l1-meta">LightGBM · logit 反变换</span></div>',
+            unsafe_allow_html=True,
+        )
+    elif status == "baseline_only":
+        st.caption("L1 实验对比：模型暂不可用（data/lgbm_model_v1.pkl 缺失）")
+    elif status == "unavailable":
+        st.caption("L1 实验对比：本渠道不在 L1 训练范围（L1 仅覆盖 APP Push / 企微1v1 / 短信）")
+    else:
+        st.caption("L1 实验对比：暂无结果")
 
 
 def _render_reason_card(task: TaskInput, c: Candidate, rule: RuleResult):
