@@ -52,7 +52,7 @@ def rank_candidates_by_ctr(
         # None 当作 0；自然排到末尾
         ctr_val = ctr if ctr is not None else 0.0
         # 标题长度升序（短的优先）
-        title_len = len(candidates[idx].effective_title or "")
+        title_len = len(candidates[idx].title or "")
         return (-ctr_val, title_len)
 
     indices = sorted(range(len(candidates)), key=_sort_key)
