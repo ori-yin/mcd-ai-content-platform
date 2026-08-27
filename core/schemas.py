@@ -251,14 +251,16 @@ class Candidate:
     字段语义：
     - id: "A" / "B" / "C"
     - strategy: A_核心利益直给 / B_消费场景切入 / C_行动号召强化
-    - title / body: AI 原文（永不被人工编辑覆盖）
-    - title_edited / body_edited: 人工编辑后内容；未编辑时为 None
+    - title / body: AI 原文（业务方看后自行决定是否采纳；不暴露人工编辑）
     - reason: 生成理由（PRD §9.2）
     - risk_flags: 风险标记列表（PRD §9.2）
     - used_input_fields: 使用了哪些 TaskInput 字段
     - provider / model / prompt_version: 生成溯源（PRD §10.3 Prompt 版本管理）
 
-    PRD §17 状态管理要求：切换候选不重生成 / 人工编辑不丢 / title 与 title_edited 分离。
+    Phase 13 · 2026-08-27 用户拍板：
+      - 工具定位 = CTR 评估辅助决策，**不是选文案工作流**（业务方通常自己导入生产系统）
+      - 删除 title_edited / body_edited（人工编辑）；UI 不再暴露"编辑候选 / 恢复 AI 原文 / 保存当前选择"
+      - 业务方看 3 条候选 + CTR 估计 → 自己决定采纳哪条 → 不入库（records.db 留作 train_dimension_weights.py 训练用，UI 不调用）
     """
     id: str
     strategy: str
@@ -267,8 +269,6 @@ class Candidate:
     reason: str = ""
     risk_flags: list = field(default_factory=list)
     used_input_fields: list = field(default_factory=list)
-    title_edited: Optional[str] = None
-    body_edited: Optional[str] = None
     provider: str = "demo"
     model: str = ""
     prompt_version: str = "v1.0"
@@ -279,22 +279,6 @@ class Candidate:
         # body 必须非空；title 允许为空（短信 / 企微 1v1 无独立标题，PRD §8.2）
         if not self.body.strip():
             raise ValueError("Candidate.body 不能为空")
-
-    @property
-    def effective_title(self) -> str:
-        return self.title_edited if self.title_edited is not None else self.title
-
-    @property
-    def effective_body(self) -> str:
-        return self.body_edited if self.body_edited is not None else self.body
-
-    @property
-    def is_edited(self) -> bool:
-        return self.title_edited is not None or self.body_edited is not None
-
-    def reset_edit(self) -> None:
-        self.title_edited = None
-        self.body_edited = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -402,8 +386,8 @@ def task_signature(task: TaskInput, candidates: Optional[list] = None,
     if candidates and selected_id:
         sel = next((c for c in candidates if getattr(c, "id", None) == selected_id), None)
         if sel is not None:
-            tl = len(getattr(sel, "effective_title", "") or "")
-            bl = len(getattr(sel, "effective_body", "") or "")
+            tl = len(getattr(sel, "title", "") or "")
+            bl = len(getattr(sel, "body", "") or "")
             title_len_bucket = f"{(tl // 5) * 5}"  # 0/5/10/15/20...
             body_len_bucket = f"{(bl // 10) * 10}"
 
