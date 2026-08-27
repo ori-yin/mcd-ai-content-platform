@@ -95,6 +95,7 @@
   - working tree clean，9 文件改动未 commit
 - **2026-08-26**：Phase 7 业务拍板落地——第一梯队 #3 + #6 全部 ✅ 拍板；verify 418 → 428 PASS（新增 §42 10 用例）：
   - **#3 触发条件**：每周一上午手动跑 `tools/weekly_calibrate.bat` → `tools/calibrate_baseline.py --db data/feedback.db`；新文档 `docs/ctr-feedback-schedule.md`（节奏 / 跳过 / 漏周策略 / 看什么）；bat 文件 CRLF 转换走 §7 铁律
+  - ⏸️ **Phase 16.5 用户拍板延后自动调度**：`weekly_calibrate.bat` 仅落档不调度；真回流数据进来时手动跑脚本即可；自动定时等下次业务拍板再启动
   - **#6 反哺影响排序**：新加 `services/generation_service.rank_candidates_by_ctr(candidates, ctr_results)` 纯函数（pred_ctr 降序 + title 长度兜底 + unavailable 排末尾）；`pages/01_content_studio` 在 `predict_for_candidates` 后调一次，默认 `selected_id` 改 `candidates[0].id`（CTR 最高那条）；`_render_recommendation` 文案加"按 CTR 降序展示（演示口径）"措辞
   - **顺手清理**：删 `tools/phase6_p1_push.py` + `phase6_p2_push.py`（Handoff §10 self-check "临时文件全清" 闭环）
   - 12 文件改动未 commit，等推送
@@ -303,9 +304,11 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：Phase 16 完成（calibrate_baseline 扩 2 维度：text_has_coupon + workday）
+- **阶段**：**核心全链路完成 · 准备上线**（Phase 16.5 · 2026-08-27 用户拍板"先上线再说"）
 - **用例**：574 PASS / 0 FAIL（`python tests/verify.py`，557 → 574）= pytest 双路一致
-- **首要任务**：下一次真回流后跑 `tools/calibrate_baseline.py --db data/feedback.db` 重算 baseline（v3.x）
+- **已可用模块**：①内容创作（01 生成 3 候选 + CTR 评估 + 阈值生效）；②真实回流（04 上传 CSV/Excel → 入库 → 4 维度聚合 → 写 baseline）；③历史洞察（04 七 Tab）；④批量评估 CTR（03）
+- **未做（用户拍板延后）**：自动定时校准（`weekly_calibrate.bat` 仅落档不调度）/ L1 LightGBM 模型升级（Roadmap §5.5；等样本过千）
+- **首要任务**：真回流数据进来时手动跑 `python tools/calibrate_baseline.py --db data/feedback.db` 重算 baseline
 - **决策文档**：`Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`
 - **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿；v3.1.1 渠道清理已落档）+ `docs/feedback-ctr.md`
 
@@ -332,6 +335,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 13** 工具定位重定义 · UI 3 按钮砍齐 | 用户拍板"工具只是 CTR 评估辅助决策，业务方看后自己导入生产系统，不会点保存" → 删除 编辑候选/恢复 AI 原文/保存当前选择 3 按钮 + Candidate.title_edited/body_edited 字段 + effective_*/is_edited/reset_edit 全删；引用方 4 文件（ctr_prediction_service/generation_service/rule_engine/01_content_studio）全改 effective_* → title/body；records.db 保留（train_dimension_weights.py 未来用），UI 不调用；verify 522 → 525 PASS | **525（CLI）/ 47（pytest，双路一致）** |
 | **Phase 14+15** baseline v3.2 重算 + row key 修复（CTR 响应 form 字段） | 用户报告"选了具体指标 CTR 没变" → 排查发现 2 类根因：① _candidate_to_row 输出英文 key 但 prompt_builder 读中文 key（plan_type/coupon/owner 3 字段全 miss）+ workday 孤儿字段；② baseline JSON 没建"渠道_x_文案含券词"维度 key。修：① _candidate_to_row 中英文 key 双输出 + workday 透传 + prompt_builder.py:101 "普通Plan"→"常规Plan"；② 一次性脚本 tools/recalc_text_has_coupon.py 从 cnn_backup_cleaned.xlsx（48307 行）按指数衰减 λ=0.01 半衰期 69.3 天聚合 8 keys 写 baseline v3.2（APP Push_是/否 0.16%/0.19% 等）。文案含券词对 CTR 渠道差异极大，印证 Phase 12 #11 用户假设反转。verify 525 → 557 PASS | **557（CLI）/ 49（pytest，双路一致）** |
 | **Phase 16** calibrate_baseline 扩 2 维度（text_has_coupon + workday） | 用户口径"预算owner 不加，工作日类型用 sent_date 推算就行，标题正文是否带券加一下，其他不用" → 扩 calibrate_baseline.py 覆盖 4 维度：渠道 / 渠道×用券 / 渠道×文案含券词（新增，读 text_has_coupon 列）/ 渠道×工作日类型（新增，从 sent_date 推 weekday）；feedback_repository.py 加 text_has_coupon 列 + get_connection 先 ALTER 再 executescript（兼容老库；SQLite CREATE INDEX 对缺失列报"no such column"）；feedback_service.to_records 用 classify_coupon_in_text 推断每行 text_has_coupon；不动 owner/title_len。verify 557 → 574 PASS | **574（CLI）/ 50（pytest，双路一致）** |
+| **Phase 16.5** 上线声明 · 自动定时校准 + L1 模型延后 | 用户拍板"先上线再说"：①内容创作 / 真实回流 / 历史洞察 / 批量评估 CTR 四模块全链路可用；②`weekly_calibrate.bat` 仅落档不调度（用户没说要开发自动跑）；③L1 LightGBM 模型升级（§6.3）延期，待样本 ≥ 1000 plan 再启动。**不动代码** | **574（CLI）/ 50（pytest，双路一致，不动代码）** |
 
 > 详细 bullets 全部移入 §5 决策记录（按 commit hash 可追溯）。本表为速查。
 
@@ -410,7 +414,9 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 **业务确认后启动**（下方 2 项候选 L1 + P4 待业务拍板；§6.3 原 P3 维度权重动态 + demo 数据回灌已在 Phase 6 P4 完成，见 §5）。
 
-#### L1 · LightGBM 回归替 baseline 查找表（详 §5.5）
+#### L1 · LightGBM 回归替 baseline 查找表（详 §5.5）⏸️ **延期（2026-08-27 用户拍板·Phase 16.5）**
+
+> 用户口径："**L1 模型升级先不做，先上线**"。待样本 ≥ 1000 plan 再次启动。下方为原候选描述，待启动时直接复用。
 
 **一句话**：用 LightGBM 回归替 baseline 7 维查表，**结构化特征 + 中样本 + 可解释**三场景适配 GBDT，DNN 是过度设计。
 
