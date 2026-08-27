@@ -349,15 +349,15 @@ def check_candidates(
 ) -> list:
     """批量规则检查：3 条候选两两对照。
 
-    candidates: list[Candidate]（含 effective_title / effective_body 用属性读）
+    candidates: list[Candidate]（Phase 13 后直接读 c.title / c.body，无 edited 字段）
     返回：list[RuleResult]，与 candidates 一一对应。
     """
-    texts = [c.effective_title + c.effective_body for c in candidates]
+    texts = [c.title + c.body for c in candidates]
     results = []
     for i, c in enumerate(candidates):
         others = texts[:i] + texts[i+1:]
         r = check_one(
-            c.effective_title, c.effective_body, channel, channel_rules, brand_rules,
+            c.title, c.body, channel, channel_rules, brand_rules,
             other_candidates_text=others,
         )
         results.append(r)
