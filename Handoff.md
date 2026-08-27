@@ -113,6 +113,26 @@
   - verify.py 428 → **473 PASS, 0 FAIL**（§43 dimension_weights 20 用例 + §44 demo_feedback 25 用例）/ pytest 43 → **45 passed**（双路一致）
   - 本地拆 2 commit（`c83981f` 代码 + `c616354` Handoff §6.3 checkbox），远端通过 Contents API 合并推（`538f00f` 一次性合并 commit）；CLI emoji 撞 GBK → ASCII `[OK] [SKIP]` 替 ✓
 
+- **2026-08-27**：Phase 12 #8/#9/#11 三项落地 + **#11 用户假设反转 + 用券双字段保留**：
+  - **#11 用户假设反转**：用户原假设"标题正文带券词 CTR 影响更大"，CNN0827 数据验证**反转**——form "实际是否用券"才是主驱动（企微 1v1 form 用券 2.56x vs 文案含券 1.32x；APP Push 文案含券反向 0.84x）。**保留 form 字段**，新增"标题正文是否带券"作为第二个选填字段（双字段并存）
+  - **#8 渠道清洗**（用户拍板）：清洗脚本 `tools/clean_cnn_backup.py` 滤掉"无需渠道"(434) + "微信公众号推文"(19)；baseline JSON v3.1.1 删 14 个 key（微信公众号推文 / 微信订阅 全维度 + optimal_chars）；schema CHANNELS 删"站内信" + 加"微信小程序订阅消息"
+  - **#9 Plan 命名统一**（用户拍板"按数据源来"）：schema PLAN_TYPES 改 `("AARRPlan", "常规Plan", "未知")`（连写，跟数据一致）；schema CHANNELS "企微 1v1" → "企微1v1"；CHANNELS 4 渠道
+  - **#10 SCENES 改选填**（用户拍板"必填改选填"）：TaskInput.REQUIRED_FIELDS 从 5 → 4；scene 字段挪到 has-default 区（dataclass 字段顺序铁律）
+  - **#11 用券双字段**：①保留 form `coupon`（实际是否用券，plan 维度）；②新增 `text_has_coupon`（标题正文是否带券，文案粒度，由 `classify_coupon_in_text` 推断）
+  - **bug 修复顺手**：baseline_lookup.py:76 写错 "普通Plan" → 修 "常规Plan"（baseline JSON 实际用"常规Plan"，导致 *_常规Plan key 从未命中过；v3.0 → v3.1 一直有这个 bug）
+  - 落地 9 文件：
+    - `core/schemas.py`：CHANNELS 4 渠道（APP Push/企微1v1/短信/微信小程序订阅消息）/PLAN_TYPES 3 值（连写）/TaskInput 新增 `text_has_coupon: str = ""` + scene 改选填
+    - `core/text_classifier.py`：新增 `classify_coupon_in_text(title, body) → "是"/"否"`（纯函数 + lru_cache 加载 yaml）
+    - `config/coupon_keywords.yaml`：v1.0 关键词词典（discount/coupon/link 三类）
+    - `adapters/ctr_predictor_adapter/baseline_lookup.py`：修 "普通Plan"→"常规Plan" bug + 新增 `text_has_coupon` 参数 + "渠道_x_文案含券词" 维度分支
+    - `data/ctr_baseline.json`：v3.1 → v3.1.1（删 14 个 key + 元信息 _note 加 2026-08-27 渠道清理说明 + 备份 `ctr_baseline_v3.1.1.bak.json`）
+    - `pages/01_content_studio.py`：form 加"标题正文是否带券" selectbox；已有 coupon label 改"实际是否用券"；form_dict 加 text_has_coupon
+    - `tools/clean_cnn_backup.py`：新增清洗脚本（复用 日报清洗_new.py 解析 + 过滤 + 报告）
+    - `data/cnn_backup_cleaned.xlsx`：清洗后产物（48307 行 / 3821 plan / 4 渠道 / 2024-10-15 ~ 2026-08-26）
+    - `tests/verify.py`：§46 classify_coupon_in_text（14 用例）+ §47 schema 变更（12 用例）+ 5 个旧用例契约更新（CHANNELS 4/REQUIRED_FIELDS 4/v3.1.1）
+  - verify.py 491 → **522 PASS, 0 FAIL**（新增 §46/§47 共 26 用例 + 5 个契约更新）
+  - **待业务确认/补**：baseline 新增"渠道_x_文案含券词"维度 key（数据齐后建）/ SCENES 内容推断工具函数（等用户喂关键词词典）/ 字典维护 UI `pages/06_settings.py`
+
 - **2026-08-27**：Phase 11 第三梯队 #12 简化落地（用户口径当天降级）：
   - **用户拍板反转**：第三梯队 #12 原拍板稿是 3 值（法定节假日/非工作日/工作日，需节假日字典），用户当天改口径——**不要日期选择器**，法定节假日暂搁，**只 selectbox 2 值（工作日/非工作日）**
   - 落地 4 文件：
@@ -202,11 +222,11 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：Phase 11 完成（#12 工作日/非工作日 2 值落地） + **等用户喂数据**驱动第三梯队 #8/#9/#10/#11
-- **用例**：491 PASS / 0 FAIL（`python tests/verify.py`，473 → 491）= pytest 双路一致
-- **首要任务**：第三梯队 **#8/#9/#10/#11 等用户喂数据后决策** — 详 §6.2
+- **阶段**：Phase 12 完成（#8/#9/#10/#11 三梯队落地 + #11 用户假设反转保留双字段）
+- **用例**：522 PASS / 0 FAIL（`python tests/verify.py`，491 → 522）= pytest 双路一致
+- **首要任务**：清理后 4 渠道数据可走 `tools/calibrate_baseline.py --db data/feedback.db` 重算 baseline（v3.1.1）/ SCENES 内容推断工具函数待补
 - **决策文档**：`Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`
-- **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿）+ `docs/feedback-ctr.md`
+- **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿；v3.1.1 渠道清理已落档）+ `docs/feedback-ctr.md`
 
 ### 6.1 Phase 历史（已完成）
 
@@ -227,6 +247,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 9** 第二梯队 #1/#2 业务拍板落档 | `Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`；Handoff §5/§6.0/§6.1/§6.2 同步；**不动代码** | **473（不动）** |
 | **Phase 10** 第三梯队 #8-#13 维度设计迭代（用户口径） | schema 与 baseline 错位修正（CHANNELS 缺微信小程序订阅 / Plan 类型命名三套混乱）+ 投放日期→工作日/非工作日/节假日下拉 + 场景/用券从 form 字段改内容关键词推断 + 指数衰减已实现（λ=0.01 半衰期 69.3 天）+ 下次迭代目标=写具体阈值 | **不动代码，待拍板** |
 | **Phase 11** 第三梯队 #12 简化落地（用户口径 2026-08-27） | 用户当天把 #12 从 3 值拍板稿降级为 2 值（不要日期选择器，法定节假日暂搁）；core/data_window.py 加 classify_date_type/classify_today_type 纯 weekday 函数；pages/01_content_studio.py:189 date_input → selectbox 2 值；core/schemas.py 注释更新；tests/verify.py §45 加 18 用例（491 PASS） | **491（CLI）/ 46（pytest，双路一致）** |
+| **Phase 12** 第三梯队 #8/#9/#10/#11 全部落地 + #11 用户假设反转 | 用户喂 CNN0827 后 4 项一拍板：①#8 渠道清洗（无需渠道+微信公众号推文）；②#9 Plan 命名连写；③#10 SCENES 必填改选填；④#11 用券双字段（保留 form + 新增文案推断）；baseline_lookup "普通Plan"→"常规Plan" bug 顺手修；9 文件落地含 text_classifier/coupon_keywords/clean_cnn_backup；verify 491 → 522 PASS | **522（CLI）/ 47（pytest，双路一致）** |
 
 > 详细 bullets 全部移入 §5 决策记录（按 commit hash 可追溯）。本表为速查。
 
@@ -263,16 +284,24 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
     - `tests/verify.py §45` 加 18 个用例（5 工作日 + 2 非工作日 + 3 输入类型 + 3 边界 + 3 跨年 + 1 today 合法 + 1 错误抛错）
   - 法定节假日 / 调休 暂不支持；baseline_lookup.py 现有 2 值 key 仍按"工作日/非工作日"统计（节假日日期会被算进"非工作日"）
 
-#### 等用户喂数据再决策（不动手）
+#### 已落地（Phase 12 · 2026-08-27 · 用户喂 CNN0827 数据后一拍板）
 
-- [ ] **#8 渠道枚举补全** —— baseline JSON 已有 6 渠道（`APP Push / 微信小程序订阅消息 / 短信 / 微信公众号推文 / 企微1v1 / 微信订阅`），schema 只有 4 渠道（`APP Push / 企微 1v1 / 短信 / 站内信`）
-  - 待用户喂数据时确认：①"微信小程序订阅消息"和"微信订阅"是同一渠道两名字还是两个不同渠道？②"微信公众号推文"和"微信订阅"区别？③"站内信"在 baseline 里没有，要删 schema 这条还是补 baseline？
-- [ ] **#9 Plan 类型命名统一 + 去"未知"** —— schema "普通 Plan" / baseline "常规Plan" / lookup "普通Plan" 三套命名混乱
-  - 待用户喂数据时确认统一命名（建议 `normal_plan / aarr_plan` 小写无空格）+ 旧数据兼容映射
-- [ ] **#10 场景字段从 form 改内容关键词推断** —— `SCENES` 是 form 字段，baseline **没有**"渠道_x_场景"维度
-  - 待用户喂数据时确认：①关键词词典放哪（建议 `config/scene_keywords.yaml`）②form 场景字段完全去掉（必填 5 → 必填 4）还是保留 form + 内容兜底 ③baseline 是否新增维度
-- [ ] **#11 用券维度从 form 字段改文案内容推断** —— 当前 baseline 用 form `coupon` 字段（`data/ctr_baseline.json:38-52`）
-  - 用户口径"再思考一下"——**暂搁置**等用户喂数据时再决定：①是否真的"标题带券词 CTR 显著高"（需真实数据验证）②关键词词典范围 ③form 字段处理
+- [x] **#8 渠道枚举清洗 + 对齐** —— 用户拍板："公众号推文删除"
+  - 清洗脚本 `tools/clean_cnn_backup.py` 滤掉"无需渠道"(434) + "微信公众号推文"(19)，输出 `data/cnn_backup_cleaned.xlsx`（48307 行 / 3821 plan / 4 渠道）
+  - baseline JSON v3.1 → **v3.1.1**：删 14 个 key（微信公众号推文 12 维度 + 微信订阅 2 维度 + optimal_chars 2 项）
+  - schema `CHANNELS` 删"站内信" + 加"微信小程序订阅消息" + "企微 1v1" → "企微1v1"（跟数据源连写）；最终 4 渠道：`APP Push / 企微1v1 / 短信 / 微信小程序订阅消息`
+- [x] **#9 Plan 命名统一** —— 用户拍板："按我的数据源来"
+  - schema `PLAN_TYPES` 改 `("AARRPlan", "常规Plan", "未知")`（连写，跟数据一致）
+  - baseline_lookup.py:76 顺手修 bug：原 `("AARRPlan", "普通Plan")` → 修 `("AARRPlan", "常规Plan")`（baseline JSON 实际用"常规Plan"，导致 *_常规Plan key 从未命中过；v3.0 → v3.1 一直有这个 bug）
+- [x] **#10 场景字段改选填 + 内容推断** —— 用户拍板："必填改选填呗"
+  - `TaskInput.REQUIRED_FIELDS` 从 5 → 4（去掉 scene）；scene 字段挪到 has-default 区（dataclass 字段顺序铁律）
+  - 内容推断工具函数（`classify_scene_in_text`）**未做**——等用户喂场景关键词词典（`config/scene_keywords.yaml`）后再实现；baseline 新增"渠道_x_文案场景"维度同理等数据
+- [x] **#11 用券双字段保留** —— 用户拍板："保留 form 字段，但是不是要加两个"
+  - **用户假设反转**：CNN0827 数据验证 form "实际是否用券"才是主驱动（企微 1v1 form 用券 2.56x vs 文案含券 1.32x；APP Push 文案含券反向 0.84x）；用户拍板保留 form 字段
+  - 新增第二个字段 `text_has_coupon: str = ""`（标题正文是否带券，由 `classify_coupon_in_text(title, body)` 推断）
+  - `core/text_classifier.py` + `config/coupon_keywords.yaml` v1.0（discount/coupon/link 三类；删 `\d+元` 太宽）
+  - `pages/01_content_studio.py` 加 selectbox；已有 coupon label 改"实际是否用券"
+  - baseline_lookup.py 新增 `text_has_coupon` 参数 + "渠道_x_文案含券词" 维度分支（baseline JSON 暂无 key 走兜底；等用户重算 baseline）
 
 #### 已确认无需动
 
@@ -552,6 +581,11 @@ Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置
 | `C:\ideon\mcd-ai-content-platform\config\llm_settings.yaml` | LLM Provider 留空配置（Phase 6 P0） |
 | `C:\ideon\mcd-ai-content-platform\docs\ctr-kpi-definition-proposal-v0.2.md` | **CTR 口径拍板稿 v3.1（业务已对齐）** |
 | `C:\ideon\mcd-ai-content-platform\core\data_window.py` | **bi_dt 取数时间基准（12 点前 INTERVAL 2 兜底）+ classify_date_type / classify_today_type（Phase 11 工作日/非工作日 2 值分类）** |
+| `C:\ideon\mcd-ai-content-platform\core\text_classifier.py` | **classify_coupon_in_text(title, body) → "是"/"否"（Phase 12 #11 文案粒度含券词判断）** |
+| `C:\ideon\mcd-ai-content-platform\config\coupon_keywords.yaml` | **优惠券关键词词典 v1.0（discount/coupon/link 三类）** |
+| `C:\ideon\mcd-ai-content-platform\tools\clean_cnn_backup.py` | **CNN 历史备份清洗脚本（复用 日报清洗_new.py 解析 + 过滤 + 报告；输出 data/cnn_backup_cleaned.xlsx）** |
+| `C:\ideon\mcd-ai-content-platform\data\cnn_backup_cleaned.xlsx` | **清洗后 CNN 历史备份（48307 行 / 3821 plan / 4 渠道 / 2024-10-15 ~ 2026-08-26）** |
+| `C:\ideon\mcd-ai-content-platform\data\ctr_baseline_v3.1.1.bak.json` | **baseline JSON v3.1.1 备份（Phase 12 渠道清理前）** |
 | `C:\ideon\mcd-ai-content-platform\config\channel_rules.yaml` | 4 渠道字数上限 |
 | `C:\ideon\mcd-ai-content-platform\config\brand_rules.yaml` | 必带 / 风险 / 禁词 |
 | `C:\ideon\mcd-ai-content-platform\prompts\copy_generation.py` | 生成候选 prompt v1.0 |
@@ -567,17 +601,17 @@ Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置
 1. 读本 Handoff（项目记忆，重点 **§6.0 快照 + §6.2 第三梯队**）
 2. 读 `CLAUDE.md`（架构 + 约束）
 3. 读 `PRD.md §4.0 / §13.5 / §15.A`（三处补充）
-4. 跑 `python tests/verify.py`（**491 PASS / 0 FAIL**，CLI 与 pytest 双路一致）
-5. 看 `docs\ctr-kpi-definition-proposal-v0.2.md`（**当前 v3.1 拍板口径**）
-6. 当前是 **Phase 11 完成 · #12 工作日/非工作日 2 值已落地 · 等用户喂数据驱动 #8/#9/#10/#11**
+4. 跑 `python tests/verify.py`（**522 PASS / 0 FAIL**，CLI 与 pytest 双路一致）
+5. 看 `docs\ctr-kpi-definition-proposal-v0.2.md`（**当前 v3.1 拍板口径，v3.1.1 已落档**）
+6. 当前是 **Phase 12 完成 · 第三梯队 #8/#9/#10/#11 全部落地 · #11 用户假设反转保留双字段**
 
 ---
 
 ## 10. Self-check
 
-- [x] 临时文件全清（`_*.py / *.bak / *.log / *.pyc`）— `tools/_push_phase6p4_once.py` 一次性脚本已删
-- [x] `python tests/verify.py` 全过（**491 PASS / 0 FAIL**，Phase 11 §45 新增 18 用例）
+- [x] 临时文件全清（`_*.py / *.bak / *.log / *.pyc`）— `tools/_push_phase6p4_once.py` 一次性脚本已删；`data/ctr_baseline_v3.1.1.bak.json` 是 baseline 版本备份非临时文件
+- [x] `python tests/verify.py` 全过（**522 PASS / 0 FAIL**，Phase 12 §46/§47 新增 31 用例 + 5 个旧用例契约更新）
 - [x] `python -m py_compile $(git ls-files '*.py')` 全过
 - [x] 关键改动进 commit（如 git 化）
 - [x] UI 无 emoji，沟通全中文
-- [x] Phase 11 Handoff §5/§6.0/§6.1/§6.2 同步（#12 状态从 3 值拍板稿改成 2 值已落地；baseline JSON 不动已说明）
+- [x] Phase 11 + Phase 12 Handoff §5/§6.0/§6.1/§6.2/§8/§9/§10 同步（#12 状态从 3 值拍板稿改成 2 值已落地；#8/#9/#10/#11 全部 Phase 12 落地；#11 用户假设反转保留双字段）
