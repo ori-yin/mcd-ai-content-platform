@@ -34,6 +34,7 @@ from typing import Optional
 
 import streamlit as st
 
+from core.data_window import classify_today_type
 from core.schemas import (
     TaskInput, Candidate, RuleResult, PredictionResult,
     TARGET_AUDIENCE, OBJECTIVES, CHANNELS, STAGES, SCENES,
@@ -186,9 +187,15 @@ def _render_left_column(channel_rules: dict) -> Optional[TaskInput]:
                 if cur.get("coupon") in COUPON_FLAGS else 1,
             )
         with c4:
-            planned_send_date = st.date_input(
-                "计划投放日期（可选）",
-                value=None,
+            # Phase 11 · 用户口径 2026-08-27：去掉日期选择器，只选工作日/非工作日
+            # 默认按今日自动算（classify_today_type 走 weekday 逻辑）
+            # 法定节假日 / 调休 暂不支持，详 Handoff §6.2 #12
+            _default_today_type = classify_today_type()
+            planned_send_date = st.selectbox(
+                "计划投放日期类型",
+                ["工作日", "非工作日"],
+                index=0 if _default_today_type == "工作日" else 1,
+                help="按计划投放当天选择：周一~周五=工作日，周六周日=非工作日；暂不支持法定节假日细分",
             )
 
         extra_requirements = st.text_area(
