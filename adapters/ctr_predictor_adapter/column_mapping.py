@@ -55,9 +55,4 @@ def auto_detect_all(columns: Iterable[str]) -> dict:
     }
 
 
-def from_optional(import_optional=None):
-    """占位 helper：未来若要从 pandas DataFrame 直接接 columns，可在此实现兼容层。
-
-    Phase 1a 保持纯函数，输入只接受 Iterable[str]，业务层负责 .columns 提取。
-    """
-    raise NotImplementedError("Phase 1a 不支持 DataFrame 直传，业务层自行 .columns")
+# 注：Phase 17.6 删除 from_optional() 占位 helper（Phase 1a 起就抛 NotImplementedError，全项目无人调用）

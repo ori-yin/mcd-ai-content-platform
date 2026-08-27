@@ -11,8 +11,6 @@ Phase 2+：按需扩展（color sequences / themes / figure helpers）
 
 from __future__ import annotations
 
-import plotly.graph_objects as go
-
 
 def axis_rate(axis, decimals: int = 2) -> None:
     """
@@ -33,13 +31,3 @@ def rate_value(rate: float, decimals: int = 2) -> str:
     if rate is None:
         return "—"
     return f"{rate * 100:.{decimals}f}%"
-
-
-def apply_brand_theme(fig: go.Figure) -> go.Figure:
-    """应用麦当劳红金主题到 Plotly figure（Phase 0 占位）"""
-    fig.update_layout(
-        font={"family": '"PingFang SC", "Microsoft YaHei", sans-serif'},
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-    )
-    return fig

@@ -155,7 +155,7 @@ def _render_summary():
     # 列表（前 50 条详情）
     st.markdown("---")
     st.markdown("### 3 最近记录（前 50 条）")
-    rows = feedback_repository.list_all(limit=50)
+    rows = _cached_recent_feedback(limit=50)
     df_list = pd.DataFrame(rows)
     if "id" in df_list.columns:
         df_list = df_list.drop(columns=["id"])
@@ -167,11 +167,23 @@ def _render_summary():
     _render_join_status(agg)
 
 
+# Phase 17.6：缓存 generation_records 列表（TTL 60s；变更不频繁）
+@st.cache_data(ttl=60, show_spinner=False)
+def _cached_generation_records_list() -> list:
+    from repositories import sqlite_repository
+    return sqlite_repository.list_all(limit=10000)
+
+
+# Phase 17.6：缓存 feedback 最近记录（TTL 30s；新上传后 30s 内可见）
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_recent_feedback(limit: int) -> list:
+    return feedback_repository.list_all(limit=limit)
+
+
 def _render_join_status(agg: dict):
     """检查 feedback.signature 与 generation_records.signature 的 join 命中情况。"""
     try:
-        from repositories import sqlite_repository
-        rows = sqlite_repository.list_all(limit=10000)
+        rows = _cached_generation_records_list()
         gen_sigs = {r.get("signature") for r in rows if r.get("signature")}
         feedback_sigs = set(agg.keys())
 

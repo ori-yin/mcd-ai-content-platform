@@ -93,7 +93,6 @@ def _init_state():
         "ctr_results": [],            # list[PredictionResult]
         "similar_summary": {},        # dict
         "last_generated_signature": "",
-        "saved_id": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:

@@ -28,12 +28,12 @@ from datetime import date, datetime, timedelta
 from typing import Optional, Union
 
 
-SNAPSHOT_CUTOFF_HOUR = 12  # 12 点前用 INTERVAL 2
+# 注：Phase 17.6 删除 SNAPSHOT_CUTOFF_HOUR 常量（Phase 6 P3 应删未删；调用方都已硬编码 12 或不传）
 
 
 def resolve_bi_dt_window(
     now: Optional[datetime] = None,
-    cutoff_hour: int = SNAPSHOT_CUTOFF_HOUR,
+    cutoff_hour: int = 12,
 ) -> str:
     """计算取数用的 bi_dt（YYYY-MM-DD 字符串）。
 

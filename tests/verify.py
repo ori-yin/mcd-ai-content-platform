@@ -3333,6 +3333,72 @@ def test_phase17_5_refactors():
            hasattr(res, "result_type") and hasattr(res, "pred_ctr"))
 
 
+# §54 Phase 17.6 Streamlit 缓存 + 死代码清理
+def test_phase17_6_dead_code():
+    """Phase 17.6 · Streamlit 页面缓存（04/05）+ 死代码清理（saved_id/apply_brand_theme/from_optional/SNAPSHOT_CUTOFF_HOUR）。"""
+    import inspect
+    import os
+
+    # ── 1) pages/04_historical_insights.py 不再有 __import__("io") ──
+    p04 = os.path.join(os.path.dirname(__file__), "..", "pages", "04_historical_insights.py")
+    src04 = open(p04, encoding="utf-8").read()
+    _check("04_historical_insights.py 删 __import__('io')",
+           "__import__(\"io\")" not in src04 and "__import__('io')" not in src04)
+    _check("04_historical_insights.py 改用 from io import BytesIO",
+           "from io import BytesIO" in src04)
+    _check("04_historical_insights.py 含 _cached_parse_insights_file 缓存",
+           "_cached_parse_insights_file" in src04)
+    _check("04_historical_insights.py 含 _cached_generation_records_list 缓存",
+           "_cached_generation_records_list" in src04)
+
+    # ── 2) pages/05_feedback.py 含 _cached_recent_feedback / _cached_generation_records_list ──
+    p05 = os.path.join(os.path.dirname(__file__), "..", "pages", "05_feedback.py")
+    src05 = open(p05, encoding="utf-8").read()
+    _check("05_feedback.py 含 _cached_recent_feedback",
+           "_cached_recent_feedback" in src05)
+    _check("05_feedback.py 含 _cached_generation_records_list",
+           "_cached_generation_records_list" in src05)
+
+    # ── 3) pages/01_content_studio.py 不再有 "saved_id": None 死 state ──
+    p01 = os.path.join(os.path.dirname(__file__), "..", "pages", "01_content_studio.py")
+    src01 = open(p01, encoding="utf-8").read()
+    _check("01_content_studio.py 删 'saved_id': None（Phase 13 残留）",
+           "\"saved_id\"" not in src01 and "'saved_id'" not in src01)
+
+    # ── 4) ui/plotly_helpers.py 删 apply_brand_theme ──
+    p_plotly = os.path.join(os.path.dirname(__file__), "..", "ui", "plotly_helpers.py")
+    src_plotly = open(p_plotly, encoding="utf-8").read()
+    _check("ui/plotly_helpers.py 删 apply_brand_theme 死代码",
+           "def apply_brand_theme" not in src_plotly)
+    _check("ui/plotly_helpers.py 不再 import go（apply_brand_theme 唯一用户）",
+           "import plotly.graph_objects" not in src_plotly)
+
+    # ── 5) column_mapping.py 删 from_optional() ──
+    p_col = os.path.join(os.path.dirname(__file__), "..",
+                         "adapters", "ctr_predictor_adapter", "column_mapping.py")
+    src_col = open(p_col, encoding="utf-8").read()
+    _check("column_mapping.py 删 from_optional() NotImplementedError 死代码",
+           "def from_optional" not in src_col)
+
+    # ── 6) core/data_window.py 删 SNAPSHOT_CUTOFF_HOUR 常量（注释里允许提到）──
+    p_dw = os.path.join(os.path.dirname(__file__), "..", "core", "data_window.py")
+    src_dw = open(p_dw, encoding="utf-8").read()
+    # 注释里提到是 OK 的（如 "Phase 17.6 删除 ..."）；但不能有 `SNAPSHOT_CUTOFF_HOUR = X` 赋值或当默认值
+    code_lines = [
+        ln for ln in src_dw.splitlines()
+        if ln.strip() and not ln.strip().startswith("#")
+    ]
+    _check("core/data_window.py 删 SNAPSHOT_CUTOFF_HOUR 赋值/引用",
+           not any("SNAPSHOT_CUTOFF_HOUR" in ln for ln in code_lines),
+           f"残留: {[l for l in code_lines if 'SNAPSHOT_CUTOFF_HOUR' in l]}")
+    # resolve_bi_dt_window 仍能用（默认 12）
+    from core.data_window import resolve_bi_dt_window
+    v = resolve_bi_dt_window()
+    _check("resolve_bi_dt_window 默认 cutoff=12 仍工作",
+           isinstance(v, str) and len(v) == 10,
+           f"got {v!r}")
+
+
 # §47 Phase 12 schema 变更（CHANNELS/PLAN_TYPES/TaskInput 新字段）
 def test_phase12_schema():
     from core.schemas import CHANNELS, PLAN_TYPES, TaskInput
@@ -3472,6 +3538,8 @@ def main():
     test_phase17_weighted_ctr_utility()
     # §53 Phase 17.5 代码质量清理（CSV reader / row dict / rule_engine / jieba 批量）
     test_phase17_5_refactors()
+    # §54 Phase 17.6 Streamlit 缓存 + 死代码清理
+    test_phase17_6_dead_code()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

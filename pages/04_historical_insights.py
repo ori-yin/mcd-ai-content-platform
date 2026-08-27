@@ -22,6 +22,7 @@ CLAUDE.md §9：
 
 from __future__ import annotations
 
+from io import BytesIO
 from typing import Optional
 
 import pandas as pd
@@ -89,6 +90,26 @@ _init_state()
 # ============================================================
 # 渲染：上传
 # ============================================================
+
+
+# Phase 17.6：st.cache_data 包文件解析（key=bytes hex digest）
+# 避免 Streamlit 每次 widget 变化都重读 48k+ 行 Excel
+@st.cache_data(show_spinner=False)
+def _cached_parse_insights_file(file_bytes: bytes, filename: str):
+    """缓存 key = sha1(file_bytes)，同文件多次上传直接命中。"""
+    if filename.lower().endswith(".csv"):
+        df = pd.read_csv(BytesIO(file_bytes))
+        meta = {"n_rows": len(df), "sheet_name": "csv", "all_sheets": ["csv"]}
+    else:
+        df, meta = build(file_bytes)
+    return df, meta
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _cached_generation_records_list() -> list:
+    """generation_records 列表（TTL 60s；变更不频繁）"""
+    from repositories import sqlite_repository
+    return sqlite_repository.list_all(limit=10000)
 def _render_uploader():
     st.markdown("### 1 上传历史数据")
     st.caption(
@@ -110,11 +131,8 @@ def _render_uploader():
 
     file_bytes = uploaded.read()
     try:
-        if uploaded.name.lower().endswith(".csv"):
-            df = pd.read_csv(__import__("io").BytesIO(file_bytes))
-            meta = {"n_rows": len(df), "sheet_name": "csv", "all_sheets": ["csv"]}
-        else:
-            df, meta = build(file_bytes)
+        # Phase 17.6：文件解析包 st.cache_data（key=bytes hash）避免每次 widget 变化都重读 48k+ 行
+        df, meta = _cached_parse_insights_file(file_bytes, uploaded.name)
     except Exception as e:
         st.error(f"解析失败：{e}")
         return
