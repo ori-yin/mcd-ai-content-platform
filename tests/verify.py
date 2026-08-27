@@ -902,15 +902,16 @@ def test_schemas_phase3():
     except ValueError:
         _check("TaskInput 灰态字段空 不抛错（Phase 6 P1）", False, "误抛错")
 
-    # Candidate
+    # Candidate（Phase 13 2026-08-27：删除 edited 字段 + effective_*/is_edited/reset_edit）
     c = Candidate(id="A", strategy="A_核心利益直给", title="新品限时", body="点击查看详情")
-    _check("Candidate effective_title 默认等于 title", c.effective_title == "新品限时")
-    _check("Candidate is_edited 默认 False", c.is_edited is False)
-    c.title_edited = "新品限时来啦"
-    _check("Candidate 改 title_edited is_edited=True", c.is_edited is True)
-    _check("Candidate effective_title 用 edited", c.effective_title == "新品限时来啦")
-    c.reset_edit()
-    _check("Candidate reset_edit 恢复", c.effective_title == "新品限时")
+    _check("Candidate 无 title_edited 字段", not hasattr(c, "title_edited"))
+    _check("Candidate 无 body_edited 字段", not hasattr(c, "body_edited"))
+    _check("Candidate 无 effective_title 属性", not hasattr(c, "effective_title"))
+    _check("Candidate 无 effective_body 属性", not hasattr(c, "effective_body"))
+    _check("Candidate 无 is_edited 属性", not hasattr(c, "is_edited"))
+    _check("Candidate 无 reset_edit 方法", not hasattr(c, "reset_edit"))
+    _check("Candidate title 直读", c.title == "新品限时")
+    _check("Candidate body 直读", c.body == "点击查看详情")
     try:
         Candidate(id="X", strategy="A_核心利益直给", title="t", body="b")
         _check("Candidate.id 非法抛错", False, "未抛错")
