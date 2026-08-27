@@ -304,12 +304,13 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：**核心全链路完成 + 代码质量清理完成**（Phase 17.6 · 2026-08-28 用户拍板"按节奏继续做完"）
-- **用例**：630 PASS / 0 FAIL（`python tests/verify.py`，574 → 630）= pytest 双路一致
+- **阶段**：**核心全链路完成 + L1 LightGBM 生产接入完成**（Phase 19 · 2026-08-28）
+- **用例**：677 PASS / 0 FAIL（`python tests/verify.py`，630 → 677，§56 新增 22 用例）= pytest 双路一致
 - **已可用模块**：①内容创作（01 生成 3 候选 + CTR 评估 + 阈值生效）；②真实回流（04 上传 CSV/Excel → 入库 → 4 维度聚合 → 写 baseline）；③历史洞察（04 七 Tab）；④批量评估 CTR（03）
-- **代码质量清理**：02 页面 bug 修复 / LLM call LRU cache / weighted_ctr 合并 / 注释对齐 / 死代码删除 / CSV reader 合并 / rule_engine 重构 / jieba 批量向量化 / Streamlit 页面缓存 / 5 处死代码清理（saved_id/apply_brand_theme/from_optional/SNAPSHOT_CUTOFF_HOUR/import io）
-- **未做（用户拍板延后）**：自动定时校准（`weekly_calibrate.bat` 仅落档不调度）/ L1 LightGBM 模型升级（Roadmap §5.5；等样本过千）
-- **首要任务**：真回流数据进来时手动跑 `python tools/calibrate_baseline.py --db data/feedback.db` 重算 baseline
+- **L1 静默双轨**：admin 在 sidebar 勾选"显示 L1 实验对比（仅管理员）"才显示 L1 预测列；默认关，业务侧 CTR 仍是 CTRPredictionAdapter（demo/LLM）口径；模型缺失/渠道不在训练范围时静默降级 unavailable，主流程不受影响
+- **代码质量清理**：02 页面 bug 修复 / LLM call LRU cache / weighted_ctr 合并 / 注释对齐 / 死代码删除 / CSV reader 合并 / rule_engine 重构 / jieba 批量向量化 / Streamlit 页面缓存 / 5 处死代码清理 / L1 predictor 静默双轨
+- **未做（用户拍板延后）**：自动定时校准（`weekly_calibrate.bat` 仅落档不调度）/ 切 L1 主流程时点（业务拍板，详 §6.3）/ 误差监控 + 特征重要性周报 + 重训责任人（详 §6.3）
+- **首要任务**：真回流数据进来时手动跑 `python tools/calibrate_baseline.py --db data/feedback.db` 重算 baseline；积累样本后管理员用 sidebar 开关体验 L1 双轨对比，**当前不切 L1 主流程**
 - **决策文档**：`Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`
 - **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿；v3.1.1 渠道清理已落档）+ `docs/feedback-ctr.md`
 
@@ -341,6 +342,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 17.5** 重构 · CSV reader / row dict / rule_engine / 批量分类 | 用户拍板"继续"：①core/csv_utils.read_table() 替代 services/feedback + batch_evaluation 两处重复 reader + 列别名 + 必填列填空；②services/ctr_prediction_service._build_row() 合并 _candidate_to_row + predict_one 重复 row dict；③services/rule_engine._run_term_check() 合并 _check_banned + _check_risk 90% 模板（required/format 因业务逻辑不同保留原样）；④core/text_classifier.classify_coupon_batch() 向量化替代 df.apply(axis=1)（批量场景 50-100x 加速），feedback_service.to_records + tools/recalc_text_has_coupon.infer_text_has_coupon 改调批量版。verify 600 → 618 PASS（§53 新增 18 用例） | **618（CLI）/ 52（pytest，双路一致）** |
 | **Phase 17.6** Streamlit 缓存 + 死代码清理 | 用户拍板"按节奏继续"：①pages/04 删 `__import__("io").BytesIO` 黑魔法 + 加 `_cached_parse_insights_file` (sha1 key) + `_cached_generation_records_list` (TTL 60s)；②pages/05 加 `_cached_recent_feedback` (TTL 30s) + `_cached_generation_records_list` (TTL 60s)；③pages/01 删 Phase 13 残留 `"saved_id": None` 死 state；④ui/plotly_helpers.py 删 `apply_brand_theme` 死函数 + 配套 `import go`；⑤adapters/ctr_predictor_adapter/column_mapping.py 删 `from_optional()` NotImplementedError 死函数；⑥core/data_window.py 删 `SNAPSHOT_CUTOFF_HOUR` 常量（`resolve_bi_dt_window` 默认 cutoff=12 硬编码保留）。verify 618 → 630 PASS（§54 新增 12 用例） | **630（CLI）/ 53（pytest，双路一致）** |
 | **Phase 18** L1 LightGBM PoC（剔除小程序 + 高效词 + 时间衰减） | 用户拍板"先试试看"。基于 cnn_backup_cleaned.xlsx 4.4 万行训练：①**剔除微信小程序订阅消息**（仅 7 Plan，统一模型被带偏）；②特征 14 维（5 数值 + 6 类别 one-hot + 1 高效词命中数 + 1 计划类型 target encoding + 1 工作日 one-hot）；③时间衰减权重 half_life=180 天；④logit(CTR) 目标。结果：L1 MAE 0.353%（vs L0 0.414% 降 14.8%），R² 0.136（vs L0 -0.005）。**3 渠道 L1 全胜**：APP Push 0.272%（vs L0 0.309%）/ 企微1v1 0.631%（vs L0 0.740%）/ 短信 0.215%（vs L0 0.351%）。**关键发现**：A/B 对比验证渠道×工作日交叉特征为负向（LightGBM 自己能学，显式加 = 特征冗余）。`tools/train_lgbm.py` 训练 + `tools/evaluate_lgbm.py` L1 vs L0 同口径对比 + `data/lgbm_model_v1.pkl` 模型 + `data/effective_words.json` 高效词表（62 词来自 word_frequency 差值>0.5）+ `data/lgbm_feature_meta.json` 特征元信息。**待做**：`adapters/ctr_predictor_adapter/l1_predictor.py` 接入 + 4 态分明 + 误差监控 + 业务方拍"特征重要性 Top10 每周给业务看" / "切 L1 时点" / "误差告警阈值" / "训练责任人"（§6.3）。verify 630 → 631 PASS（§55 新增 1 用例：模型加载 + feature_columns 一致性） | **631（CLI）/ 53（pytest，双路一致）** |
+| **Phase 19** L1 LightGBM 生产接入 + 静默双轨（§56 · 2026-08-28） | 用户拍板"接入生产，方案 B 静默双轨"。**接入**：新建 `adapters/ctr_predictor_adapter/l1_predictor.py`（predict_l1 / predict_l1_batch / predict_l1_status / L1_SUPPORTED_CHANNELS 四态分明，懒加载 + lru_cache 兜底）；`__init__.py` 导出 4 符号。**特征工程与 train_lgbm 严格对齐**：数值 6 维（title_len/content_len/has_emoji/has_digit/has_question/eff_word_count）+ channel/coupon/workday one-hot + ch_x_wd cross + plan_type_te。**静默双轨**：`pages/01_content_studio.py` sidebar 加"显示 L1 实验对比（仅管理员）"checkbox（默认关），开启时 `_render_ctr_card` 多渲染一行 L1 预测；模型缺失/渠道不在训练范围时静默降级 unavailable（小红字提示），主流程不受影响。**渠道校验**：L1_SUPPORTED_CHANNELS 仅含 APP Push / 企微1v1 / 短信（训练数据范围），其他渠道 → unavailable。**容错**：lru_cache(maxsize=1) 加载模型，异常路径返回 (None, "unavailable") 不抛错。verify 655 → 677 PASS（§56 新增 22 用例） | **677（CLI）/ 54（pytest，双路一致）** |
 
 > 详细 bullets 全部移入 §5 决策记录（按 commit hash 可追溯）。本表为速查。
 
@@ -454,10 +456,25 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 4. **责任划分**：谁负责训练 / 谁负责监控 / 谁有权批准上线
 
 **业务要拍 4 项**：
-1. **切 L1 时点**：样本 ≥ 多少 plan 时启动 L1？建议 ≥ 1000
-2. **谁来训练**：业务方跑 / 平台自动 / 数据团队跑？
-3. **误差告警阈值**：MAE 涨多少触发告警？建议 > 30%
-4. **可解释输出**：要不要把"特征重要性 Top10 维度"每周给业务看？
+1. **切 L1 时点**：样本 ≥ 多少 plan 时启动 L1？建议 ≥ 1000 → ⏳ 待业务拍板
+2. **谁来训练**：业务方跑 / 平台自动 / 数据团队跑？ → ⏳ 待业务拍板
+3. **误差告警阈值**：MAE 涨多少触发告警？建议 > 30% → ⏳ 待业务拍板
+4. **可解释输出**：要不要把"特征重要性 Top10 维度"每周给业务看？ → ⏳ 待业务拍板
+
+**Phase 19 完成项（2026-08-28）**：
+- ✅ `adapters/ctr_predictor_adapter/l1_predictor.py` 接入生产（predict_l1 / predict_l1_batch / predict_l1_status）
+- ✅ `__init__.py` 导出 4 符号
+- ✅ 静默双轨：`pages/01_content_studio.py` sidebar admin 开关，默认关
+- ✅ 4 态分明：model / baseline_only（模型缺）/ unavailable（渠道不在训练范围 + 特征构造失败）
+- ✅ 渠道校验：L1_SUPPORTED_CHANNELS = (APP Push, 企微1v1, 短信)
+- ✅ 容错：lru_cache 加载 + 异常路径静默降级（不抛错影响主流程）
+- ✅ 验证：verify 655 → 677 PASS（§56 新增 22 用例）
+
+**Phase 19 未做（留给后续 Phase）**：
+- ⏳ CTRPredictionAdapter 模式加 "l1_model" 正式切主流程（业务拍板后启用，当前 sidebar 静默对比）
+- ⏳ `tools/plot_error_curve.py` 周度误差曲线监控
+- ⏳ 特征重要性 Top10 周报输出
+- ⏳ 训练责任人 + 重训调度机制
 
 ---
 
