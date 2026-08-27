@@ -15,6 +15,12 @@ Phase 1b 新增（CLAUDE.md §6.2 CTR_MODE）：
     - demo:                演示数据稳定占位
     - unavailable:         无有效结果
 
+Phase 19 新增（L1 LightGBM 静默双轨）：
+- l1_predictor: predict_l1 / predict_l1_batch / predict_l1_status / L1_SUPPORTED_CHANNELS
+    - 四态：model / baseline_only（模型缺失）/ unavailable（渠道不在训练范围）
+    - 默认 silent；UI 必须显式开启 sidebar checkbox 才走预测
+    - 模型缺失或特征构造失败均静默降级，不影响主流程
+
 红线（CLAUDE.md §4.1）：
 - 页面层不得 import 此 adapter 的内部模块，统一通过本 __init__.py
 - 本 adapter 不得 import openai / anthropic SDK（由 core/llm_gateway 承担）
@@ -37,6 +43,12 @@ from .column_mapping import (
 )
 from .prompt_builder import build_context_for_llm, enrich_rows_for_llm
 from .feedback_lookup import is_feedback_ready, lookup_feedback_ctr
+from .l1_predictor import (
+    predict_l1,
+    predict_l1_batch,
+    predict_l1_status,
+    L1_SUPPORTED_CHANNELS,
+)
 
 from typing import Optional  # noqa: E402
 
@@ -237,4 +249,9 @@ __all__ = [
     # 统一入口（Phase 1b）
     "CTRPredictionAdapter",
     "VALID_MODES",
+    # Phase 19 L1 静默双轨
+    "predict_l1",
+    "predict_l1_batch",
+    "predict_l1_status",
+    "L1_SUPPORTED_CHANNELS",
 ]
