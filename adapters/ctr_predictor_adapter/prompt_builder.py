@@ -98,7 +98,7 @@ def enrich_rows_for_llm(rows: list, baseline: Optional[dict] = None) -> list:
         plan = str(row.get("计划类型", "")).strip()
         owner = str(row.get("预算Owner", "")).strip()
 
-        plan_v = plan if plan in ("AARRPlan", "普通Plan") else None
+        plan_v = plan if plan in ("AARRPlan", "常规Plan") else None
         char_range_v = get_char_range(title) if title else None
         bl_ctr = get_baseline_ctr(channel, coupon or None, workday or None,
                                   plan_v, owner or None, char_range_v,
