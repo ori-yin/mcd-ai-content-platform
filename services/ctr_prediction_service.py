@@ -32,8 +32,8 @@ def _candidate_to_row(candidate: Candidate, task: TaskInput) -> dict:
     _signature 字段：Phase-B demo 回灌用，按 task + title 算 SHA1 截 12 位
     （与 records.db / feedback.db 的 task_signature 字段对齐，Phase 5 P0 约定）。
     """
-    title = candidate.effective_title
-    body = candidate.effective_body
+    title = candidate.title
+    body = candidate.body
     return {
         "channel": task.channel,
         "title": title,
