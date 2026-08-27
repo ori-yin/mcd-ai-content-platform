@@ -953,7 +953,8 @@ def test_schemas_phase3():
     # 常量
     _check("CANDIDATE_STRATEGIES 3 条", len(CANDIDATE_STRATEGIES) == 3)
     _check("TARGET_AUDIENCE 含 5 项", len(TARGET_AUDIENCE) >= 5)
-    _check("CHANNELS 4 渠道", set(CHANNELS) == {"APP Push", "企微 1v1", "短信", "站内信"})
+    _check("CHANNELS 4 渠道（Phase 12 #8 用户拍板：删'站内信'+加'微信小程序订阅消息'）",
+           set(CHANNELS) == {"APP Push", "企微1v1", "短信", "微信小程序订阅消息"})
 
 
 # ============================================================
@@ -1340,11 +1341,11 @@ def test_batch_evaluation():
     rows3 = evaluate_batch(parse_batch_file(bad_csv, "bad.csv"))
     _check("非法渠道行被记 error", rows3[0]["error"] != "")
 
-    # 7. 全部 4 个渠道批量
+    # 7. 全部 4 个渠道批量（Phase 12 #8 schema 增'微信小程序订阅消息'；CHANNELS 4 值）
     df4 = pd.DataFrame({
         "title": ["t1", "", "t3", "t4"],
         "body": ["b1 优惠点击查看", "b2 立即查看", "b3 查看详情", "b4 立即了解"],
-        "channel": ["APP Push", "企微 1v1", "短信", "站内信"],
+        "channel": ["APP Push", "企微1v1", "短信", "微信小程序订阅消息"],
     })
     rows4 = evaluate_batch(df4, ctr_mode="demo")
     _check("4 渠道批量评估行数对齐", len(rows4) == 4)
@@ -1910,8 +1911,8 @@ def test_phase6_p1_pending_fields():
            "product_benefit" not in TaskInput.REQUIRED_FIELDS)
     _check("REQUIRED_FIELDS 不再含 objective",
            "objective" not in TaskInput.REQUIRED_FIELDS)
-    _check("REQUIRED_FIELDS 含 audience/channel/stage/scene/tone 5 项",
-           set(TaskInput.REQUIRED_FIELDS) == {"audience", "channel", "stage", "scene", "tone"})
+    _check("REQUIRED_FIELDS 含 audience/channel/stage/tone 4 项（Phase 12 #10 scene 改选填）",
+           set(TaskInput.REQUIRED_FIELDS) == {"audience", "channel", "stage", "tone"})
 
     # from_form 接受 product_benefit="" + objective="" 不抛错
     form_empty_pending = {
@@ -2080,8 +2081,8 @@ def test_ctr_definition_v31():
            "bi_dt" in base["_definition_note"] and "INTERVAL 2" in base["_definition_note"])
     _check("baseline _min_reach_threshold == 1000",
            base.get("_min_reach_threshold") == 1000)
-    _check("baseline _definition_version == v3.1",
-           base.get("_definition_version") == "v3.1")
+    _check("baseline _definition_version == v3.1.1（Phase 12 渠道清理）",
+           base.get("_definition_version") == "v3.1.1")
     _check("baseline _definition_ref == docs/ctr-kpi-definition-proposal-v0.2.md",
            base.get("_definition_ref") == "docs/ctr-kpi-definition-proposal-v0.2.md")
 
@@ -2743,6 +2744,103 @@ def test_workday_classification():
                f"got {type(e).__name__}: {e}")
 
 
+# §46 Phase 12 classify_coupon_in_text（标题/正文含券词推断 · config/coupon_keywords.yaml v1.0）
+def test_classify_coupon_in_text():
+    from core.text_classifier import classify_coupon_in_text, _load_keywords
+
+    # ── 1) 折扣词命中 ──
+    _check("'9.9元起' 含 9.9 → 是", classify_coupon_in_text("新品9.9元起") == "是")
+    _check("'5折优惠' 含 5折 → 是", classify_coupon_in_text("全场5折优惠") == "是")
+    _check("'立减10元' 含 立减 → 是", classify_coupon_in_text("立减10元") == "是")
+
+    # ── 2) 优惠词命中 ──
+    _check("'优惠券已到账' 含 优惠券 → 是",
+           classify_coupon_in_text("优惠券已到账") == "是")
+    _check("'代金券领取' 含 代金券 → 是",
+           classify_coupon_in_text("代金券领取") == "是")
+    _check("'满减活动' 含 满减 → 是", classify_coupon_in_text("满减活动") == "是")
+    _check("'福利来了' 含 福利 → 是", classify_coupon_in_text("福利来了") == "是")
+
+    # ── 3) 链接词命中 ──
+    _check("'点击 mcd.cc/xxx 领券' → 是",
+           classify_coupon_in_text("点击 mcd.cc/xxx 领券") == "是")
+    _check("'>>>查看详情' → 是",
+           classify_coupon_in_text(None, ">>>查看详情") == "是")
+
+    # ── 4) 标题 + 正文 混合 ──
+    _check("标题无/正文含券 → 是",
+           classify_coupon_in_text("新品上市", "快来领优惠券吧") == "是")
+
+    # ── 5) 都不含券 → 否 ──
+    _check("'新品上市快来尝新' → 否",
+           classify_coupon_in_text("新品上市快来尝新") == "否")
+    _check("'传奇绳匠充能餐低至50元' → 否（无券词）",
+           classify_coupon_in_text("传奇绳匠充能餐低至50元") == "否")
+
+    # ── 6) 空字符串 / None ──
+    _check("空 title + 空 body → 否", classify_coupon_in_text("", "") == "否")
+    _check("None title + None body → 否",
+           classify_coupon_in_text(None, None) == "否")
+    _check("None title + '优惠券' body → 是",
+           classify_coupon_in_text(None, "优惠券") == "是")
+
+    # ── 7) 关键词词典加载 ──
+    patterns = _load_keywords()
+    _check("_load_keywords 返回 list[re.Pattern]",
+           isinstance(patterns, list) and len(patterns) > 0)
+
+
+# §47 Phase 12 schema 变更（CHANNELS/PLAN_TYPES/TaskInput 新字段）
+def test_phase12_schema():
+    from core.schemas import CHANNELS, PLAN_TYPES, TaskInput
+
+    # ── 1) CHANNELS 5 渠道（删"站内信"+加"微信小程序订阅消息"）──
+    _check("CHANNELS 含 4 渠道",
+           len(CHANNELS) == 4)
+    _check("CHANNELS 不含'站内信'（Phase 12 #8 删）",
+           "站内信" not in CHANNELS)
+    _check("CHANNELS 含'微信小程序订阅消息'（Phase 12 #8 加）",
+           "微信小程序订阅消息" in CHANNELS)
+
+    # ── 2) PLAN_TYPES 连写命名（Phase 12 #9）──
+    _check("PLAN_TYPES 3 值",
+           len(PLAN_TYPES) == 3)
+    _check("PLAN_TYPES 含 'AARRPlan'（连写，无空格）",
+           "AARRPlan" in PLAN_TYPES)
+    _check("PLAN_TYPES 含 '常规Plan'（连写，无空格）",
+           "常规Plan" in PLAN_TYPES)
+    _check("PLAN_TYPES 不含'普通 Plan'（旧命名）",
+           "普通 Plan" not in PLAN_TYPES)
+    _check("PLAN_TYPES 不含'AARR Plan'（旧命名）",
+           "AARR Plan" not in PLAN_TYPES)
+
+    # ── 3) TaskInput scene 改选填（Phase 12 #10）──
+    _check("TaskInput.REQUIRED_FIELDS 4 项",
+           len(TaskInput.REQUIRED_FIELDS) == 4)
+    _check("REQUIRED_FIELDS 不含 scene", "scene" not in TaskInput.REQUIRED_FIELDS)
+    _check("REQUIRED_FIELDS 含 audience/channel/stage/tone",
+           set(TaskInput.REQUIRED_FIELDS) == {"audience", "channel", "stage", "tone"})
+
+    # ── 4) TaskInput.scene 默认空串 ──
+    t1 = TaskInput.from_form({"audience": "x", "channel": "APP Push",
+                              "stage": "活动上线", "tone": "直接利益型"})
+    _check("from_form 空 scene 不抛错", t1.scene == "")
+
+    # ── 5) TaskInput 新增 text_has_coupon 字段（Phase 12 #11）──
+    _check("TaskInput 有 text_has_coupon 字段",
+           "text_has_coupon" in TaskInput.__dataclass_fields__)
+    _check("text_has_coupon 默认空串",
+           TaskInput(audience="x", channel="APP Push",
+                     stage="活动上线", tone="直接利益型").text_has_coupon == "")
+
+    # ── 6) from_form 传 text_has_coupon ──
+    t2 = TaskInput.from_form({"audience": "x", "channel": "APP Push",
+                              "stage": "活动上线", "tone": "直接利益型",
+                              "text_has_coupon": "是"})
+    _check("from_form 传 text_has_coupon=是",
+           t2.text_has_coupon == "是")
+
+
 # ============================================================
 # Main
 # ============================================================
@@ -2815,6 +2913,10 @@ def main():
     test_demo_feedback()
     # §45 Phase 11 工作日/非工作日 2 值分类（Handoff §6.2 #12 用户简化拍板）
     test_workday_classification()
+    # §46 Phase 12 文案含券词推断（config/coupon_keywords.yaml v1.0）
+    test_classify_coupon_in_text()
+    # §47 Phase 12 schema 变更（CHANNELS/PLAN_TYPES/TaskInput 新字段）
+    test_phase12_schema()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")
