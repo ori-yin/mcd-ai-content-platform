@@ -1,8 +1,8 @@
 {
-  "version": "v3.1",
+  "version": "v3.2",
   "last_updated": "2026-08-27",
-  "last_refreshed_at": "2026-08-27",
-  "last_refreshed_by": "claude-session-2026-08-27-phase12",
+  "last_refreshed_at": "2026-08-27 18:13:35",
+  "last_refreshed_by": "tools/recalc_text_has_coupon.py",
   "data_window_start": "2024-10-15",
   "data_window_end": "2026-08-16",
   "calibration_lambda": 0.01,
@@ -265,6 +265,29 @@
         "16时": 0.002432,
         "17时": 0.003817
       }
+    },
+    "渠道_x_文案含券词": {
+      "description": "渠道 × 标题正文是否含券词（Phase 15 · 2026-08-27 新增维度；用 classify_coupon_in_text 推断每行 text_has_coupon；指数衰减加权 λ=0.01 半衰期 69.3 天；min_reach=1000 兜底）",
+      "data": {
+        "APP Push_否": 0.001888,
+        "APP Push_是": 0.0016,
+        "企微1v1_否": 0.005711,
+        "企微1v1_是": 0.007524,
+        "微信小程序订阅消息_否": 0.031688,
+        "微信小程序订阅消息_是": 0.033254,
+        "短信_否": 0.001354,
+        "短信_是": 0.00375
+      }
     }
-  }
+  },
+  "_calibration_log": [
+    "[渠道×文案含券词/APP Push_否] n_plans=734 reach=2834154412 加权CTR=0.1888%（已落 baseline v3.2）",
+    "[渠道×文案含券词/APP Push_是] n_plans=1777 reach=7582970317 加权CTR=0.1600%（已落 baseline v3.2）",
+    "[渠道×文案含券词/企微1v1_否] n_plans=364 reach=309346549 加权CTR=0.5711%（已落 baseline v3.2）",
+    "[渠道×文案含券词/企微1v1_是] n_plans=640 reach=1001667514 加权CTR=0.7524%（已落 baseline v3.2）",
+    "[渠道×文案含券词/微信小程序订阅消息_否] n_plans=42 reach=87087323 加权CTR=3.1688%（已落 baseline v3.2）",
+    "[渠道×文案含券词/微信小程序订阅消息_是] n_plans=82 reach=119602389 加权CTR=3.3254%（已落 baseline v3.2）",
+    "[渠道×文案含券词/短信_否] n_plans=59 reach=10495394 加权CTR=0.1354%（已落 baseline v3.2）",
+    "[渠道×文案含券词/短信_是] n_plans=336 reach=345158997 加权CTR=0.3750%（已落 baseline v3.2）"
+  ]
 }
