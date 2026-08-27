@@ -50,3 +50,6 @@ temp/
 
 # 本地 OneDrive 同步残留（按 memory feedback-onedrive-git）
 # 如果在 OneDrive 下，看到 .git 被吞，恢复流程参考 Handoff.md §13
+
+# L1 LightGBM 模型文件（pkl 二进制，重训可复现，不入 git）
+data/lgbm_model_*.pkl
