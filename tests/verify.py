@@ -3399,6 +3399,97 @@ def test_phase17_6_dead_code():
            f"got {v!r}")
 
 
+# §55 Phase 18 L1 LightGBM PoC（剔除小程序 + 高效词 + 时间衰减）
+def test_phase18_lgbm():
+    """Phase 18 · L1 LightGBM 模型 + 元信息 + 高效词表 + 工具脚本。"""
+    import pickle
+    from pathlib import Path
+
+    ROOT = Path(__file__).resolve().parent.parent
+    model_path = ROOT / "data" / "lgbm_model_v1.pkl"
+    meta_path = ROOT / "data" / "lgbm_feature_meta.json"
+    eff_words_path = ROOT / "data" / "effective_words.json"
+    train_script = ROOT / "tools" / "train_lgbm.py"
+    eval_script = ROOT / "tools" / "evaluate_lgbm.py"
+
+    # ── 1) 模型 + 元信息 + 高效词表 文件存在 ──
+    _check("data/lgbm_model_v1.pkl 存在", model_path.exists())
+    _check("data/lgbm_feature_meta.json 存在", meta_path.exists())
+    _check("data/effective_words.json 存在", eff_words_path.exists())
+    _check("tools/train_lgbm.py 存在", train_script.exists())
+    _check("tools/evaluate_lgbm.py 存在", eval_script.exists())
+
+    # ── 2) 模型能加载 + 是 LightGBM Booster ──
+    if model_path.exists():
+        with open(model_path, "rb") as f:
+            model = pickle.load(f)
+        _check("L1 模型类型 = lightgbm.Booster",
+               type(model).__name__ == "Booster")
+        # Booster 必有 num_trees 方法
+        _check("L1 模型有 num_trees()（训练过）",
+               hasattr(model, "num_trees") and model.num_trees() > 0)
+
+    # ── 3) 元信息字段齐全 ──
+    if meta_path.exists():
+        import json
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        _check("meta 含 feature_columns",
+               "feature_columns" in meta and len(meta["feature_columns"]) > 0)
+        _check("meta 含 target_transform=logit",
+               meta.get("target_transform") == "logit")
+        _check("meta 含 min_reach=50",
+               meta.get("min_reach") == 50)
+        _check("meta 含 time_decay_half_life_days=180",
+               meta.get("time_decay_half_life_days") == 180)
+        _check("meta 含 best_iteration（已收敛）",
+               "best_iteration" in meta and meta["best_iteration"] > 0)
+        _check("meta 含 test_metrics（已评估）",
+               "test_metrics" in meta and "overall_mae_pct" in meta["test_metrics"])
+        # 模型特征列与 meta 记录的一致
+        if model_path.exists():
+            with open(model_path, "rb") as f:
+                model = pickle.load(f)
+            model_feat = model.feature_name()
+            _check("模型 feature_name 与 meta feature_columns 一致",
+                   sorted(model_feat) == sorted(meta["feature_columns"]),
+                   f"diff: {set(model_feat) ^ set(meta['feature_columns'])}")
+
+    # ── 4) 高效词表字段 ──
+    if eff_words_path.exists():
+        import json
+        doc = json.loads(eff_words_path.read_text(encoding="utf-8"))
+        _check("effective_words 含 top_words 数组",
+               isinstance(doc.get("top_words"), list) and len(doc["top_words"]) > 0)
+        _check("effective_words count > 0",
+               doc.get("count", 0) > 0)
+        _check("effective_words min_diff=0.5（差值>0.5）",
+               doc.get("min_diff") == 0.5)
+
+    # ── 5) 训练脚本含 4 步关键改动 ──
+    if train_script.exists():
+        src = train_script.read_text(encoding="utf-8")
+        _check("train_lgbm.py 含 --exclude-channels 参数",
+               "--exclude-channels" in src)
+        _check("train_lgbm.py 含时间衰减权重逻辑（half_life）",
+               "half_life" in src and "0.5 **" in src)
+        _check("train_lgbm.py 含 _load_effective_words 函数",
+               "_load_effective_words" in src)
+        _check("train_lgbm.py 含 jieba 切词交集（高效词命中数）",
+               "_count_effective_words" in src)
+        _check("train_lgbm.py 含 logit 变换",
+               "_safe_logit" in src and "_safe_sigmoid" in src)
+
+    # ── 6) 评估脚本含 L1 vs L0 同口径对比 ──
+    if eval_script.exists():
+        src = eval_script.read_text(encoding="utf-8")
+        _check("evaluate_lgbm.py 含 L0 baseline 查表",
+               "lookup_l0_baseline" in src)
+        _check("evaluate_lgbm.py 含分渠道 MAE/MAPE",
+               "per_channel_metrics" in src)
+        _check("evaluate_lgbm.py 含分桶误差",
+               "per_bucket_metrics" in src)
+
+
 # §47 Phase 12 schema 变更（CHANNELS/PLAN_TYPES/TaskInput 新字段）
 def test_phase12_schema():
     from core.schemas import CHANNELS, PLAN_TYPES, TaskInput
@@ -3540,6 +3631,8 @@ def main():
     test_phase17_5_refactors()
     # §54 Phase 17.6 Streamlit 缓存 + 死代码清理
     test_phase17_6_dead_code()
+    # §55 Phase 18 L1 LightGBM PoC（剔除小程序 + 高效词 + 时间衰减）
+    test_phase18_lgbm()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")
