@@ -2,14 +2,18 @@
 r"""
 pages/01_content_studio.py — 01 内容创作（三栏主流程）
 
-PRD §4.1 主流程：
+PRD §4.1 主流程（Phase 13 2026-08-27 简化后）：
 定义经营任务 → 生成 3 条候选 → 查看历史证据与规则诊断 →
-比较 CTR 参考 → 渠道预览 → 人工编辑和选择 → 保存
+比较 CTR 参考 → 渠道预览 → 选择候选（业务方看后自行导入生产系统）
 
 三栏布局：
 - 左：定义经营任务（PRD §6.2）
 - 中：选择候选内容（PRD §7.2 / §7.3）
 - 右：预览并比较预测结果（PRD §8.2 / §8.3 / §8.4 / §8.5）
+
+Phase 13 用户拍板：工具定位 = CTR 评估辅助决策，不是选文案工作流。
+删除：编辑候选 / 恢复 AI 原文 / 保存当前选择 3 个按钮；records.db 留作
+train_dimension_weights.py 训练用，UI 不调用。
 
 session_state（PRD §17）：
 - task_input: dict（form 提交后保存）
@@ -41,11 +45,10 @@ from core.schemas import (
     TARGET_AUDIENCE, OBJECTIVES, CHANNELS, STAGES, SCENES,
     TONES, ACTIONS, PLAN_TYPES, COUPON_FLAGS,
 )
-from services.generation_service import generate, build_record, GenerationError, rank_candidates_by_ctr
+from services.generation_service import generate, GenerationError, rank_candidates_by_ctr
 from services.rule_engine import load_rules, check_candidates
 from services.ctr_prediction_service import predict_for_candidates
 from services.similarity_service import find_similar, summarize_similar
-from services.record_service import save_generation
 from ui.llm_status import render_banner
 from ui.plotly_helpers import rate_value
 from ui.styles import inject_base_css
@@ -271,16 +274,15 @@ def _render_middle_column(task: TaskInput, channel_rules: dict):
             is_selected = (c.id == selected_id)
             border_color = "#FFC72C" if is_selected else "#E0E0E0"
             border_w = "3px" if is_selected else "1px"
-            edited_tag = "  · 已编辑" if c.is_edited else ""
             st.markdown(
                 f"""
                 <div class="candidate-card" style="border-color:{border_color};
                      border-width:{border_w};">
                     <div class="cand-header">
-                        <b>{c.id}</b> · {c.strategy.split('_', 1)[1] if '_' in c.strategy else c.strategy}{edited_tag}
+                        <b>{c.id}</b> · {c.strategy.split('_', 1)[1] if '_' in c.strategy else c.strategy}
                     </div>
-                    <div class="cand-title">{c.effective_title or '（无标题）'}</div>
-                    <div class="cand-body">{c.effective_body}</div>
+                    <div class="cand-title">{c.title or '（无标题）'}</div>
+                    <div class="cand-body">{c.body}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -296,49 +298,31 @@ def _render_middle_column(task: TaskInput, channel_rules: dict):
 
     st.markdown("---")
 
-    # 选中候选的编辑区
+    # Phase 13 · 2026-08-27：删除"编辑候选 / 恢复 AI 原文"整段 UI（业务方看后自行导入生产系统）
+    # 选中候选的规则诊断（保留 PRD §8.4 规则检查）
     selected_cand = next((c for c in candidates if c.id == selected_id), candidates[0])
-    _render_edit_area(selected_cand, task, channel_rules)
+    _render_rule_panel(selected_cand, task, channel_rules)
 
 
-def _render_edit_area(c: Candidate, task: TaskInput, channel_rules: dict):
-    """编辑选中候选的 title / body；编辑后重算规则。"""
-    st.markdown(f"#### 编辑候选 {c.id}")
-
-    title_disabled = task.channel in ("短信", "企微 1v1")
-    new_title = st.text_input(
-        "标题",
-        value=c.effective_title,
-        disabled=title_disabled,
-        key=f"edit_title_{c.id}_{c.is_edited}",
+def _render_rule_panel(c: Candidate, task: TaskInput, channel_rules: dict):
+    """选中候选的规则诊断面板（PRD §8.4）。"""
+    rule_results: list = st.session_state.rule_results
+    selected_idx = next(
+        (i for i, x in enumerate(st.session_state.candidates) if x.id == c.id), 0,
     )
-    new_body = st.text_area(
-        "正文",
-        value=c.effective_body,
-        height=80,
-        key=f"edit_body_{c.id}_{c.is_edited}",
-    )
-
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        if st.button("恢复 AI 原文", key=f"reset_{c.id}", use_container_width=True):
-            c.reset_edit()
-            # 恢复后重算规则
-            cr, br = load_rules()
-            st.session_state.rule_results = check_candidates(
-                st.session_state.candidates, task.channel, cr, br,
+    rr: RuleResult = rule_results[selected_idx] if selected_idx < len(rule_results) else RuleResult()
+    if rr.items:
+        st.markdown(f"#### 候选 {c.id} · 规则诊断")
+        for it in rr.items:
+            icon = {"pass": "✓", "warn": "!", "fail": "✗"}.get(it.severity, "?")
+            color = {"pass": "#2E7D32", "warn": "#F9A825", "fail": "#C62828"}.get(it.severity, "#666")
+            st.markdown(
+                f'<div style="color:{color};font-size:14px;margin:2px 0;">'
+                f'<b>{icon} {it.category}</b> · {it.message}'
+                + (f'<br/><span style="color:#888;font-size:12px;">建议：{it.suggestion}</span>' if it.suggestion else "")
+                + '</div>',
+                unsafe_allow_html=True,
             )
-            st.rerun()
-
-    # 编辑后即时更新（PRD §17 规则检查在编辑后重新执行）
-    if new_title != c.effective_title or new_body != c.effective_body:
-        c.title_edited = new_title if new_title != c.title else None
-        c.body_edited = new_body if new_body != c.body else None
-        # 重算规则
-        cr, br = load_rules()
-        st.session_state.rule_results = check_candidates(
-            st.session_state.candidates, task.channel, cr, br,
-        )
 
 
 # ============================================================
@@ -388,8 +372,8 @@ def _render_right_column(task: TaskInput, channel_rules: dict):
 
 def _render_channel_preview(task: TaskInput, c: Candidate):
     ch = task.channel
-    title = c.effective_title or "（无标题）"
-    body = c.effective_body
+    title = c.title or "（无标题）"
+    body = c.body
     if ch == "APP Push":
         preview_html = (
             f'<div class="preview-card">'
@@ -563,30 +547,7 @@ def _render_recommendation(task: TaskInput, c: Candidate, rule: RuleResult):
     )
     st.markdown(f'<div class="decision-card">{text}</div>', unsafe_allow_html=True)
 
-    # 保存按钮
-    st.markdown("---")
-    if st.button("保存当前选择", type="primary", use_container_width=True):
-        _save_current(task)
-
-
-# ============================================================
-# 保存
-# ============================================================
-def _save_current(task: TaskInput):
-    rec = build_record(
-        task=task,
-        candidates=st.session_state.candidates,
-        selected_id=st.session_state.selected_id,
-        rule_results=st.session_state.rule_results,
-        ctr_results=st.session_state.ctr_results,
-        similar_summary=st.session_state.similar_summary,
-    )
-    try:
-        rid = save_generation(rec)
-        st.session_state.saved_id = rid
-        st.success(f"已保存（id={rid}）")
-    except Exception as e:
-        st.error(f"保存失败：{e}")
+    # Phase 13 · 2026-08-27：删除"保存当前选择"按钮（业务方看后自行导入生产系统）
 
 
 # ============================================================
@@ -627,7 +588,7 @@ def main():
         st.session_state.selected_id = candidates[0].id
         # 历史相似（仅第一条候选）
         first = candidates[0]
-        sim_df = find_similar(first.effective_title, first.effective_body, new_task.channel)
+        sim_df = find_similar(first.title, first.body, new_task.channel)
         st.session_state.similar_summary = summarize_similar(sim_df)
         st.session_state.last_generated_signature = _task_signature(new_task.to_dict())
         st.rerun()
