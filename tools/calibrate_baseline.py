@@ -38,6 +38,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Tuple
 
+from core.analytics_utils import weighted_ctr
+
 
 # ── 路径 ────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
@@ -104,7 +106,7 @@ def aggregate_feedback(db_path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, 
         by_cp_out: dict = {}
         for (ch, cp), v in by_cp.items():
             n_plans = len(v["sigs"])
-            ctr = v["click"] / v["reach"] if v["reach"] > 0 else 0.0
+            ctr = weighted_ctr(v["click"], v["reach"], as_percent=False)
             by_cp_out[(ch, cp)] = {
                 "reach": v["reach"], "click": v["click"],
                 "n_plans": n_plans, "ctr": ctr,
@@ -129,7 +131,7 @@ def aggregate_feedback(db_path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, 
         by_ch_out: dict = {}
         for ch, v in by_ch.items():
             n_plans = len(v["sigs"])
-            ctr = v["click"] / v["reach"] if v["reach"] > 0 else 0.0
+            ctr = weighted_ctr(v["click"], v["reach"], as_percent=False)
             by_ch_out[ch] = {
                 "reach": v["reach"], "click": v["click"],
                 "n_plans": n_plans, "ctr": ctr,
@@ -162,7 +164,7 @@ def aggregate_feedback(db_path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, 
         by_text_out: dict = {}
         for (ch, thc), v in by_text.items():
             n_plans = len(v["sigs"])
-            ctr = v["click"] / v["reach"] if v["reach"] > 0 else 0.0
+            ctr = weighted_ctr(v["click"], v["reach"], as_percent=False)
             by_text_out[(ch, thc)] = {
                 "reach": v["reach"], "click": v["click"],
                 "n_plans": n_plans, "ctr": ctr,
@@ -191,7 +193,7 @@ def aggregate_feedback(db_path) -> Tuple[Dict[Tuple[str, str], dict], Dict[str, 
         by_workday_out: dict = {}
         for (ch, wd), v in by_workday.items():
             n_plans = len(v["sigs"])
-            ctr = v["click"] / v["reach"] if v["reach"] > 0 else 0.0
+            ctr = weighted_ctr(v["click"], v["reach"], as_percent=False)
             by_workday_out[(ch, wd)] = {
                 "reach": v["reach"], "click": v["click"],
                 "n_plans": n_plans, "ctr": ctr,

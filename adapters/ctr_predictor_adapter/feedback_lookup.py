@@ -91,7 +91,8 @@ def lookup_feedback_ctr(signature: str) -> Optional[float]:
             click = int(row[1] or 0)
             if reach <= 0:
                 return None
-            return round(click / reach, 5)  # 小数（不是百分数）
+            from core.analytics_utils import weighted_ctr
+            return weighted_ctr(click, reach, as_percent=False)  # 小数
         finally:
             conn.close()
     except Exception:

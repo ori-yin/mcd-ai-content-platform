@@ -286,9 +286,11 @@ def add_tokens(df: pd.DataFrame, cols=("标题", "正文"), dict_path: Optional[
 
 # ── CTR 加权 / 词频 / 对比 ─────────────────────────────────────────────
 def _weighted_ctr(sub: pd.DataFrame) -> float:
+    """从子集 DataFrame 求 plan 加权 CTR；Phase 17 复用 core.analytics_utils。"""
+    from core.analytics_utils import weighted_ctr
     reach = float(sub["触达成功"].sum())
     click = float(sub["点击人次"].sum())
-    return round(click / reach * 100, 2) if reach > 0 else 0.0
+    return weighted_ctr(click, reach)
 
 
 def _freq(df: pd.DataFrame, col: str, label: str, plan_col: str = "Plan ID",

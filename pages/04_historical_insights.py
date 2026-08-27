@@ -28,6 +28,7 @@ import pandas as pd
 import streamlit as st
 
 from services.data_loader import build
+from core.analytics_utils import weighted_ctr
 from services.text_analyzer import (
     add_tokens, word_frequency, emoji_frequency, compare_token,
 )
@@ -279,7 +280,7 @@ def _render_title_length(df: pd.DataFrame):
             "n_plans": n_plans,
             "触达成功": reach,
             "点击": click,
-            "加权CTR%": round(click / reach * 100, 2),
+            "加权CTR%": weighted_ctr(click, reach),
         })
 
     if not rows:

@@ -2,9 +2,9 @@
 r"""
 core/schemas.py — 业务 dataclass 契约层
 
-Phase 1b 范围：
+覆盖范围（Phase 16.5 完整）：
 - PredictionResult: CTR 预测四态分明（CLAUDE.md §4.2 强制）
-- 未来补：TaskInput / Candidate / CopyAnalysis / etc.
+- TaskInput / Candidate / CopyAnalysis：均已实现
 
 四态定义：
 - model_prediction: 真实 LLM 预测（基于 baseline + 推理）

@@ -1158,7 +1158,7 @@ _section("29) Phase 3 import sanity")
 def test_phase3_imports():
     try:
         from services import (  # noqa
-            generation_service, rule_engine, record_service,
+            generation_service, rule_engine,
             ctr_prediction_service, similarity_service, copy_analysis_service,
         )
         from repositories import sqlite_repository  # noqa
@@ -3029,6 +3029,190 @@ def test_phase16_calibrate_text_workday():
     Path(legacy_db).unlink()
 
 
+# §51 Phase 17 代码质量清理（02 bug 修复 + 死代码删除 + LLM cache + docstring 对齐）
+def test_phase17_quality_cleanup():
+    """Phase 17 · 2026-08-28 用户拍板"检查整体代码质量性能"后清理：
+
+    - 02_copy_diagnosis.py 改用 ui.llm_status.load_config()（不再 `from core.config` 失败）
+    - services/record_service.py 整文件已删（Phase 13 后无人调）
+    - core/llm_gateway.ProviderRouter.call 加实例级 LRU cache（512 容量）
+    - docstring/注释 v3.0/Phase 3-4 标注对齐 Phase 16.5
+    """
+    import importlib
+
+    # ── 1) ui.llm_status.load_config 存在 + 返回 4 字段 dict ──
+    from ui import llm_status as ls
+    _check("ui.llm_status.load_config 存在",
+           hasattr(ls, "load_config"))
+    # monkey-patch 让 load_config 返回 4 字段（避免依赖实际 yaml）
+    ls._load_yaml.cache_clear()
+    orig_load_yaml = ls._load_yaml
+    ls._load_yaml = lambda: {"provider": "openai", "base_url": "https://x",
+                             "model": "gpt-4", "api_key": "sk-fake"}
+    cfg = ls.load_config()
+    _check("load_config 返回 dict",
+           isinstance(cfg, dict))
+    _check("load_config 键集 ⊇ 4 字段",
+           set(cfg.keys()) >= {"provider", "base_url", "model", "api_key"},
+           f"keys={set(cfg.keys())}")
+    ls._load_yaml = orig_load_yaml
+    ls._load_yaml.cache_clear()
+
+    # ── 2) ui.llm_status 已加入 __all__ ──
+    _check("load_config 在 __all__",
+           "load_config" in ls.__all__)
+
+    # ── 3) services/record_service.py 已删除 ──
+    import os
+    rs_path = os.path.join(
+        os.path.dirname(__file__), "..", "services", "record_service.py")
+    rs_path = os.path.normpath(rs_path)
+    _check("services/record_service.py 已删除",
+           not os.path.exists(rs_path),
+           f"仍存在：{rs_path}")
+
+    # ── 4) ProviderRouter 加 _cache 实例属性 + clear_cache 方法 ──
+    from core.llm_gateway import ProviderRouter
+    # 用一个简单的 dummy 配置实例化（不真发请求）
+    router = ProviderRouter(provider="openai", api_key="test", model="gpt-4")
+    _check("ProviderRouter._cache 初始化为空 dict",
+           router._cache == {})
+    _check("ProviderRouter.clear_cache 方法存在",
+           hasattr(router, "clear_cache"))
+
+    # 手动注入缓存验证（不真调 SDK）
+    router._cache[("prompt1", "gpt-4")] = "cached_response"
+    _check("router._cache 写入/读取",
+           router._cache[("prompt1", "gpt-4")] == "cached_response")
+    router.clear_cache()
+    _check("router.clear_cache 清空",
+           router._cache == {})
+
+    # ── 5) call() 命中 cache 走 _call_openai 不真发请求 ──
+    # 准备：注入假 cache + monkey-patch _call_openai 计数
+    call_count = {"n": 0}
+    original_call_openai = router._call_openai
+
+    def fake_call_openai(prompt, model):
+        call_count["n"] += 1
+        return "fake_response"
+
+    router._call_openai = fake_call_openai
+    router._cache[("hello", "gpt-4")] = "CACHED"
+    # 注入 api_key 才能走真实分支
+    router.api_key = "sk-fake"
+    r1 = router.call("hello")
+    _check("cache 命中：未调 _call_openai",
+           call_count["n"] == 0 and r1 == "CACHED",
+           f"r1={r1}, calls={call_count['n']}")
+    # 第二次不同 prompt 真调一次
+    r2 = router.call("different prompt")
+    _check("cache miss：调 _call_openai 1 次",
+           call_count["n"] == 1, f"calls={call_count['n']}")
+    # 第二次相同 prompt 应命中（但本例 prompt 不同不命中）
+    # 再来一次相同 prompt 测连续命中
+    call_count["n"] = 0
+    router._cache.clear()
+    router.call("same")
+    router.call("same")
+    _check("同 prompt 连续 2 次只调 1 次 _call_openai",
+           call_count["n"] == 1, f"calls={call_count['n']}")
+
+    # 还原
+    router._call_openai = original_call_openai
+
+    # ── 6) call() 缓存容量上限保护（>512 砍老一半）──
+    router2 = ProviderRouter(provider="openai", api_key="test", model="gpt-4")
+    # 模拟 600 项（不真调）
+    for i in range(600):
+        router2._cache[(f"p{i}", "gpt-4")] = f"r{i}"
+    router2._call_openai = lambda p, m: "fake"
+    router2.api_key = "sk-fake"
+    # 触发一次新 cache 写入（prompt 不在已有 keys 中）
+    router2.call("NEW_PROMPT_NEVER_CACHED")
+    _check("容量保护：触发后 cache ≤ 512",
+           len(router2._cache) <= 512,
+           f"size={len(router2._cache)}")
+
+    # ── 7) 02_copy_diagnosis.py 不再有 import core.config（注释里提到历史是 OK）──
+    diag_src_path = os.path.join(
+        os.path.dirname(__file__), "..", "pages", "02_copy_diagnosis.py")
+    diag_src_path = os.path.normpath(diag_src_path)
+    with open(diag_src_path, encoding="utf-8") as f:
+        diag_src = f.read()
+    # 拆行后 grep：import 语句不在注释中（无 # 前缀且有 from core.config）
+    import re as _re
+    import_lines = [
+        ln for ln in diag_src.splitlines()
+        if ln.strip().startswith(("from ", "import "))
+    ]
+    _check("02_copy_diagnosis.py 删 `from core.config import settings` 实际 import",
+           not any("from core.config import" in ln for ln in import_lines),
+           f"residual: {[l for l in import_lines if 'core.config' in l]}")
+    _check("02_copy_diagnosis.py 改用 load_config",
+           "ui.llm_status import" in diag_src and "load_config" in diag_src)
+
+    # ── 8) app.py / core/schemas.py / pages/00_home.py 注释对齐 Phase 16.5 ──
+    app_src = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
+                   encoding="utf-8").read()
+    _check("app.py 页面清单去 'Phase 4 占位'",
+           "Phase 4 占位" not in app_src)
+    _check("app.py 页面清单含 'Phase 16.5'",
+           "Phase 16.5" in app_src)
+
+    schema_src = open(os.path.join(os.path.dirname(__file__), "..", "core",
+                                   "schemas.py"), encoding="utf-8").read()
+    _check("core/schemas.py 删 '未来补：TaskInput / Candidate'",
+           "未来补：TaskInput" not in schema_src)
+    _check("core/schemas.py 提到 Phase 16.5",
+           "Phase 16.5" in schema_src)
+
+
+# §52 Phase 17 weighted_ctr 合并到 core.analytics_utils
+def test_phase17_weighted_ctr_utility():
+    """Phase 17 · weighted_ctr / weighted_ctr_series 替代 7+ 处重复公式。"""
+    from core.analytics_utils import weighted_ctr, weighted_ctr_series
+    import pandas as pd
+
+    # ── 标量版（默认百分数）──
+    _check("weighted_ctr(250, 5000) == 5.0", weighted_ctr(250, 5000) == 5.0)
+    _check("weighted_ctr(0, 0) == 0.0（安全除零）", weighted_ctr(0, 0) == 0.0)
+    _check("weighted_ctr(100, -1) == 0.0（负 reach 兜底）",
+           weighted_ctr(100, -1) == 0.0)
+
+    # ── 标量版（小数）──
+    _check("weighted_ctr(250, 5000, as_percent=False) == 0.05",
+           weighted_ctr(250, 5000, as_percent=False) == 0.05,
+           f"got {weighted_ctr(250, 5000, as_percent=False)}")
+
+    # ── Series 版（默认百分数）──
+    s = pd.Series([250, 100, 0])
+    r = pd.Series([5000, 5000, 0])
+    out = weighted_ctr_series(s, r)
+    _check("weighted_ctr_series [5.0, 2.0, 0.0]",
+           list(out) == [5.0, 2.0, 0.0],
+           f"got {list(out)}")
+
+    # ── Series 版（小数）──
+    out_dec = weighted_ctr_series(s, r, as_percent=False)
+    _check("weighted_ctr_series 小数版 [0.05, 0.02, 0.0]",
+           list(out_dec) == [0.05, 0.02, 0.0],
+           f"got {list(out_dec)}")
+
+    # ── 各调用点已替换（grep 验证）──
+    import subprocess
+    # 用 grep 统计还剩多少处 "click / reach * 100" 公式
+    r1 = subprocess.run(
+        ["grep", "-rn", "round(click / reach * 100",
+         "services/", "repositories/", "pages/04_historical_insights.py"],
+        capture_output=True, text=True,
+    )
+    inline_remaining = len([l for l in r1.stdout.splitlines() if l.strip()])
+    _check(f"残留 inline 公式 ≤ 2 处（实际 {inline_remaining}）",
+           inline_remaining <= 2,
+           f"残留:\n{r1.stdout}")
+
+
 # §47 Phase 12 schema 变更（CHANNELS/PLAN_TYPES/TaskInput 新字段）
 def test_phase12_schema():
     from core.schemas import CHANNELS, PLAN_TYPES, TaskInput
@@ -3162,6 +3346,10 @@ def main():
     test_phase15_text_has_coupon_baseline()
     # §50 Phase 16 calibrate_baseline 扩 text/workday 维度
     test_phase16_calibrate_text_workday()
+    # §51 Phase 17 代码质量清理（02 bug 修复 + LLM cache）
+    test_phase17_quality_cleanup()
+    # §52 Phase 17 weighted_ctr 合并到 core.analytics_utils
+    test_phase17_weighted_ctr_utility()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")

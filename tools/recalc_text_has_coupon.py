@@ -6,7 +6,7 @@ Phase 15 · 2026-08-27 用户拍板：
 - Phase 12 #11 加了 text_has_coupon 字段，但 baseline JSON 没建对应维度 key
 - baseline_lookup.py:97-101 永远走不到 → text_has_coupon 选了等于空跑
 - 用本脚本从 data/cnn_backup_cleaned.xlsx（48307 行）按指数衰减 λ=0.01 半衰期 69.3 天
-  聚合"渠道 × 文案含券词"维度，写入 baseline JSON（v3.1.1 → v3.2）
+  聚合"渠道 × 文案含券词"维度，写入 baseline JSON（v3.2 → v3.3 预留）
 
 为什么走一次性脚本而不是 calibrate_baseline.py：
 - feedback.db 是空的（0 行 feedback_records）

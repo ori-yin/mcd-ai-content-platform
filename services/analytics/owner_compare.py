@@ -15,6 +15,7 @@ from typing import Optional
 
 import pandas as pd
 
+from core.analytics_utils import weighted_ctr
 from services.text_analyzer import word_frequency
 
 
@@ -100,7 +101,7 @@ def owner_compare(
             "n_records": int(len(sub)),
             "触达成功": reach,
             "点击": click,
-            "加权CTR%": round(click / reach * 100, 2) if reach > 0 else 0.0,
+            "加权CTR%": weighted_ctr(click, reach),
             "标题字数均值": title_len_mean,
             "正文字数均值": body_len_mean,
             "高效词命中率%": hit_rate,

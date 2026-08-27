@@ -14,9 +14,7 @@ from typing import Optional
 
 import pandas as pd
 
-
-def _weighted_ctr(click: int, reach: int) -> float:
-    return round(click / reach * 100, 2) if reach > 0 else 0.0
+from core.analytics_utils import weighted_ctr as _weighted_ctr
 
 
 def daily_aggregate(

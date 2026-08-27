@@ -72,13 +72,13 @@ st.markdown("## 项目状态")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric("Phase 0（首批交付）", "完成", "工程化资产 + 项目骨架")
-with col2:
     st.metric("Phase 1（CTR Adapter）", "完成", "4 纯函数模块 + PredictionResult + ProviderRouter")
-with col3:
+with col2:
     st.metric("Phase 2（copy-analyzer Adapter）", "完成", "抽文案分析纯函数")
+with col3:
+    st.metric("Phase 3-15（业务页面 + 反哺闭环）", "完成", "01-04 业务页 + baseline v3.2 + 回流校准")
 with col4:
-    st.metric("Phase 3（业务页面）", "进行中", "01 内容创作完成；02-04 待 Phase 4")
+    st.metric("Phase 16.5（全链路上线）", "完成", "4 模块全可用；自动调度/L1 模型延后")
 
 st.markdown("## 关键决策")
 

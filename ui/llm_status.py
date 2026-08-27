@@ -47,6 +47,15 @@ def is_configured() -> bool:
     return not missing_fields()
 
 
+def load_config() -> dict:
+    """返回完整 4 字段 dict（缺失字段为 ""）；给需要构造 ProviderRouter 的调用方用。
+
+    Phase 17 增：pages/02_copy_diagnosis.py 之前误 `from core.config import settings`
+    （模块不存在），导致 LLM 配置正确时仍走 Demo。改走 load_config() 真实判断。
+    """
+    return _load_yaml()
+
+
 def render_banner():
     """在入口页渲染"LLM 未配置"banner。已配置则不渲染。"""
     import streamlit as st
@@ -62,4 +71,4 @@ def render_banner():
     )
 
 
-__all__ = ["is_configured", "missing_fields", "render_banner", "CONFIG_PATH"]
+__all__ = ["is_configured", "missing_fields", "render_banner", "load_config", "CONFIG_PATH"]

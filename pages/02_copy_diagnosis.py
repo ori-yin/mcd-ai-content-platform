@@ -491,12 +491,19 @@ def _run_rewrite():
     local.setdefault("emoji_count", 0)
 
     # Demo 模式：本地拼 2 条改写占位（PRD §19.1）
+    # Phase 17 修 bug：原来 `from core.config import settings` 模块不存在
+    # 导致 router 永远为 None、页面永远走 Demo。改成走 ui.llm_status 真实判断。
     from core.llm_gateway import ProviderRouter
+    from ui.llm_status import load_config
     router = None
     try:
-        from core.config import settings
-        if getattr(settings, "LLM_API_KEY", None):
-            router = ProviderRouter.from_settings(settings)
+        cfg = load_config()  # {provider, base_url, model, api_key} dict
+        if cfg.get("api_key"):
+            router = ProviderRouter(
+                provider=cfg["provider"],
+                api_key=cfg["api_key"],
+                model=cfg["model"],
+            )
     except Exception:
         router = None
 

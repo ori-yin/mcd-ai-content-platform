@@ -16,6 +16,8 @@ from typing import Optional
 
 import pandas as pd
 
+from core.analytics_utils import weighted_ctr
+
 
 # 默认阈值：plan 触达 >= 1000 视为有效样本；plan < 3 视为低样本过滤
 DEFAULT_MIN_REACH = 1000
@@ -103,7 +105,7 @@ def rank_plans(
             "n_days": int(n_days) if n_days else 0,
             "触达成功": reach,
             "点击": click,
-            "加权CTR%": round(click / reach * 100, 2) if reach > 0 else 0.0,
+            "加权CTR%": weighted_ctr(click, reach),
             "标题字数均值": title_len_mean,
             "正文字数均值": body_len_mean,
             "覆盖高效词数": hit_n,

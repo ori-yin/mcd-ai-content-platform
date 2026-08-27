@@ -25,6 +25,8 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, List
 
+from core.analytics_utils import weighted_ctr
+
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 DB_PATH = DATA_DIR / "feedback.db"
@@ -197,7 +199,7 @@ def aggregate_by_signature(db_path: Optional[str] = None) -> dict:
             sig = d["task_signature"]
             reach = int(d["reach"] or 0)
             click = int(d["click"] or 0)
-            ctr = round(click / reach * 100, 2) if reach > 0 else 0.0
+            ctr = weighted_ctr(click, reach)
             out[sig] = {
                 "reach": reach,
                 "click": click,

@@ -8,10 +8,10 @@ app.py — MCD AI 内容运营工作台入口
 
 页面清单（pages/ 下自动扫描）：
 - pages/00_home.py：首页（项目状态 / 决策 / 资产）
-- pages/01_content_studio.py：01 内容创作（Phase 3 已实现）
-- pages/02_copy_diagnosis.py：02 文案诊断（Phase 4 占位）
-- pages/03_batch_evaluation.py：03 批量评估（Phase 4 占位）
-- pages/04_historical_insights.py：04 历史洞察（Phase 4 占位）
+- pages/01_content_studio.py：01 内容创作（Phase 16.5 上线）
+- pages/02_copy_diagnosis.py：02 文案诊断（Phase 16.5 上线）
+- pages/03_batch_evaluation.py：03 批量评估（Phase 16.5 上线）
+- pages/04_historical_insights.py：04 历史洞察（Phase 16.5 上线）
 """
 
 from __future__ import annotations

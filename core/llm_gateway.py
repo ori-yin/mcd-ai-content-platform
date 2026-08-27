@@ -67,6 +67,9 @@ class ProviderRouter:
         self.timeout = timeout
         self.temperature = temperature
         self.max_tokens = max_tokens
+        # Phase 17 加实例级 LRU cache：同 prompt + model 命中直接返回，省 API 成本
+        # 容量 512；超出按 LRU 淘汰；测试需要重置时调 self.clear_cache()
+        self._cache: dict = {}
 
     # ── 主入口 ─────────────────────────────────────────────────────────
     def call(self, prompt: str, model: Optional[str] = None) -> str:
@@ -78,9 +81,29 @@ class ProviderRouter:
         if not self.api_key:
             return json.dumps({"_error": "请先填写API Key"}, ensure_ascii=False)
 
+        # Phase 17 LRU cache：key = (prompt, model)
+        cache_key = (prompt, model)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         if self.provider in ANTHROPIC_PROVIDERS:
-            return self._call_anthropic(prompt, model)
-        return self._call_openai(prompt, model)
+            raw = self._call_anthropic(prompt, model)
+        else:
+            raw = self._call_openai(prompt, model)
+
+        # 仅缓存成功响应（不带 _error 的）
+        if '"_error"' not in raw:
+            self._cache[cache_key] = raw
+            # 容量保护（LRU 简化版：超过 512 砍最旧一半）
+            if len(self._cache) > 512:
+                # dict 保留插入顺序；pop 老 key
+                for k in list(self._cache.keys())[:256]:
+                    self._cache.pop(k, None)
+        return raw
+
+    def clear_cache(self) -> None:
+        """清空缓存（测试用 / 配置改后刷新用）。"""
+        self._cache.clear()
 
     # ── OpenAI 协议 ────────────────────────────────────────────────────
     def _call_openai(self, prompt: str, model: str) -> str:
