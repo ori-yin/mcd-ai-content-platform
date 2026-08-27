@@ -113,6 +113,14 @@
   - verify.py 428 → **473 PASS, 0 FAIL**（§43 dimension_weights 20 用例 + §44 demo_feedback 25 用例）/ pytest 43 → **45 passed**（双路一致）
   - 本地拆 2 commit（`c83981f` 代码 + `c616354` Handoff §6.3 checkbox），远端通过 Contents API 合并推（`538f00f` 一次性合并 commit）；CLI emoji 撞 GBK → ASCII `[OK] [SKIP]` 替 ✓
 
+- **2026-08-27**：Phase 12 schema "未知"兜底字段拍板（用户口径）：
+  - **PLAN_TYPES 保留"未知"**：schema `PLAN_TYPES = ("AARRPlan", "常规Plan", "未知")` 中"未知"是 **form 字段默认值兜底**，不是数据源枚举（数据源只有 2 值，distinct=2）；删它会导致 form 不填时抛错，UI 必须强制选——失去 UX 防御性
+  - **COUPON_FLAGS 保留"未知"**：同上，schema 兜底；数据源"是否用券"也只有 2 值
+  - **"未知" ≠ 0 系数**（baseline_lookup.py:86 接受 `("是", "否")`）："未知" 跳过 `渠道_x_是否用券` 维度分支 → 走 `渠道整体` 兜底（粗粒度值）；"是/否" 命中该维度 → 用具体 CTR 系数
+  - **指数平滑衰减已实现**（baseline JSON v3.0+）：`calibration_lambda=0.01 / half_life_days=69.3 / weighted_method=exponential_decay`（`data/ctr_baseline.json:8-12`），所有维度 CTR 值都是加权后的；越靠近 `last_updated` 的数据权重越高（半衰期 69.3 天）
+  - **用券细分维度暂不做**（按 mcd-analysis 务实主义）：业务侧 form "是否" 已是主驱动（#11 反转验证），细分 ROI 暂不明确；数据列也没有结构化"用券类型"字段（只有 `是否用券` 1 列），关键词推断准确度有限；等跑一阵 #11 双字段数据后看 CTR 离散度再决定
+  - **不动代码**：纯 Handoff 文档同步
+
 - **2026-08-27**：Phase 12 #8/#9/#11 三项落地 + **#11 用户假设反转 + 用券双字段保留**：
   - **#11 用户假设反转**：用户原假设"标题正文带券词 CTR 影响更大"，CNN0827 数据验证**反转**——form "实际是否用券"才是主驱动（企微 1v1 form 用券 2.56x vs 文案含券 1.32x；APP Push 文案含券反向 0.84x）。**保留 form 字段**，新增"标题正文是否带券"作为第二个选填字段（双字段并存）
   - **#8 渠道清洗**（用户拍板）：清洗脚本 `tools/clean_cnn_backup.py` 滤掉"无需渠道"(434) + "微信公众号推文"(19)；baseline JSON v3.1.1 删 14 个 key（微信公众号推文 / 微信订阅 全维度 + optimal_chars）；schema CHANNELS 删"站内信" + 加"微信小程序订阅消息"
@@ -302,6 +310,15 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
   - `core/text_classifier.py` + `config/coupon_keywords.yaml` v1.0（discount/coupon/link 三类；删 `\d+元` 太宽）
   - `pages/01_content_studio.py` 加 selectbox；已有 coupon label 改"实际是否用券"
   - baseline_lookup.py 新增 `text_has_coupon` 参数 + "渠道_x_文案含券词" 维度分支（baseline JSON 暂无 key 走兜底；等用户重算 baseline）
+
+#### Schema 兜底字段决策（Phase 12 · 2026-08-27 · 用户拍板）
+
+- [x] **PLAN_TYPES / COUPON_FLAGS 保留"未知"** —— schema 兜底字段，非数据源枚举
+  - 数据源枚举：计划类型只 2 值（AARRPlan 93.3% + 常规Plan 6.7%，distinct=2）；是否用券只 2 值（是 67.2% + 否 32.8%，distinct=2）
+  - "未知"在 baseline_lookup 里的实际行为：`baseline_lookup.py:86` 接受 `("是", "否")` → "未知" 跳过 `渠道_x_是否用券` 维度分支 → 走 `渠道整体` 兜底（**粗粒度 fallback，不是 0 系数**）
+  - 不删"未知"原因：form 字段不填时需要 UI 兜底；删了强制 form 必填损失 UX 防御性
+- [x] **指数平滑衰减已实现** —— baseline JSON `calibration_lambda=0.01 / half_life_days=69.3 / weighted_method=exponential_decay`（`data/ctr_baseline.json:8-12`），所有维度 CTR 都是加权后的（越靠近 `last_updated` 权重越高，半衰期 69.3 天；2024-10 老数据权重 ≈ 0.0014）
+- [x] **用券细分维度暂不做** —— 业务侧 form "是否" 已确认是主驱动（#11 反转）；数据列无结构化"用券类型"字段；关键词推断 ROI 不明确；等跑一阵 #11 双字段数据后看 CTR 离散度再决定
 
 #### 已确认无需动
 
