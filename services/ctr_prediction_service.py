@@ -31,17 +31,35 @@ def _candidate_to_row(candidate: Candidate, task: TaskInput) -> dict:
 
     _signature 字段：Phase-B demo 回灌用，按 task + title 算 SHA1 截 12 位
     （与 records.db / feedback.db 的 task_signature 字段对齐，Phase 5 P0 约定）。
+
+    Phase 14 · 2026-08-27 bug 修复：
+    - row 同时输出中英文 key（prompt_builder 读中文 / 其它模块读英文），避免 key 不一致导致字段丢失
+    - 新增 workday 字段（之前 task.planned_send_date 是孤儿字段）
     """
     title = candidate.title
     body = candidate.body
+    coupon_v = task.coupon if task.coupon != "未知" else None
+    plan_v = task.plan_type if task.plan_type != "未知" else None
+    workday_v = task.planned_send_date if task.planned_send_date in ("工作日", "非工作日") else None
     return {
+        # 英文 key（保留向后兼容）
         "channel": task.channel,
         "title": title,
         "body": body,
-        "plan_type": task.plan_type if task.plan_type != "未知" else None,
-        "coupon": task.coupon if task.coupon != "未知" else None,
+        "plan_type": plan_v,
+        "coupon": coupon_v,
         "owner": None,  # PRD §26 第 12 项待确认
         "title_len": len(title),
+        # 中文 key（prompt_builder 实际读这些；与 column_mapping.KNOWN_*_ALIASES 对齐）
+        "渠道": task.channel,
+        "标题": title,
+        "内容": body,
+        "是否用券": coupon_v,
+        "计划类型": plan_v,
+        "预算Owner": None,
+        "工作日类型": workday_v,  # Phase 11/14 修复：把 planned_send_date 透传到 baseline_lookup
+        "发送时间": "",
+        # 调试用
         "_signature": task_signature(task, candidates=[candidate], selected_id=candidate.id),
     }
 
@@ -93,14 +111,25 @@ def predict_one(
         coupon=coupon or "",
     )
     tmp_cand = Candidate(id="A", strategy="diagnose", title=title, body=body)
+    plan_v = plan_type if plan_type and plan_type != "未知" else None
+    coupon_v = coupon if coupon and coupon != "未知" else None
     row = {
         "channel": channel,
         "title": title,
         "body": body,
-        "plan_type": plan_type if plan_type and plan_type != "未知" else None,
-        "coupon": coupon if coupon and coupon != "未知" else None,
+        "plan_type": plan_v,
+        "coupon": coupon_v,
         "owner": None,
         "title_len": len(title),
+        # 中文 key（prompt_builder 读这些）
+        "渠道": channel,
+        "标题": title,
+        "内容": body,
+        "是否用券": coupon_v,
+        "计划类型": plan_v,
+        "预算Owner": None,
+        "工作日类型": None,
+        "发送时间": "",
         "_signature": task_signature(tmp_task, candidates=[tmp_cand], selected_id=tmp_cand.id),
     }
     results = adapter.predict_batch([row])
