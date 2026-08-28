@@ -73,19 +73,12 @@ def _demo_candidates(task: TaskInput) -> list:
 
     Phase A.1 · 2026-08-28：
       - 原 product_benefit 拆为 product_category + benefit_type
-      - 演示文本拼接改为「类别 + 权益」（仅其一非空时用其一，都空时走兜底默认）
+      - 演示文本拼接：直接空格连接非空 token；都不空时用稳定兜底短语
     """
     # A.1：组合成一段"产品-权益"短语，无值时给稳定兜底
-    pc = task.product_category or ""
-    bt = task.benefit_type or ""
-    if pc and bt:
-        benefit = f"{pc} {bt}"
-    elif pc:
-        benefit = f"{pc} 优惠"
-    elif bt:
-        benefit = bt
-    else:
-        benefit = "新品限时优惠"
+    # 只拼接用户实际输入的 token，不补' 优惠'等凑字（避免'汉堡 优惠'这种生硬拼接）
+    tokens = [t for t in (task.product_category, task.benefit_type) if t]
+    benefit = " ".join(tokens) if tokens else "新品限时优惠"
     scene = task.scene or "日常"
     action = task.expected_action or "查看"
 
