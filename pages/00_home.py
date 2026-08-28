@@ -23,7 +23,7 @@ render_banner()
 st.markdown(
     f"""
     <div class="mcd-header">
-        <h1>🍟 MCD AI 内容运营工作台</h1>
+        <h1>MCD AI 内容运营工作台</h1>
         <p style="margin:0; opacity:0.85;">
             历史洞察 · AI 文案生成 · CTR 预测 · 人工决策
         </p>
@@ -38,7 +38,7 @@ st.markdown(
 st.markdown(
     """
     <div class="home-section home-section-core">
-        <h2>🚀 核心 · 内容生成</h2>
+        <h2>核心 · 内容生成</h2>
         <p style="margin:0; opacity:0.95;">
             领导 Demo 主流程：定义经营任务 → 生成 3 条候选 → 渠道预览 → 人工选择。
         </p>
