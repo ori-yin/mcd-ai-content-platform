@@ -33,14 +33,12 @@ services/ (业务层，纯函数为主)
   ├── ctr_prediction_service   CTR Adapter 包装
   ├── similarity_service       TF-IDF 找相似历史 Plan
   ├── rule_engine              规则检查
-  └── record_service           SQLite 保存
   ↓
 adapters/ (隔离旧项目)
   ├── copy_analyzer_adapter    ← C:\ideon\mcd-copy-analyzer\*.py 纯函数
   ├── ctr_predictor_adapter    ← C:\ideon\mcd-ctr-predictor\ctr_predictor.py 纯函数
   ├── demo_llm_adapter         ← PRD §19 Demo 模式
   ├── internal_llm_adapter     ← 内网 LLM 真实调用
-  └── cache_adapter            ← 替 @st.cache_data
   ↓
 core/ (基础层)
   ├── config                   Pydantic Settings + 环境变量
@@ -94,6 +92,7 @@ data/ (静态配置)
 ### 4.4 测试与验证
 - 改核心函数前先跑 `python tests/verify.py`
 - 改 Adapter 前先跑 `pytest tests/test_ctr_adapter.py`
+  （注：当前 `tests/` 只有 `verify.py`；`test_ctr_adapter.py` 尚未拆分，待 Phase 21 评估）
 - 改页面层先启动 `setup_and_run.bat` 验证 demo 模式跑通
 
 ---
@@ -130,6 +129,7 @@ data/ (静态配置)
 - `existing_predictor`：调用 ctr_predictor 真实预测
 - `baseline_only`：只返回历史基准
 - `demo`：Demo 数据稳定占位
+- `l1_model`：L1 LightGBM 回归（Phase 20，业务主动切主流程）
 - `unavailable`：不返回 CTR 结果
 
 ### 6.3 LLM Provider（OpenAI 兼容协议）
