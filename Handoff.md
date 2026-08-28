@@ -20,7 +20,7 @@
 | Provider | 内网 LLM（OpenAI 兼容）；无 Key 降级 Demo |
 | CTR 模式 | `existing_predictor` / `baseline_only` / `demo` / `unavailable` |
 | 数据契约 | `data/ctr_baseline.json`（v3.0，CTR 基准 **7 维**）+ 词典 + frameworks |
-| 输入维度 | **5 必填 + 2 灰态**（audience/channel/stage/scene/tone 必填；product_benefit/objective 二期接入） |
+| 输入维度 | **5 必填 + 2 灰态**（audience/channel/stage/scene/tone 必填；objective 二期接入；**Phase A.1 已启用 product_category + benefit_type，10 产品 + 8 权益 + 自定义**） |
 
 **红线**：页面层不得 import 旧项目；CTR 四态分明；不复制整个旧文件到新项目；UI 不放 emoji。
 
@@ -259,6 +259,17 @@
     - 不动：01 主流程 / 04 历史洞察 / pages/02/05 / baseline JSON / feedback_repository（不需改，自动 join）
   - 总用例：697 → **794 PASS / 0 FAIL**（pytest 双路一致）
   - **A 待启动**：用户口径"A 很重，最后做"——产品权益+投放目标维度扩展（Phase 9 已拍板），代码未动
+
+- **2026-08-28**：Phase 22 A.1 产品权益维度扩展完成（用户口径：A 拆分，**A.1 先做 / A.2 投放目标待开发**）：
+  - 拆字段：`core/schemas.py` `TaskInput.product_benefit` 单字段 → 拆 `product_category` + `benefit_type` 两字段（启用，**不参与 CTR baseline**——Phase 9 拍板 baseline 数据稀疏 ROI 低；只影响①AI prompt 注入 ②产品词典 jieba 词条扩展）
+  - 数据源：新 `config/product_benefit.yaml`（10 产品：汉堡/小食/饮料/全餐/早餐/甜品/咖啡/麦满分/儿童餐/限定；8 权益：折扣/满减/赠品/会员专享/限时优惠/新品首发/活动促销/其他；`custom_label: 自定义`）+ `core/product_benefit.py` 加载模块（PyYAML + lru_cache + FALLBACK 兜底 + `options_with_custom()` 给 UI selectbox 加"自定义"末位）
+  - dataclass 字段顺序铁律（no-default 在前）：audience/channel/stage/tone → expected_action/plan_type/coupon/planned_send_date/scene/extra_requirements（defaults） → **product_category / benefit_type（新启）** → objective（灰态） → text_has_coupon
+  - prompt 拼接：`prompts/copy_generation.py` VERSION v1.0→v1.1，原「产品与权益：X」单行 → 拆「产品类别：X」「权益类型：Y」两行，任一空时不拼该行；SYSTEM_PROMPT 中 used_input_fields 同步
+  - Demo 兜底：`services/generation_service._demo_candidates` 按"类别+权益"两值组装 benefit 短语（双非空 → "类别 权益"，单空 → "类别 优惠" / "权益"，双空 → 稳定兜底"新品限时优惠"）；短信/企微1v1/APP Push 三渠道 Demo 文案自动适应新组合
+  - UI：`pages/01_content_studio.py` 2 列 selectbox（pc_a/pc_b 两列避免与原 c1-c5 命名冲突）+ 自定义文本框联动 disabled（选"自定义"才启用文本框，文本框值落最终字段）；保留 objective 灰态（**A.2 待开发 · UI 重构后启用**）
+  - 测试：§39 旧 P1 灰态测试已重命名为 `test_phase_a1_product_benefit_split`，新增 29 用例覆盖（product_benefit 模块 8 + TaskInput 字段顺序 6 + prompt 拼装 4 + Demo 拼接 4 + 01 源码静态 7）；**总用例 794 → 823 PASS / 0 FAIL**（pytest 双路 61 passed）
+  - **A.2 投放目标（PRD §9.1 4 值多选 + 8 维 baseline 90 key 算法）暂搁**：用户口径"投放目标可以写待开发，跟 L2 和 UI 坐一桌"；待 UI 重构 + L2 完成后启 A.2（粗估 4-6 工作日）
+  - 同步：Handoff §2/§5/§5.5 数据维度列表（粗估：维度 5 → 7 启用 / 灰态 2 → 2 不变）+ PRD §9.1 字段定义（如有需要同步）
 
 ### §5.5 CTR 准确率学习 Roadmap（2026-08-26 · 重要背景）
 
