@@ -49,9 +49,15 @@ def load_l1_predictions(records_db: Path = RECORDS_DB) -> list:
     """从 records.db 读所有 ctr_results 含 l1_lightgbm source 的 (selected) 预测。
 
     返回 list[dict]：每个元素 = {
-        signature, channel, plan_type, coupon, workday_type, title, pred_ctr, real_ctr
+        signature, channel, plan_type, coupon, workday_type, title, pred_ctr
     }
-    real_ctr 字段先填 None，由后续 join feedback 填入。
+    real_ctr 字段由后续 join feedback 填入。
+
+    选 candidate 逻辑：
+    - generation_records.selected_id 标 A/B/C
+    - candidates_json 按 [A, B, C] 顺序
+    - ctr_results_json 与 candidates_json 严格一一对应（predict_for_candidates 保证）
+    - 所以 ctrs[i] 对应 candidates[i]，选中 selected_id 那个就拿 ctrs[selected_idx]
     """
     if not records_db.exists():
         return []
@@ -73,16 +79,21 @@ def load_l1_predictions(records_db: Path = RECORDS_DB) -> list:
                 cands = json.loads(r["candidates_json"])
                 ctrs = json.loads(r["ctr_results_json"])
                 selected_id = r["selected_id"]
-                # 找选中候选对应的 ctr 结果
-                sel_ctr = next((c for c in ctrs if c.get("source") == "ctr_predictor_adapter/l1_lightgbm"
-                                and _match_id(c, selected_id, cands)), None)
-                if sel_ctr is None:
+                # 找 selected_id 在 candidates 中的 idx
+                sel_idx = next(
+                    (i for i, c in enumerate(cands) if c.get("id") == selected_id),
+                    None,
+                )
+                if sel_idx is None or sel_idx >= len(ctrs):
+                    continue
+                sel_ctr = ctrs[sel_idx]
+                # 必须确实是 L1 预测（不是 demo/LLM 误判）
+                if "l1_lightgbm" not in (sel_ctr.get("source") or ""):
                     continue
                 pred = sel_ctr.get("pred_ctr")
                 if pred is None:
                     continue
-                # 选中的那条 candidate
-                cand = next((c for c in cands if c.get("id") == selected_id), {})
+                cand = cands[sel_idx]
                 out.append({
                     "signature": r["signature"],
                     "channel": task.get("channel", ""),
@@ -97,15 +108,6 @@ def load_l1_predictions(records_db: Path = RECORDS_DB) -> list:
         return out
     finally:
         conn.close()
-
-
-def _match_id(ctr_dict: dict, selected_id: str, cands: list) -> bool:
-    """轻量校验 ctr dict 是否对应 selected_id（按出现顺序对齐）。
-
-    ctr_results 与 candidates 顺序一一对应（services.predict_for_candidates 保证）。
-    简化：默认 ctr_dict['_idx'] 缺失则按顺序匹配。
-    """
-    return True  # 顺序对齐即可（predict_for_candidates 已保证）
 
 
 # ── feedback.db 按 signature 聚合真 CTR ───────────────────────
