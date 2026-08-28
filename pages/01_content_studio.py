@@ -176,10 +176,42 @@ _init_state()
 # 工具：任务签名（PRD §17 字段变化 → 提示重新生成）
 # ============================================================
 def _task_signature(t: dict) -> str:
-    keys = ("product_benefit", "audience", "channel", "objective",
+    # Phase A.1 · 2026-08-28：product_benefit 拆 2 字段，老字段下线
+    keys = ("product_category", "benefit_type", "audience", "channel", "objective",
             "stage", "scene", "tone", "expected_action",
             "plan_type", "coupon", "extra_requirements")
     return "|".join(str(t.get(k, "")) for k in keys)
+
+
+def _render_benefit_select(
+    label: str,
+    enum_values: tuple,
+    cur_value: str,
+    custom_label: str,
+    help: str,
+    custom_placeholder: str,
+) -> str:
+    """Phase A.1 · 通用「枚举 + 自定义」二合一选择器。
+
+    渲染 selectbox（含 custom_label 末位）+ 联动自定义文本框，
+    返回最终解析值（枚举内用 selectbox 值，选自定义/已是自定义值时用文本框）。
+    """
+    is_custom_cur = cur_value not in enum_values and bool(cur_value)
+    if is_custom_cur:
+        default_idx = enum_values.index(custom_label) if custom_label in enum_values else len(enum_values)
+    elif cur_value in enum_values:
+        default_idx = enum_values.index(cur_value)
+    else:
+        default_idx = 0
+    sel = st.selectbox(label, enum_values, index=default_idx, help=help)
+    custom_text = st.text_input(
+        f"  └ 自定义{label}",
+        value=cur_value if is_custom_cur else "",
+        placeholder=custom_placeholder,
+        label_visibility="visible",
+        disabled=not is_custom_cur and sel != custom_label,
+    )
+    return custom_text.strip() if sel == custom_label or is_custom_cur else sel
 
 
 # ============================================================
@@ -203,63 +235,26 @@ def _render_left_column(channel_rules: dict) -> Optional[TaskInput]:
         prod_cat_options = options_with_custom(product_cats)
         benefit_type_options = options_with_custom(benefit_types)
 
-        # 当前已选值（用于 selectbox 默认 index 推断）
-        cur_pc = cur.get("product_category", "") or ""
-        cur_bt = cur.get("benefit_type", "") or ""
-        cur_pc_is_custom = cur_pc not in product_cats and bool(cur_pc)
-        cur_bt_is_custom = cur_bt not in benefit_types and bool(cur_bt)
-
-        # Phase A.1 · 2 列 selectbox（产品类别 + 权益类型）
+        # Phase A.1 · 2 列「枚举 + 自定义」二合一选择器（去重复用 _render_benefit_select）
         pc_a, pc_b = st.columns(2)
         with pc_a:
-            # selectbox 默认值：枚举内值 → 索引；自定义值 → "自定义" 索引 + 文本框
-            pc_default_idx = (
-                prod_cat_options.index(custom_label) if cur_pc_is_custom
-                else (product_cats.index(cur_pc) if cur_pc in product_cats else 0)
-            )
-            product_category_sel = st.selectbox(
-                "产品类别",
-                prod_cat_options,
-                index=pc_default_idx,
+            product_category = _render_benefit_select(
+                label="产品类别",
+                enum_values=prod_cat_options,
+                cur_value=cur.get("product_category", "") or "",
+                custom_label=custom_label,
                 help="覆盖麦当劳主推品类（10 个）；选「自定义」可在下方文本框填单品",
-            )
-            product_category_custom = st.text_input(
-                "  └ 自定义产品类别",
-                value=cur_pc if cur_pc_is_custom else "",
-                placeholder="如：麦辣鸡腿堡中辣",
-                label_visibility="visible",
-                disabled=not cur_pc_is_custom and product_category_sel != custom_label,
+                custom_placeholder="如：麦辣鸡腿堡中辣",
             )
         with pc_b:
-            bt_default_idx = (
-                benefit_type_options.index(custom_label) if cur_bt_is_custom
-                else (benefit_types.index(cur_bt) if cur_bt in benefit_types else 0)
-            )
-            benefit_type_sel = st.selectbox(
-                "权益类型",
-                benefit_type_options,
-                index=bt_default_idx,
+            benefit_type = _render_benefit_select(
+                label="权益类型",
+                enum_values=benefit_type_options,
+                cur_value=cur.get("benefit_type", "") or "",
+                custom_label=custom_label,
                 help="覆盖主要促销手法（8 个）；选「自定义」可在下方文本框填具体优惠",
+                custom_placeholder="如：满 50 减 15、第二杯半价",
             )
-            benefit_type_custom = st.text_input(
-                "  └ 自定义权益类型",
-                value=cur_bt if cur_bt_is_custom else "",
-                placeholder="如：满 50 减 15、第二杯半价",
-                label_visibility="visible",
-                disabled=not cur_bt_is_custom and benefit_type_sel != custom_label,
-            )
-
-        # 解析最终值：枚举内 = selectbox 值；自定义 = 文本框值
-        product_category = (
-            product_category_custom.strip()
-            if product_category_sel == custom_label or cur_pc_is_custom
-            else product_category_sel
-        )
-        benefit_type = (
-            benefit_type_custom.strip()
-            if benefit_type_sel == custom_label or cur_bt_is_custom
-            else benefit_type_sel
-        )
 
         c1, c2 = st.columns(2)
         with c1:
@@ -349,7 +344,8 @@ def _render_left_column(channel_rules: dict) -> Optional[TaskInput]:
 
     if submitted:
         form_dict = {
-            "product_benefit": product_benefit.strip(),
+            "product_category": product_category,
+            "benefit_type": benefit_type,
             "audience": audience,
             "channel": channel,
             "objective": objective,
