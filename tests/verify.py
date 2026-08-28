@@ -2053,10 +2053,13 @@ def test_phase_a1_product_benefit_split():
     _check("content_studio 调用 get_benefit_types",
            "get_benefit_types()" in src_studio)
     _check("content_studio 含 '产品类别' selectbox",
-           'st.selectbox(\n                "产品类别"' in src_studio
-           or 'st.selectbox(\n                "产品类别",' in src_studio)
+           '"产品类别"' in src_studio)
     _check("content_studio 含 '权益类型' selectbox",
            '"权益类型"' in src_studio)
+    _check("content_studio 含 _render_benefit_select helper",
+           "def _render_benefit_select" in src_studio)
+    _check("content_studio 调用 _render_benefit_select 2 次",
+           src_studio.count("_render_benefit_select(") >= 3)  # 1 def + 2 calls
     _check("content_studio 含「自定义」文案",
            "自定义" in src_studio)
     _check("content_studio 不再含老 st.text_area 产品与权益",
