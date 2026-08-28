@@ -34,6 +34,7 @@ CLAUDE.md §4 红线：
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from typing import Optional, Tuple
 
 import streamlit as st
@@ -73,12 +74,37 @@ inject_base_css()
 # LLM 未配置提示（业务确认 #10）
 render_banner()
 
-# ── Sidebar（Phase 19 L1 静默双轨开关）───────────────────────────
-# 默认关：业务侧看到的 CTR 仍然是 CTRPredictionAdapter（demo / LLM）的口径。
-# 管理员开启时，CTR 卡片额外显示"L1 LightGBM 实验对比"行，便于与 L0 baseline 对照。
+# ── Sidebar（Phase 19 L1 静默双轨开关 + Phase 20 L1 主流程切）────
+# - "CTR 主流程模式" selectbox：用户主动切（业务拍板 §6.3 #1）
+# - "显示 L1 实验对比" checkbox：仅管理员开，CTR 卡片额外显示 L1 预测行
 with st.sidebar:
-    st.markdown("### 实验开关")
+    st.markdown("### CTR 主流程模式")
     l1_status = predict_l1_status()
+    mode_options = ["demo", "baseline_only", "l1_model"]
+    if l1_status != "model":
+        # L1 模型不可用时禁选 l1_model（避免选完所有预测都 unavailable）
+        mode_options = ["demo", "baseline_only"]
+        l1_model_disabled = True
+    else:
+        l1_model_disabled = False
+    # 默认值沿用历史：CTR_MODE env → demo
+    default_mode = os.environ.get("CTR_MODE", "demo")
+    if default_mode not in mode_options:
+        default_mode = "demo"
+    st.session_state["ctr_mode"] = st.selectbox(
+        "CTR 预测走哪个模型",
+        mode_options,
+        index=mode_options.index(default_mode) if default_mode in mode_options else 0,
+        help="demo=演示数据稳定占位（默认）；baseline_only=仅历史基准查表；"
+        "l1_model=LightGBM 回归（业务主动切，详 Handoff §6.3）",
+        key="ctr_mode_select",
+        disabled=False,
+    )
+    if l1_model_disabled:
+        st.caption(f"⚠️ L1 模型当前不可用（status={l1_status}），l1_model 不可选")
+
+    st.markdown("---")
+    st.markdown("### 实验开关")
     if l1_status == "model":
         l1_help = f"L1 模型已加载；支持渠道：{'、'.join(L1_SUPPORTED_CHANNELS)}"
     else:
@@ -119,6 +145,7 @@ def _init_state():
         "similar_summary": {},        # dict
         "last_generated_signature": "",
         "show_l1": False,             # Phase 19 L1 静默双轨开关（仅管理员）
+        "ctr_mode": "demo",           # Phase 20 CTR 主流程模式（用户主动切）
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -650,7 +677,7 @@ def main():
         st.session_state.rule_results = check_candidates(
             candidates, new_task.channel, channel_rules, brand_rules,
         )
-        ctr_mode = "demo"  # Phase 3.1 默认 demo；Phase 4 接 LLM 时按环境变量切
+        ctr_mode = st.session_state.get("ctr_mode", "demo")  # Phase 20 sidebar 模式选择
         ctr_results = predict_for_candidates(
             candidates, new_task, mode=ctr_mode,
         )
