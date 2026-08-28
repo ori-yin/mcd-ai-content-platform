@@ -3637,6 +3637,12 @@ def main():
     test_phase19_l1_predictor()
     # §57 Phase 20 l1_model mode + L1 漂移监控（CTRPredictionAdapter.mode + monitor_l1_drift.py）
     test_phase20_l1_main_and_drift()
+    # §58 Phase 22 B 特征重要性月报脚本（tools/print_feature_importance.py）
+    test_phase22_b_feature_importance_report()
+    # §59 Phase 22 C 漂移自动回退（core/active_mode + monitor + 01 sidebar 联动）
+    test_phase22_c_auto_rollback()
+    # §60 Phase 22 D 批量预测自动落档 records.db
+    test_phase22_d_batch_save_records()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")
@@ -3904,6 +3910,418 @@ def test_phase20_l1_main_and_drift():
         _check("monitor_l1_drift.py 返回 0（不告警，因无数据）",
                out.returncode == 0,
                f"got returncode={out.returncode}")
+
+
+# §58 Phase 22 B 特征重要性月报脚本
+def test_phase22_b_feature_importance_report():
+    """Phase 22 · tools/print_feature_importance.py 端到端 + humanizer + diff 逻辑。"""
+    # ── 1) 脚本存在 + 关键 CLI 参数 ──
+    script = ROOT / "tools" / "print_feature_importance.py"
+    _check("tools/print_feature_importance.py 存在", script.exists())
+    if not script.exists():
+        return
+    src = script.read_text(encoding="utf-8")
+    _check("脚本含 argparse --top 参数", "--top" in src and "default" in src)
+    _check("脚本含 argparse --threshold 参数", "--threshold" in src)
+    _check("脚本含 argparse --importance-type 参数 (gain/split)",
+           "importance-type" in src and "gain" in src and "split" in src)
+    _check("脚本含 humanize_feature 函数", "def humanize_feature" in src)
+    _check("脚本含 compute_importance 函数", "def compute_importance" in src)
+    _check("脚本含 diff_with_history 函数", "def diff_with_history" in src)
+    _check("脚本含 save_snapshot 写历史快照 JSON",
+           "feature_importance_history" in src and "importance_" in src)
+    _check("脚本含 render_report 写 .txt 报告",
+           "reports_dir" in src and ".txt" in src)
+    _check("脚本含 Windows console 编码 fix", "reconfigure" in src)
+
+    # ── 2) humanize_feature 单元覆盖 ──
+    import json
+    import shutil
+    from datetime import datetime
+    import pandas as pd
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location("_pfi_test", script)
+    mod = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    h = mod.humanize_feature
+    _check("humanize: title_len → 标题长度", h("title_len") == "标题长度")
+    _check("humanize: content_len → 正文长度", h("content_len") == "正文长度")
+    _check("humanize: has_emoji → 含 Emoji", h("has_emoji") == "含 Emoji")
+    _check("humanize: eff_word_count → 高效词命中数",
+           h("eff_word_count") == "高效词命中数")
+    _check("humanize: channel_APP_Push → 渠道: APP Push",
+           h("channel_APP_Push") == "渠道: APP Push")
+    _check("humanize: channel_企微1v1 → 渠道: 企微1v1",
+           h("channel_企微1v1") == "渠道: 企微1v1")
+    _check("humanize: coupon_未知 → 用券: 未知",
+           h("coupon_未知") == "用券: 未知")
+    _check("humanize: coupon_ → 用券: (空)",
+           h("coupon_") == "用券: (空)")
+    _check("humanize: workday_type_工作日 → 工作日类型: 工作日",
+           h("workday_type_工作日") == "工作日类型: 工作日")
+    _check("humanize: ch_x_wd_APP_Push_工作日 → 渠道×工作日: APP Push × 工作日",
+           h("ch_x_wd_APP_Push_工作日") == "渠道×工作日: APP Push × 工作日")
+    _check("humanize: plan_type_te → 计划类型 (target encoding)",
+           h("plan_type_te") == "计划类型 (target encoding)")
+    _check("humanize: 未知列名透传", h("foo_bar") == "foo_bar")
+
+    # ── 3) compute_importance 跑真实模型 ──
+    model, meta = mod.load_model_and_meta()
+    feat_cols = meta["feature_columns"]
+    df = mod.compute_importance(model, feat_cols, "gain")
+    _check("compute_importance 返回 DataFrame", isinstance(df, pd.DataFrame))
+    _check("compute_importance 行数 == feature_columns 长度",
+           len(df) == len(feat_cols))
+    _check("compute_importance rank 从 1 开始连续",
+           list(df["rank"]) == list(range(1, len(df) + 1)))
+    _check("compute_importance importance_pct 求和约等于 100",
+           abs(df["importance_pct"].sum() - 100.0) < 0.5,
+           f"sum={df['importance_pct'].sum():.2f}")
+    _check("compute_importance Top1 为正文长度或标题长度",
+           df.iloc[0]["feature"] in ("content_len", "title_len"),
+           f"got {df.iloc[0]['feature']}")
+
+    # ── 4) find_latest_snapshot 首次跑返回 None ──
+    snap_dir = ROOT / "data" / "feature_importance_history"
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    # 用临时子目录隔离测试（不污染真实历史）
+    tmp_dir = ROOT / "data" / ".tmp_fi_history"
+    if tmp_dir.exists():
+        shutil.rmtree(tmp_dir)
+    tmp_dir.mkdir(parents=True)
+    _check("find_latest_snapshot 空目录返回 None",
+           mod.find_latest_snapshot(tmp_dir) is None)
+
+    # ── 5) diff_with_history: 模拟"上次 Top1 是 eff_word_count" ──
+    fake_prev = {
+        "items": [
+            {"rank": 1, "feature": "eff_word_count", "importance_pct": 50.0},
+            {"rank": 2, "feature": "title_len", "importance_pct": 20.0},
+            {"rank": 3, "feature": "content_len", "importance_pct": 10.0},
+        ]
+    }
+    fake_prev_path = tmp_dir / "fake.json"
+    fake_prev_path.write_text(json.dumps(fake_prev), encoding="utf-8")
+    df2 = df.copy()
+    df2 = mod.diff_with_history(df2, fake_prev_path, threshold=2)
+    _check("diff_with_history: 新特征 (不在 prev) 标 '新'",
+           (df2["change"] == "新").sum() >= len(df2) - 3)
+    _check("diff_with_history: prev_rank 缺失为 NaN",
+           df2["prev_rank"].isna().any())
+    # 模拟"上次 Top1 是 content_len，本次 rank=2 → rank_change=1 < 2 不打标记"
+    fake_prev2 = {
+        "items": [
+            {"rank": 1, "feature": "content_len", "importance_pct": 40.0},
+            {"rank": 2, "feature": "title_len", "importance_pct": 25.0},
+        ]
+    }
+    fake_prev2_path = tmp_dir / "fake2.json"
+    fake_prev2_path.write_text(json.dumps(fake_prev2), encoding="utf-8")
+    df3 = df.copy()
+    df3 = mod.diff_with_history(df3, fake_prev2_path, threshold=2)
+    # 在 fake_prev2 里只有 content_len 和 title_len，其它都标 "新"
+    non_new = df3[df3["change"] != "新"]
+    _check("diff_with_history: 在 prev 内的特征不算 '新'",
+           len(non_new) == 2)
+    _check("diff_with_history: content_len rank_change 列存在",
+           "rank_change" in df3.columns)
+
+    # ── 6) save_snapshot + render_report 真跑一遍（首次）──
+    real_snap_dir = ROOT / "data" / "feature_importance_history"
+    real_report_dir = ROOT / "data" / "reports"
+    snap_count_before = len(list(real_snap_dir.glob("importance_*.json")))
+    report_count_before = len(list(real_report_dir.glob("feature_importance_*.txt")))
+    snap_path = mod.save_snapshot(df)
+    # render_report 需要 df 含 change 列 → 先调 diff_with_history（无快照时自己造个空 prev）
+    df_for_report = df.copy()
+    df_for_report = mod.diff_with_history(
+        df_for_report, fake_prev_path, threshold=2,
+    )
+    report_path = mod.render_report(df_for_report.head(5), fake_prev_path, "gain", 2)
+    _check("save_snapshot: 写入 importance_*.json",
+           snap_path.exists() and snap_path.suffix == ".json")
+    _check("render_report: 写入 feature_importance_*.txt",
+           report_path.exists() and report_path.suffix == ".txt")
+    _check("save_snapshot: history 增加 1 个文件",
+           len(list(real_snap_dir.glob("importance_*.json"))) == snap_count_before + 1)
+    # 报告按日期命名，重复跑会覆盖而非新增；改为检查今日报告存在
+    today_report = real_report_dir / f"feature_importance_{datetime.now().strftime('%Y-%m-%d')}.txt"
+    _check("render_report: 今日报告存在", today_report.exists())
+    # 报告内容校验
+    report_text = report_path.read_text(encoding="utf-8")
+    _check("报告含 'L1 特征重要性月报' 抬头",
+           "L1 特征重要性月报" in report_text)
+    _check("报告含 '排名' 表头", "排名" in report_text)
+    _check("报告含 '正文长度' 或 '标题长度'（humanize 生效）",
+           "正文长度" in report_text or "标题长度" in report_text)
+
+    # ── 7) 清理临时目录 ──
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # ── 8) CLI 端到端跑通 ──
+    import subprocess
+    out = subprocess.run(
+        ["python", str(script), "--top", "5"],
+        capture_output=True, text=True, encoding="utf-8",
+        cwd=str(ROOT),
+    )
+    _check("print_feature_importance.py CLI exit 0", out.returncode == 0,
+           f"got returncode={out.returncode}, stderr={out.stderr[:200]}")
+    combined = out.stdout + out.stderr
+    _check("CLI 输出含 Top 5 表头", "Top 5" in combined)
+    _check("CLI 输出含 '渠道' humanize 结果", "渠道" in combined)
+
+
+# §59 Phase 22 C 漂移自动回退（core/active_mode + monitor + 01 sidebar 联动）
+def test_phase22_c_auto_rollback():
+    """Phase 22 · 漂移自动回退端到端：core/active_mode + monitor_l1_drift + 01 sidebar 读。
+
+    覆盖：
+    1) core/active_mode 模块读写 clear 三态
+    2) monitor_l1_drift.py 含 apply_auto_rollback 函数 + ALERT/WARN/OK 三档分支
+    3) pages/01_content_studio.py 含 read_active_mode import + 启动时覆盖 default_mode
+    4) 端到端：手动调 apply_auto_rollback 写文件 → read_active_mode 读回来
+    """
+    # ── 1) core/active_mode 模块 ──
+    from core.active_mode import (
+        read_active_mode, write_active_mode, clear_active_mode,
+        ACTIVE_MODE_PATH, ALLOWED_MODES,
+    )
+    _check("core.active_mode 模块可 import", True)
+    _check("ACTIVE_MODE_PATH 指向 data/active_mode.txt",
+           str(ACTIVE_MODE_PATH).endswith("data\\active_mode.txt")
+           or str(ACTIVE_MODE_PATH).endswith("data/active_mode.txt"))
+    _check("ALLOWED_MODES = {demo, baseline_only, l1_model}",
+           ALLOWED_MODES == {"demo", "baseline_only", "l1_model"})
+
+    # 用临时路径隔离测试，不污染真实 active_mode.txt
+    tmp = ROOT / "data" / ".tmp_active_mode.txt"
+    if tmp.exists():
+        tmp.unlink()
+    _check("read_active_mode: 文件不存在 → None", read_active_mode(tmp) is None)
+
+    write_active_mode("demo", tmp)
+    _check("write+read: demo", read_active_mode(tmp) == "demo")
+
+    write_active_mode("baseline_only", tmp)
+    _check("write+read: baseline_only", read_active_mode(tmp) == "baseline_only")
+
+    # 非法 mode → ValueError
+    raised = False
+    try:
+        write_active_mode("garbage", tmp)
+    except ValueError:
+        raised = True
+    _check("write_active_mode 非法 mode 抛 ValueError", raised)
+
+    # 文件内容非法（手写一个 'xxx'）→ read 返回 None
+    tmp.write_text("xxx\n", encoding="utf-8")
+    _check("read_active_mode: 内容非法 → None", read_active_mode(tmp) is None)
+
+    # clear
+    write_active_mode("demo", tmp)
+    cleared = clear_active_mode(tmp)
+    _check("clear_active_mode: 删除存在文件 → True", cleared is True)
+    _check("clear_active_mode: 再次删 → False", clear_active_mode(tmp) is False)
+    _check("clear 后 read → None", read_active_mode(tmp) is None)
+    if tmp.exists():
+        tmp.unlink()
+
+    # ── 2) monitor_l1_drift.py 含 apply_auto_rollback + 三档分支 ──
+    monitor = ROOT / "tools" / "monitor_l1_drift.py"
+    _check("tools/monitor_l1_drift.py 存在", monitor.exists())
+    if monitor.exists():
+        ms = monitor.read_text(encoding="utf-8")
+        _check("monitor_l1_drift.py 含 apply_auto_rollback 函数",
+               "def apply_auto_rollback" in ms)
+        _check("monitor_l1_drift.py ALERT → demo 分支",
+               'alert_level == "ALERT"' in ms and 'write_active_mode_safe("demo"' in ms)
+        _check("monitor_l1_drift.py WARN → baseline_only 分支",
+               'alert_level == "WARN"' in ms and 'write_active_mode_safe("baseline_only"' in ms)
+        _check("monitor_l1_drift.py OK → clear_active_mode_safe 分支",
+               "clear_active_mode_safe" in ms)
+        _check("monitor_l1_drift.py 含 --no-active-mode CLI flag",
+               "--no-active-mode" in ms)
+        _check("monitor_l1_drift.py 含 [rollback] 打印",
+               "[rollback]" in ms)
+        _check("monitor_l1_drift.py 含 ACTIVE_MODE_PATH 常量",
+               "ACTIVE_MODE_PATH = ROOT" in ms)
+
+    # ── 3) 端到端：直接调 apply_auto_rollback（用临时路径）──
+    if monitor.exists():
+        import importlib.util as _ilu2
+        spec2 = _ilu2.spec_from_file_location("_monitor_test", monitor)
+        mod2 = _ilu2.module_from_spec(spec2)
+        spec2.loader.exec_module(mod2)
+
+        tmp_path = ROOT / "data" / ".tmp_active_mode.txt"
+        # 模拟 ALERT
+        result = mod2.apply_auto_rollback("ALERT", tmp_path)
+        _check("apply_auto_rollback('ALERT') 返回 'demo'", result == "demo")
+        _check("apply_auto_rollback('ALERT') 写入 demo",
+               read_active_mode(tmp_path) == "demo")
+        # 模拟 WARN
+        result = mod2.apply_auto_rollback("WARN", tmp_path)
+        _check("apply_auto_rollback('WARN') 返回 'baseline_only'",
+               result == "baseline_only")
+        _check("apply_auto_rollback('WARN') 写入 baseline_only",
+               read_active_mode(tmp_path) == "baseline_only")
+        # 模拟 OK → 删文件
+        result = mod2.apply_auto_rollback("OK", tmp_path)
+        _check("apply_auto_rollback('OK') 返回 'cleared'", result == "cleared")
+        _check("apply_auto_rollback('OK') 删除文件", not tmp_path.exists())
+
+    # ── 4) pages/01_content_studio.py 含 active_mode 接入 ──
+    studio = ROOT / "pages" / "01_content_studio.py"
+    if studio.exists():
+        sc = studio.read_text(encoding="utf-8")
+        _check("01_content_studio.py import read_active_mode",
+               "from core.active_mode import read_active_mode" in sc)
+        _check("01_content_studio.py 启动时调 read_active_mode",
+               "read_active_mode()" in sc)
+        _check("01_content_studio.py 含 auto_rollback_msg banner",
+               "auto_rollback_msg" in sc)
+        _check("01_content_studio.py 含 '自动回退' 提示文案",
+               "自动回退" in sc)
+
+    # ── 5) CLI 端到端：跑 monitor 一次，确认 active_mode.txt 处理逻辑跑通 ──
+    # 关键：当前空 DB 配对数=0 < MIN_PAIR_COUNT，monitor 会走 [skip] 路径返回 0
+    # 不走 ALERT/WARN/OK 三档，但确认 --no-active-mode 不影响行为
+    import subprocess
+    if monitor.exists():
+        out = subprocess.run(
+            ["python", str(monitor), "--no-log"],
+            capture_output=True, text=True, encoding="utf-8",
+            cwd=str(ROOT),
+        )
+        combined = out.stdout + out.stderr
+        _check("monitor_l1_drift.py 跑一次 exit 0（空 DB skip）",
+               out.returncode == 0,
+               f"got returncode={out.returncode}, stderr={out.stderr[:200]}")
+        _check("空 DB 走 [skip] 路径", "[skip]" in combined)
+
+
+# §60 Phase 22 D 批量预测自动落档 records.db
+def test_phase22_d_batch_save_records():
+    """Phase 22 · services/batch_evaluation_service.save_predictions_to_records。
+
+    覆盖：
+    1) batch_signature 函数逻辑（与 task_signature 字段一致）
+    2) save_predictions_to_records 落档格式正确
+    3) 仅保存 ctr_result_type 非空的行
+    4) pages/03_batch_evaluation.py 含 checkbox + save 入口
+    """
+    from services.batch_evaluation_service import (
+        batch_signature, save_predictions_to_records, evaluate_batch,
+    )
+
+    # ── 1) batch_signature 单元 ──
+    row = {
+        "title": "麦当劳新品上市", "body": "限时优惠", "channel": "APP Push",
+        "plan_type": "AARRPlan", "coupon": "是",
+    }
+    sig1 = batch_signature(row)
+    _check("batch_signature 返回 12 位 hex", len(sig1) == 12 and all(c in "0123456789abcdef" for c in sig1))
+    sig2 = batch_signature(row)
+    _check("batch_signature 相同输入 → 相同签名", sig1 == sig2)
+    row_diff = {**row, "channel": "企微1v1"}
+    _check("batch_signature 不同 channel → 不同签名",
+           batch_signature(row_diff) != sig1)
+    # 改 title 长度（让桶跨过一个 5 倍数）
+    row_diff2 = {**row, "title": "短"}
+    _check("batch_signature 不同 title 长度 → 不同签名（标题桶变）",
+           batch_signature(row_diff2) != sig1)
+    # 跟 task_signature 字段一致性验证：手动构造同 raw 对比
+    # raw 字段顺序：channel|coupon|plan_type|audience|stage|scene|title_bucket|body_bucket
+    import hashlib
+    raw = "APP Push|是|AARRPlan||||0|0"  # 8 字段，7 个 |
+    sig_expected = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    _check("batch_signature 与 task_signature raw 拼接逻辑一致",
+           batch_signature({"title": "", "body": "", "channel": "APP Push",
+                            "plan_type": "AARRPlan", "coupon": "是"}) == sig_expected)
+
+    # ── 2) save_predictions_to_records 端到端（用临时 db_path）──
+    import sqlite3, tempfile, json
+    tmpdir = tempfile.mkdtemp(prefix="phase22_d_")
+    db_path = str(Path(tmpdir) / "test_records.db")
+    rows = [
+        {
+            "row_index": 0, "title": "标题1", "body": "正文1", "channel": "APP Push",
+            "rule_status": "pass", "rule_fail_count": 0, "rule_warn_count": 0,
+            "ctr_result_type": "demo", "ctr_pred": 0.02, "ctr_baseline": 0.025,
+            "ctr_confidence": 0.5, "ctr_error": "", "suggestion": "ok", "error": "",
+        },
+        {
+            "row_index": 1, "title": "标题2", "body": "正文2", "channel": "企微1v1",
+            "rule_status": "pass", "rule_fail_count": 0, "rule_warn_count": 0,
+            "ctr_result_type": "model_prediction", "ctr_pred": 0.03, "ctr_baseline": 0.027,
+            "ctr_confidence": 0.7, "ctr_error": "", "suggestion": "ok", "error": "",
+        },
+        {
+            "row_index": 2, "title": "标题3", "body": "", "channel": "APP Push",  # body 空 → 跳过
+            "rule_status": "", "rule_fail_count": 0, "rule_warn_count": 0,
+            "ctr_result_type": "", "ctr_pred": None, "ctr_baseline": None,
+            "ctr_confidence": None, "ctr_error": "", "suggestion": "", "error": "正文为空",
+        },
+    ]
+    n = save_predictions_to_records(rows, db_path=db_path)
+    _check("save_predictions_to_records 返回成功条数（仅 ctr_result_type 非空）", n == 2, f"got {n}")
+
+    # 验证 db 内容
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    saved = conn.execute(
+        "SELECT signature, task_json, candidates_json, ctr_results_json, selected_id, created_at "
+        "FROM generation_records ORDER BY id ASC"
+    ).fetchall()
+    _check("records.db 写入 2 条", len(saved) == 2, f"got {len(saved)}")
+
+    if saved:
+        r1 = saved[0]
+        _check("r1 signature 长度 12", len(r1["signature"]) == 12)
+        _check("r1 selected_id = 'A'", r1["selected_id"] == "A")
+        _check("r1 created_at 非空", bool(r1["created_at"]))
+        task = json.loads(r1["task_json"])
+        _check("r1 task_json.channel = APP Push", task["channel"] == "APP Push")
+        # 测试数据 row[0] 没 plan_type → 默认 "未知"
+        _check("r1 task_json.plan_type = 未知（缺省默认）", task["plan_type"] == "未知")
+        _check("r1 task_json.audience 空串", task["audience"] == "")
+        cands = json.loads(r1["candidates_json"])
+        _check("r1 candidates_json 长度 1", len(cands) == 1)
+        _check("r1 candidates[0].strategy = batch_eval",
+               cands[0]["strategy"] == "batch_eval")
+        ctrs = json.loads(r1["ctr_results_json"])
+        _check("r1 ctr_results_json 长度 1", len(ctrs) == 1)
+        _check("r1 ctr source 含 batch_ 前缀",
+               ctrs[0].get("source", "").startswith("batch_"),
+               f"got {ctrs[0].get('source')}")
+    conn.close()
+
+    # ── 3) 空 rows + 全部无 ctr 的边界 ──
+    n_empty = save_predictions_to_records([], db_path=db_path)
+    _check("空 rows 返回 0", n_empty == 0)
+    n_no_ctr = save_predictions_to_records([
+        {"title": "t", "body": "b", "channel": "APP Push", "ctr_result_type": ""}
+    ], db_path=db_path)
+    _check("全部无 ctr_result_type 返回 0", n_no_ctr == 0)
+
+    # ── 4) pages/03_batch_evaluation.py 含 checkbox + save 入口 ──
+    page_03 = ROOT / "pages" / "03_batch_evaluation.py"
+    _check("pages/03_batch_evaluation.py 存在", page_03.exists())
+    if page_03.exists():
+        p3 = page_03.read_text(encoding="utf-8")
+        _check("03 含 batch_save_to_records 状态",
+               "batch_save_to_records" in p3)
+        _check("03 含 '保存预测到 records.db' checkbox",
+               "保存预测到 records.db" in p3 and "checkbox" in p3)
+        _check("03 含 save_predictions_to_records 调用",
+               "save_predictions_to_records" in p3)
+        _check("03 含 '已保存 N 条' 提示",
+               "已保存" in p3)
+
+    # 清理
+    import shutil as _sh2
+    _sh2.rmtree(tmpdir, ignore_errors=True)
 
 
 if __name__ == "__main__":
