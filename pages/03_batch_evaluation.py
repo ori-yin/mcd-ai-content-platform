@@ -44,7 +44,7 @@ from ui.styles import inject_base_css
 
 st.set_page_config(
     page_title="03 批量评估",
-    page_icon="📊",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -251,10 +251,9 @@ def _render_results():
         "阻断数", "提醒数", "CTR 预测", "基准 CTR", "置信度",
         "建议", "错误",
     ) if c in display.columns]
-    show_col_map = {"建议": "suggestion"}  # 列名重命名后保留 mapping
 
-    # 还原建议列（rename 不影响 df 列名 dict，直接选原始列）
-    if "suggestion" in df.columns:
+    # 还原建议列：rename 不影响 df（df 是原表），直接选原 df 的 suggestion 列填回 display
+    if "suggestion" in df.columns and "建议" not in display.columns:
         display["建议"] = df["suggestion"]
     if show_cols:
         st.dataframe(
