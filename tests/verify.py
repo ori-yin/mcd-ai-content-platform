@@ -887,18 +887,21 @@ def test_schemas_phase3():
 
     # TaskInput
     t = TaskInput(
-        product_benefit="新品限时优惠", audience="常规大盘",
+        product_category="汉堡", benefit_type="折扣",
+        audience="常规大盘",
         channel="APP Push", objective="建立认知", stage="活动预热",
         scene="早餐", tone="直接利益型",
     )
     _check("TaskInput 必填齐 is_complete=True", t.is_complete is True)
-    _check("TaskInput.to_dict 含 product_benefit", "product_benefit" in t.to_dict())
+    _check("TaskInput.to_dict 含 product_category", "product_category" in t.to_dict())
+    _check("TaskInput.to_dict 含 benefit_type", "benefit_type" in t.to_dict())
     try:
-        t_empty_pending = TaskInput(product_benefit="", audience="常规大盘",
+        t_empty_pending = TaskInput(product_category="", benefit_type="",
+                                    audience="常规大盘",
                                     channel="APP Push", objective="",
                                     stage="活动预热", scene="早餐", tone="直接利益型")
         _check("TaskInput 灰态字段空 不抛错（Phase 6 P1）",
-               t_empty_pending.product_benefit == "" and t_empty_pending.objective == "")
+               t_empty_pending.product_category == "" and t_empty_pending.objective == "")
     except ValueError:
         _check("TaskInput 灰态字段空 不抛错（Phase 6 P1）", False, "误抛错")
 
@@ -1030,7 +1033,8 @@ def test_generation_service_demo():
 
     # Demo 模式
     task = TaskInput(
-        product_benefit="新品限时优惠", audience="常规大盘", channel="APP Push",
+        product_category="汉堡", benefit_type="折扣",
+        audience="常规大盘", channel="APP Push",
         objective="建立认知", stage="活动预热", scene="早餐", tone="直接利益型",
     )
     cands = generate(task, router=None, channel_rules=cr)
@@ -1043,7 +1047,8 @@ def test_generation_service_demo():
 
     # 必填字段缺失抛错（5 必填缺一即拒，灰态字段空不算缺）—— schema ValueError
     try:
-        bad_task = TaskInput(product_benefit="", objective="",
+        bad_task = TaskInput(product_category="", benefit_type="",
+                             objective="",
                              audience="", channel="APP Push",
                              stage="x", scene="x", tone="x")
         _check("缺 5 必填抛错", False, "未抛错")
@@ -1052,7 +1057,8 @@ def test_generation_service_demo():
 
     # 短信渠道
     sms_task = TaskInput(
-        product_benefit="新品限时", audience="常规大盘", channel="短信",
+        product_category="汉堡", benefit_type="新品限时",
+        audience="常规大盘", channel="短信",
         objective="建立认知", stage="活动预热", scene="早餐", tone="直接利益型",
     )
     sms_cands = generate(sms_task, router=None)
@@ -1083,7 +1089,8 @@ def test_sqlite_repository():
         db_path = str(Path(td) / "test_records.db")
 
         task = TaskInput(
-            product_benefit="测试", audience="常规大盘", channel="APP Push",
+            product_category="小食", benefit_type="赠品",
+            audience="常规大盘", channel="APP Push",
             objective="建立认知", stage="活动预热", scene="早餐", tone="直接利益型",
         )
         cands = [
@@ -1124,13 +1131,15 @@ def test_prompts():
     _check("copy_generation.SYSTEM_PROMPT 非空", bool(copy_generation.SYSTEM_PROMPT))
 
     task = TaskInput(
-        product_benefit="新品", audience="常规大盘", channel="APP Push",
+        product_category="汉堡", benefit_type="新品",
+        audience="常规大盘", channel="APP Push",
         objective="建立认知", stage="活动预热", scene="早餐", tone="直接利益型",
         expected_action="点击", extra_requirements="不得出现免费",
     )
     channel_rules = {"channels": {"APP Push": {"title_max": 15, "body_max": 60, "emoji_max": 2}}}
     p = copy_generation.build_user_prompt(task, channel_rules)
-    _check("user_prompt 含'产品与权益'", "产品与权益" in p)
+    _check("user_prompt 含'产品类别'", "产品类别" in p)
+    _check("user_prompt 含'权益类型'", "权益类型" in p)
     _check("user_prompt 含'额外要求'", "额外要求" in p)
     _check("user_prompt 含字数上限 15", "15" in p)
 
@@ -1482,7 +1491,8 @@ def test_record_signature():
 
     # 1. task_signature 纯函数
     t = TaskInput(
-        product_benefit="新品小卡", audience="常规大盘", channel="APP Push",
+        product_category="小食", benefit_type="新品小卡",
+        audience="常规大盘", channel="APP Push",
         objective="建立认知", stage="活动预热", scene="早餐", tone="直接利益型",
     )
     cands = [
@@ -1895,90 +1905,165 @@ def test_llm_status():
         _sh.rmtree(tmp, ignore_errors=True)
 
 
-# §39 决策 1 灰态字段（产品与权益 / 投放目标 · Demo 阶段占位）
+# §39 Phase A.1 · 产品权益维度扩展（2026-08-28）
 # ============================================================
-def test_phase6_p1_pending_fields():
-    """验证 6 维度前端的"产品与权益"+"投放目标"灰态：
+def test_phase_a1_product_benefit_split():
+    """Phase A.1 验证：原 product_benefit 拆为 product_category + benefit_type 两字段。
 
-    - core.schemas.TaskInput 不再把这两个列为必填（REQUIRED_FIELDS 5 项）
-    - prompts.copy_generation 空时不拼接这两行（避免 prompt 出现空值）
-    - pages/01_content_studio 控件 disabled + label 标识 + help 提示
-    - services.generation_service.demo 模式 product_benefit="" 走默认值兜底
+    覆盖：
+    - core.product_benefit 加载 yaml + 兜底枚举（10 产品 + 8 权益 + 自定义）
+    - core.schemas.TaskInput 字段拆分（to_dict 含新 2 字段，老字段不再存在）
+    - prompts.copy_generation 拼 2 行「产品类别 / 权益类型」
+    - services.generation_service._demo_candidates 拼接「类别 + 权益」
+    - pages/01_content_studio 2 selectbox + 自定义输入（源码静态检查）
     """
-    import sys, re, inspect
+    import re
 
-    # ── 1) core.schemas.TaskInput ────────────────────────────
+    # ── 1) core.product_benefit 枚举加载 ────────────────────
+    from core.product_benefit import (
+        load_product_benefit, get_product_categories, get_benefit_types,
+        get_custom_label, options_with_custom, FALLBACK_PRODUCT_CATEGORIES,
+        FALLBACK_BENEFIT_TYPES, CUSTOM_LABEL,
+    )
+    _check("CUSTOM_LABEL='自定义'", CUSTOM_LABEL == "自定义")
+    _check("FALLBACK_PRODUCT_CATEGORIES 10 项", len(FALLBACK_PRODUCT_CATEGORIES) == 10)
+    _check("FALLBACK_BENEFIT_TYPES 8 项", len(FALLBACK_BENEFIT_TYPES) == 8)
+    _check("汉堡在默认产品类别", "汉堡" in FALLBACK_PRODUCT_CATEGORIES)
+    _check("折扣在默认权益类型", "折扣" in FALLBACK_BENEFIT_TYPES)
+
+    cats = get_product_categories()
+    bts = get_benefit_types()
+    _check("get_product_categories() 返回 10 项", len(cats) == 10)
+    _check("get_benefit_types() 返回 8 项", len(bts) == 8)
+    _check("options_with_custom 加「自定义」在末位",
+           options_with_custom(cats)[-1] == "自定义"
+           and options_with_custom(bts)[-1] == "自定义")
+    _check("options_with_custom 长度 = 原 + 1",
+           len(options_with_custom(cats)) == len(cats) + 1)
+
+    # lru_cache 命中：再 load 不重复读盘（直接调函数即可，行为校验）
+    cfg = load_product_benefit()
+    _check("load_product_benefit dict 含 product_categories",
+           isinstance(cfg.get("product_categories"), tuple))
+    _check("load_product_benefit dict 含 benefit_types",
+           isinstance(cfg.get("benefit_types"), tuple))
+    _check("load_product_benefit dict 含 custom_label",
+           isinstance(cfg.get("custom_label"), str))
+
+    # ── 2) core.schemas.TaskInput 字段拆分 ────────────────────
     from core.schemas import TaskInput
-    _check("REQUIRED_FIELDS 不再含 product_benefit",
-           "product_benefit" not in TaskInput.REQUIRED_FIELDS)
-    _check("REQUIRED_FIELDS 不再含 objective",
-           "objective" not in TaskInput.REQUIRED_FIELDS)
-    _check("REQUIRED_FIELDS 含 audience/channel/stage/tone 4 项（Phase 12 #10 scene 改选填）",
-           set(TaskInput.REQUIRED_FIELDS) == {"audience", "channel", "stage", "tone"})
+    _check("TaskInput 不再含 product_benefit 字段",
+           "product_benefit" not in TaskInput.__dataclass_fields__)
+    _check("TaskInput 含 product_category 字段",
+           "product_category" in TaskInput.__dataclass_fields__)
+    _check("TaskInput 含 benefit_type 字段",
+           "benefit_type" in TaskInput.__dataclass_fields__)
+    # 字段顺序（dataclass 顺序铁律：no-default 在前）
+    field_names = list(TaskInput.__dataclass_fields__.keys())
+    no_default_idx = [field_names.index(f) for f in ("audience", "channel", "stage", "tone")]
+    pc_idx = field_names.index("product_category")
+    bt_idx = field_names.index("benefit_type")
+    _check("product_category 在 4 必填之后", min(no_default_idx) < pc_idx)
+    _check("benefit_type 在 product_category 之后", pc_idx < bt_idx)
+    # objective 灰态字段必须在尾部
+    obj_idx = field_names.index("objective")
+    _check("objective 灰态字段在末尾（dataclass 排序）", obj_idx > bt_idx)
 
-    # from_form 接受 product_benefit="" + objective="" 不抛错
-    form_empty_pending = {
-        "product_benefit": "",
-        "audience": "常规大盘",
-        "channel": "APP Push",
-        "objective": "",
-        "stage": "活动预热",
-        "scene": "早餐",
-        "tone": "直接利益型",
+    # 构造验证（dataclass no-default 在前 + 默认字段在后）
+    t = TaskInput(
+        product_category="汉堡", benefit_type="折扣",
+        audience="常规大盘",
+        channel="APP Push", stage="活动预热", scene="早餐", tone="直接利益型",
+    )
+    _check("TaskInput product_category 值正确", t.product_category == "汉堡")
+    _check("TaskInput benefit_type 值正确", t.benefit_type == "折扣")
+    _check("TaskInput.to_dict 含 2 字段",
+           "product_category" in t.to_dict() and "benefit_type" in t.to_dict())
+    _check("TaskInput.to_dict 不再含 product_benefit", "product_benefit" not in t.to_dict())
+
+    # from_form 接受空值不抛错
+    form = {
+        "product_category": "", "benefit_type": "",
+        "audience": "常规大盘", "channel": "APP Push",
+        "stage": "活动预热", "scene": "早餐", "tone": "直接利益型",
     }
-    task = TaskInput.from_form(form_empty_pending)
-    _check("空灰态字段 TaskInput.from_form 不抛错",
-           task.product_benefit == "" and task.objective == "")
-    _check("空灰态字段 is_complete() == True（其他 5 必填已填）",
-           task.is_complete is True)
+    task_empty = TaskInput.from_form(form)
+    _check("from_form 接受空 product_category/benefit_type 不抛错",
+           task_empty.product_category == "" and task_empty.benefit_type == "")
 
-    # is_complete False 时（5 必填缺一个）—— __post_init__ 必拦，不让绕过
-    form_missing_audience = {**form_empty_pending, "audience": ""}
-    try:
-        TaskInput.from_form(form_missing_audience)
-        _check("缺 5 必填抛 ValueError", False)  # 不该走到这
-    except ValueError as e:
-        _check("缺 5 必填抛 ValueError（兜底不被绕过）",
-               "audience" in str(e))
-
-    # ── 2) prompts.copy_generation.build_user_prompt ─────────
+    # ── 3) prompts.copy_generation 拼 2 行 ────────────────────
     from prompts.copy_generation import build_user_prompt
-    out_empty = build_user_prompt(task, {"APP Push": {"title_max": 15, "body_max": 60, "emoji_max": 2}})
-    _check("空灰态字段 prompt 不拼「产品与权益：」行",
-           "产品与权益：" not in out_empty)
-    _check("空灰态字段 prompt 不拼「投放目标：」行",
-           "投放目标：" not in out_empty)
+    channel_rules = {"APP Push": {"title_max": 15, "body_max": 60, "emoji_max": 2}}
+    out = build_user_prompt(t, channel_rules)
+    _check("prompt 含「产品类别：汉堡」行", "产品类别：汉堡" in out)
+    _check("prompt 含「权益类型：折扣」行", "权益类型：折扣" in out)
+    _check("prompt 不再拼老行「产品与权益：」", "产品与权益：" not in out)
 
-    # 当灰态字段非空时，要拼出来（业务确认后启用场景）
-    task_with = TaskInput.from_form({**form_empty_pending,
-                                     "product_benefit": "Chiikawa 联名小卡",
-                                     "objective": "促进转化"})
-    out_filled = build_user_prompt(task_with, {"APP Push": {"title_max": 15, "body_max": 60, "emoji_max": 2}})
-    _check("非空时拼「产品与权益：Chiikawa 联名小卡」",
-           "产品与权益：Chiikawa 联名小卡" in out_filled)
-    _check("非空时拼「投放目标：促进转化」",
-           "投放目标：促进转化" in out_filled)
+    # 类别空时该行不拼
+    t_no_pc = TaskInput(
+        product_category="", benefit_type="折扣",
+        audience="常规大盘", channel="APP Push",
+        stage="活动预热", scene="早餐", tone="直接利益型",
+    )
+    out_no_pc = build_user_prompt(t_no_pc, channel_rules)
+    _check("类别空时 prompt 不拼「产品类别：」行", "产品类别：" not in out_no_pc)
+    _check("类别空时权益行仍拼", "权益类型：折扣" in out_no_pc)
 
-    # ── 3) pages/01_content_studio 控件源码标注 ─────────────
-    src_studio = open("pages/01_content_studio.py", encoding="utf-8").read()
-    _check("product_benefit text_area 已加 disabled=True",
-           re.search(r'st\.text_area\([\s\S]*?产品与权益[\s\S]*?disabled\s*=\s*True', src_studio) is not None)
-    _check("objective selectbox 已加 disabled=True",
-           re.search(r'st\.selectbox\([\s\S]*?投放目标[\s\S]*?disabled\s*=\s*True', src_studio) is not None)
-    _check("两控件 label 含「待开发·二期接入」",
-           "待开发·二期接入" in src_studio)
-    _check("两控件有 help= tooltip 提示",
-           src_studio.count('help="后续开放，敬请期待') >= 2)
-    _check("副标题已说明 5 必填 + 二期接入",
-           "必填 5 项" in src_studio and "二期接入" in src_studio)
+    t_no_bt = TaskInput(
+        product_category="汉堡", benefit_type="",
+        audience="常规大盘", channel="APP Push",
+        stage="活动预热", scene="早餐", tone="直接利益型",
+    )
+    out_no_bt = build_user_prompt(t_no_bt, channel_rules)
+    _check("权益空时 prompt 不拼「权益类型：」行", "权益类型：" not in out_no_bt)
+    _check("权益空时类别行仍拼", "产品类别：汉堡" in out_no_bt)
 
-    # ── 4) generation_service.demo 模式 product_benefit="" 走兜底 ──
+    # ── 4) services.generation_service._demo_candidates 拼接 ──
     from services.generation_service import _demo_candidates
-    cs = _demo_candidates(task)  # product_benefit="" + objective=""
-    _check("Demo 模式 product_benefit='' 仍生成 3 条候选，不报错",
-           len(cs) == 3 and all(c.body for c in cs))
-    _check("Demo 模式 3 条候选 id == A/B/C（PRD §9.2 schema）",
-           [c.id for c in cs] == ["A", "B", "C"])
+    cs_both = _demo_candidates(t)
+    _check("Demo 模式 类别+权益 双非空 仍生成 3 条候选", len(cs_both) == 3)
+    # body 内应包含「汉堡」或「折扣」（拼接短语）
+    bodies_both = " ".join(c.body for c in cs_both)
+    _check("Demo body 拼接含'汉堡'或'折扣'", "汉堡" in bodies_both or "折扣" in bodies_both)
+
+    t_only_pc = TaskInput(
+        product_category="甜品", benefit_type="",
+        audience="常规大盘", channel="APP Push",
+        stage="活动预热", scene="早餐", tone="直接利益型",
+    )
+    cs_pc_only = _demo_candidates(t_only_pc)
+    _check("Demo 类别单空 仍生成 3 条候选", len(cs_pc_only) == 3)
+    _check("Demo 类别单空 body 含'甜品'", any("甜品" in c.body for c in cs_pc_only))
+
+    t_only_bt = TaskInput(
+        product_category="", benefit_type="赠品",
+        audience="常规大盘", channel="APP Push",
+        stage="活动预热", scene="早餐", tone="直接利益型",
+    )
+    cs_bt_only = _demo_candidates(t_only_bt)
+    _check("Demo 权益单空 仍生成 3 条候选", len(cs_bt_only) == 3)
+    _check("Demo 权益单空 body 含'赠品'", any("赠品" in c.body for c in cs_bt_only))
+
+    # ── 5) pages/01_content_studio 源码静态检查 ──────────────
+    src_studio = open("pages/01_content_studio.py", encoding="utf-8").read()
+    _check("content_studio 引用 core.product_benefit 模块",
+           "from core.product_benefit import" in src_studio)
+    _check("content_studio 调用 get_product_categories",
+           "get_product_categories()" in src_studio)
+    _check("content_studio 调用 get_benefit_types",
+           "get_benefit_types()" in src_studio)
+    _check("content_studio 含 '产品类别' selectbox",
+           'st.selectbox(\n                "产品类别"' in src_studio
+           or 'st.selectbox(\n                "产品类别",' in src_studio)
+    _check("content_studio 含 '权益类型' selectbox",
+           '"权益类型"' in src_studio)
+    _check("content_studio 含「自定义」文案",
+           "自定义" in src_studio)
+    _check("content_studio 不再含老 st.text_area 产品与权益",
+           'st.text_area("产品与权益"' not in src_studio)
+    # objective 仍灰态（未启用，按 A.2 留待 UI 重构）
+    _check("objective 控件仍 disabled",
+           re.search(r'st\.selectbox\([\s\S]*?投放目标[\s\S]*?disabled\s*=\s*True', src_studio) is not None)
 
 
 # §40 决策 2 进阶能力弱化 + 决策 3 CTR 反哺免责（Demo 范围 §2 / §3）
@@ -3599,8 +3684,8 @@ def main():
     test_calibrate_baseline()
     # Phase 6 P0: LLM 配置状态检测（业务确认 #10）
     test_llm_status()
-    # Phase 6 P1: 6 维度前端灰态（决策文档 Demo 范围 §1）
-    test_phase6_p1_pending_fields()
+    # Phase A.1 · 产品权益维度扩展（2026-08-28，原 Phase 6 P1 灰态测试升级）
+    test_phase_a1_product_benefit_split()
     # Phase 6 P1: 进阶能力弱化 + CTR 反哺免责（决策文档 Demo 范围 §2 / §3）
     test_phase6_p1_nav_and_notice()
     # Phase 6 P2: CTR 口径固化 v3.1（业务拍板）
