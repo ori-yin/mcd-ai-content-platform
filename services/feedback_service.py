@@ -172,10 +172,32 @@ def import_feedback(
     return {"n": n, "errors": [], "df": df, "records": records}
 
 
+# ── 读路径包装（CLAUDE.md §4.1：页面层不直调 repository）───────────
+def count() -> int:
+    """feedback.db 总记录数。"""
+    from repositories import feedback_repository
+    return feedback_repository.count()
+
+
+def aggregate_by_signature() -> dict:
+    """按 task_signature 聚合（plan 加权 CTR / n_records / date range）。"""
+    from repositories import feedback_repository
+    return feedback_repository.aggregate_by_signature()
+
+
+def read_recent(limit: int = 50) -> List[dict]:
+    """最近 limit 条回流记录（按 id DESC）。"""
+    from repositories import feedback_repository
+    return feedback_repository.list_all(limit=limit)
+
+
 __all__ = [
     "parse_feedback_file",
     "autofill_signature",
     "to_records",
     "validate_records",
     "import_feedback",
+    "count",
+    "aggregate_by_signature",
+    "read_recent",
 ]

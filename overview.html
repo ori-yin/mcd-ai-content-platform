@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mcd-ai-content-platform · 项目一图通 · 2026-08-26</title>
+<style>
+  :root {
+    --bg: #14171c;
+    --card: #1f242d;
+    --card-2: #262b36;
+    --line: #2e3340;
+    --text: #e8e6e1;
+    --muted: #8b94a7;
+    --red: #DA291C;       /* 麦当劳红 */
+    --gold: #FFC72C;      /* 麦当劳金 */
+    --green: #4ade80;     /* 已完成 */
+    --orange: #fb923c;    /* 待办 */
+    --blue: #60a5fa;      /* 进行中 / 当前 */
+    --star: #facc15;      /* 重点 */
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "PingFang SC", "Microsoft YaHei", -apple-system, system-ui, sans-serif;
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  a { color: var(--gold); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---------- 顶 header ---------- */
+  header.hero {
+    background: linear-gradient(135deg, #1c1f26 0%, #2a1f1f 100%);
+    border-bottom: 3px solid var(--red);
+    padding: 36px 48px 28px;
+  }
+  header.hero .eyebrow {
+    color: var(--gold);
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  header.hero h1 {
+    margin: 0 0 8px;
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.5px;
+  }
+  header.hero h1 .brand {
+    color: var(--red);
+    border-bottom: 3px solid var(--gold);
+    padding-bottom: 2px;
+  }
+  header.hero p.subtitle {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  header.hero .meta-row {
+    display: flex; flex-wrap: wrap; gap: 14px;
+    margin-top: 18px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  header.hero .meta-row .pill {
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 4px 12px;
+    background: rgba(255,255,255,0.02);
+  }
+  header.hero .meta-row .pill strong { color: var(--gold); margin-left: 4px; }
+
+  /* ---------- 主体布局 ---------- */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 220px;
+    gap: 28px;
+    max-width: 1280px;
+    margin: 36px auto;
+    padding: 0 28px;
+  }
+  main { min-width: 0; }
+  aside.toc {
+    position: sticky;
+    top: 28px;
+    align-self: start;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-size: 13px;
+  }
+  aside.toc .label {
+    color: var(--gold);
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  aside.toc ul { list-style: none; padding: 0; margin: 0; }
+  aside.toc li { margin: 4px 0; }
+  aside.toc a { color: var(--text); }
+  aside.toc a:hover { color: var(--gold); }
+
+  /* ---------- section 卡片 ---------- */
+  section.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  section.card .head {
+    padding: 22px 28px 0;
+  }
+  section.card .section-index {
+    color: var(--gold);
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  section.card h2 {
+    margin: 6px 0 4px;
+    font-size: 22px;
+    font-weight: 600;
+  }
+  section.card p.lead {
+    margin: 0 0 6px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  section.card .legend {
+    display: flex; flex-wrap: wrap; gap: 14px;
+    margin: 0 28px 18px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  section.card .legend .dot {
+    display: inline-block; width: 10px; height: 10px;
+    border-radius: 2px; vertical-align: middle; margin-right: 6px;
+  }
+  section.card .mermaid-wrap {
+    background: #fafaf7;
+    margin: 0 28px 28px;
+    border-radius: 10px;
+    padding: 24px;
+    overflow-x: auto;
+  }
+  .mermaid { background: transparent !important; }
+
+  section.card .bullets {
+    margin: 0 28px 24px;
+    padding: 0;
+    list-style: none;
+  }
+  section.card .bullets li {
+    padding: 6px 0 6px 18px;
+    position: relative;
+    font-size: 14px;
+  }
+  section.card .bullets li::before {
+    content: ""; position: absolute; left: 0; top: 13px;
+    width: 6px; height: 6px; background: var(--gold); border-radius: 50%;
+  }
+
+  /* ---------- summary 卡 ---------- */
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    margin: 0 28px 28px;
+  }
+  .summary .tile {
+    background: var(--card-2);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .summary .tile .label {
+    color: var(--muted);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .summary .tile .value {
+    margin-top: 6px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .summary .tile .delta {
+    margin-left: 6px;
+    font-size: 12px;
+    color: var(--green);
+  }
+  .summary .tile.todo .value { color: var(--orange); }
+  .summary .tile.warn .value { color: var(--star); }
+
+  /* ---------- footer ---------- */
+  footer.bottom {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 32px 0 48px;
+    border-top: 1px solid var(--line);
+    margin-top: 32px;
+  }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+    aside.toc { position: static; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="eyebrow">PROJECT · HANDOFF · 2026-08-26</div>
+  <h1><span class="brand">mcd-ai-content-platform</span> · 项目一图通</h1>
+  <p class="subtitle">文案分析 + AI 生成 + CTR 预测 + 反哺校准 · 4 个核心 + 12 个 Phase 已完</p>
+  <div class="meta-row">
+    <span class="pill">Port <strong>8510</strong></span>
+    <span class="pill">UI <strong>Streamlit</strong></span>
+    <span class="pill">用例 <strong>473 PASS / 0 FAIL</strong></span>
+    <span class="pill">Adapter <strong>隔离双旧项目</strong></span>
+    <span class="pill">CT-口径 <strong>v3.1 拍板</strong></span>
+  </div>
+</header>
+
+<div class="layout">
+  <main>
+
+    <!-- ① 架构 -->
+    <section class="card" id="arch">
+      <div class="head">
+        <div class="section-index">01 / 架构</div>
+        <h2>4 层依赖 · 单向流动</h2>
+        <p class="lead">业务层只依赖 adapters/ 和 services/，不直接 import 旧项目。Adapter 隔离是命根。</p>
+      </div>
+      <div class="legend">
+        <span><span class="dot" style="background:#c8e6c9"></span>已完成</span>
+        <span><span class="dot" style="background:#fb923c"></span>待办</span>
+        <span><span class="dot" style="background:#fff59d"></span>重点</span>
+        <span><span class="dot" style="background:#e3f2fd"></span>运行中</span>
+      </div>
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+    classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
+    classDef todo fill:#ffccbc,stroke:#d84315,color:#bf360c
+    classDef star fill:#fff59d,stroke:#f57f17,color:#33691e
+
+    subgraph P["pages · Streamlit 端口 8510"]
+        P0["00_home 首页"]:::done
+        P1["01_content_studio · 主流程<br/>三栏生成+预测+预览"]:::star
+        P2["02_copy_diagnosis<br/>单条诊断"]:::done
+        P3["03_batch_evaluation<br/>批量评估 CSV/Excel"]:::done
+        P4["04_historical_insights<br/>七 Tab 历史洞察"]:::done
+        P5["05_feedback<br/>反馈上传"]:::done
+    end
+
+    subgraph S["services 业务层"]
+        S1["generation_service"]:::done
+        S2["ctr_prediction_service"]:::done
+        S3["copy_analysis_service"]:::done
+        S4["feedback_service"]:::done
+        S5["batch_evaluation"]:::done
+        S6["analytics 七 Tab"]:::done
+        S7["record_service + sqlite_repo"]:::done
+    end
+
+    subgraph A["adapters 隔离层"]
+        A1["ctr_predictor_adapter<br/>baseline + prompt_builder"]:::done
+        A2["llm_adapter"]:::done
+    end
+
+    subgraph D["data + config + prompts"]
+        D1["ctr_baseline.json v3.1<br/>7 维 口径拍板"]:::done
+        D2["*.yaml 规则/枚举/权重"]:::done
+        D3["records.db 生成记录"]:::done
+        D4["feedback.db 真实回流"]:::done
+        D5["prompts/*.py LLM 模板"]:::done
+    end
+
+    subgraph O["旧项目 · 只读不修改"]
+        O1["mcd-ctr-predictor"]:::done
+        O2["mcd-copy-analyzer"]:::done
+    end
+
+    P --> S
+    S --> A
+    A -->|A1 读 baseline<br/>A2 调 LLM| D
+    A -.->|只读调用| O
+    S7 --> D3
+    S4 --> D4
+    S2 -.实时 lookup.-> D4
+        </div>
+      </div>
+      <ul class="bullets">
+        <li>页面层 6 个：00 首页 + 01 主流程（★）+ 02-05 业务/历史/反馈</li>
+        <li>服务层 7 个：生成/预测/分析/批量/反馈/记录/分析七 Tab</li>
+        <li>Adapter 仅 2 个：ctr_predictor_adapter / llm_adapter</li>
+        <li>数据：1 个 baseline JSON + 6 类 yaml + 2 个 SQLite + LLM prompt 模板</li>
+        <li>旧项目：mcd-ctr-predictor + mcd-copy-analyzer 只作为函数库被 import</li>
+      </ul>
+    </section>
+
+    <!-- ② 进度 -->
+    <section class="card" id="progress">
+      <div class="head">
+        <div class="section-index">02 / 进度</div>
+        <h2>13 个 Phase · 4 个待办</h2>
+        <p class="lead">代码 Phase 全部 ✅。剩下的 4 个待办是业务拍板 / 样本规模驱动，**不是技术债**。</p>
+      </div>
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+    classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
+    classDef todo fill:#ffccbc,stroke:#d84315,color:#bf360c
+    classDef star fill:#fff59d,stroke:#f57f17,color:#33691e
+
+    A["Phase 1<br/>CTR Adapter<br/>82"]:::done --> B["Phase 2<br/>copy-analyzer<br/>152"]:::done
+    B --> C["Phase 3<br/>基础设施+01<br/>222"]:::done
+    C --> D["Phase 4<br/>02/03/04<br/>290"]:::done
+    D --> E["Phase 5<br/>反哺闭环<br/>339"]:::done
+    E --> F["Phase 6 P0<br/>12 项拍板+企微<br/>349"]:::done
+    F --> G["Phase 6 P1<br/>灰态+弱化<br/>395"]:::done
+    G --> H["Phase 6 P2<br/>CTR 口径 v3.1<br/>421"]:::done
+    H --> I["Phase 6 P3<br/>simplify<br/>418"]:::done
+    I --> J["Phase 7<br/>#3+#6 排序<br/>428"]:::done
+    J --> K["Phase 8<br/>pytest 迁移<br/>428/43"]:::done
+    K --> L["Phase 6 P4<br/>维度权重+回灌<br/>473/45"]:::done
+    L --> M["Phase 9<br/>#1+#2 落档<br/>473 不动代码"]:::done
+
+    M --> N["#4<br/>校准频率"]:::todo
+    M --> O["#7<br/>附属页+字典"]:::todo
+    M --> P["L1<br/>LightGBM<br/>≥1000 样本"]:::todo
+    M --> Q["P4<br/>签名关联 Tab"]:::todo
+
+    P --> R["建议节奏<br/>P4 先 后 L1"]:::star
+        </div>
+      </div>
+      <div class="summary">
+        <div class="tile"><div class="label">代码 Phase</div><div class="value">12 / 12<span class="delta">全完</span></div></div>
+        <div class="tile"><div class="label">用例</div><div class="value">473<span class="delta">/ 0 FAIL</span></div></div>
+        <div class="tile"><div class="label">业务拍板</div><div class="value">11 / 13</div></div>
+        <div class="tile todo"><div class="label">待办</div><div class="value">4 项</div></div>
+      </div>
+    </section>
+
+    <!-- ③ 反哺闭环 -->
+    <section class="card" id="loop">
+      <div class="head">
+        <div class="section-index">03 / 核心洞察</div>
+        <h2>CTR 反哺闭环 · 断点在 ⑤</h2>
+        <p class="lead">①-④ 管道已搭通（Phase 5）。剩下 ⑤ 重训 = 业务拍板驱动 + 样本达到 ≥1000 后切 L1。</p>
+      </div>
+      <div class="mermaid-wrap">
+        <div class="mermaid">
+flowchart LR
+    classDef live fill:#e3f2fd,stroke:#1565c0,color:#0d47a1
+    classDef done fill:#c8e6c9,stroke:#2e7d32,color:#1b5e20
+    classDef todo fill:#ffccbc,stroke:#d84315,color:#bf360c
+    classDef star fill:#fff59d,stroke:#f57f17,color:#33691e
+
+    A["① 生成候选<br/>generation_service<br/>3 候选 A/B/C"]:::live --> B["② 预测 CTR<br/>L0 baseline 查找表<br/>v3.1 口径"]:::live
+    B --> C["③ 投放<br/>APP Push + 企微 1v1"]:::live
+    C --> D["④ 回收真实 CTR<br/>feedback.db<br/>signature 配对"]:::live
+    D --> E["⑤ 重训模型<br/>断点 · 等样本"]:::todo
+    E -.待 L1 触发.-> B
+
+    E --> F["L1 LightGBM<br/>推 10 天"]:::todo
+    E --> G["L2 增量重训<br/>回测门禁<br/>误差监控"]:::todo
+
+    H["误差曲线<br/>预测 vs 真实散点"]:::star --> E
+    I["维度权重 yaml<br/>加权替等权"]:::done --> B
+    J["demo 回灌<br/>confidence=0.7"]:::done --> B
+        </div>
+      </div>
+      <ul class="bullets">
+        <li><strong>当前 L0</strong>：baseline 查找表 + EMA 校准，predict 走 4 态分明（model / baseline / demo / unavailable）</li>
+        <li><strong>断点 ⑤</strong>：要有 ≥1000 真实样本才适合切 L1，否则过拟合，不如 L0 EMA</li>
+        <li><strong>辅助已具备</strong>：维度权重加权（§41）+ demo 回灌命中即替 baseline（§44）+ signature 指纹配对</li>
+        <li><strong>建议节奏</strong>：P4 历史洞察 Tab 先做（3 天，给业务"看的视角"）→ L1 后做（10 天，切 GBDT）</li>
+      </ul>
+    </section>
+
+    <!-- ④ 红线 + 下一步 -->
+    <section class="card" id="next">
+      <div class="head">
+        <div class="section-index">04 / 接活避坑</div>
+        <h2>红线 + 下一步候选</h2>
+        <p class="lead">踩任何一条都会被 reject。</p>
+      </div>
+      <div class="summary">
+        <div class="tile warn"><div class="label">红线 · 架构</div><div class="value">5 条</div></div>
+        <div class="tile"><div class="label">下一步候选</div><div class="value">4 个</div></div>
+        <div class="tile todo"><div class="label">最小可开工</div><div class="value">A · #1+#2</div></div>
+      </div>
+      <ul class="bullets">
+        <li>页面层不得 import 旧项目（adapter 隔离是命根）</li>
+        <li>CTR 四态分明：model_prediction / baseline_only / demo / unavailable</li>
+        <li>UI 不放 emoji，沟通全中文（已要求）</li>
+        <li>CRLF 写 bat 文件（LF 必闪退）</li>
+        <li>任何 token / API key 不硬编码（GitHub secret scanning 会断 push）</li>
+      </ul>
+      <div class="head" style="padding-top:6px;">
+        <h2 style="font-size:18px;">下一步 · 4 个候选</h2>
+      </div>
+      <ul class="bullets">
+        <li><strong>A · 落 #1+#2 代码</strong> · 4-6 天 · 解锁灰态字段（10 产品 + 8 权益；4 目标多选 union 合并）</li>
+        <li><strong>B · 启 P4 历史洞察签名 Tab</strong> · 3 天 · 先有"看"的视角，零样本也能开工</li>
+        <li><strong>C · 整理附属页面活跃度</strong> · 1-2 天 · 02-05 上 banner + 字典维护 UI（pages/06）</li>
+        <li><strong>D · 等业务拍 #4/#7</strong> · 0 工作量 · 校准频率 + 附属页面纳入正式版</li>
+      </ul>
+    </section>
+
+  </main>
+
+  <aside class="toc">
+    <div class="label">目录</div>
+    <ul>
+      <li><a href="#arch">01 · 架构（4 层）</a></li>
+      <li><a href="#progress">02 · 进度（13 Phase）</a></li>
+      <li><a href="#loop">03 · 反哺闭环</a></li>
+      <li><a href="#next">04 · 红线 + 下一步</a></li>
+    </ul>
+    <div class="label" style="margin-top:18px;">关键路径</div>
+    <ul style="color:var(--muted);font-size:12px;">
+      <li><a href="../Handoff.md">Handoff.md</a></li>
+      <li><a href="../CLAUDE.md">CLAUDE.md</a></li>
+      <li><a href="ctr-kpi-definition-proposal-v0.2.md">CTR 口径 v3.1</a></li>
+      <li><a href="ctr-feedback-schedule.md">校准节奏</a></li>
+    </ul>
+  </aside>
+</div>
+
+<footer class="bottom">
+  生成于 2026-08-26 · 由 Claude Code 拼合 · 源数据见 Handoff.md §6.1 / §6.2 / §6.3
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    securityLevel: 'loose',
+    themeVariables: {
+      fontFamily: '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
+      fontSize: '14px',
+      primaryColor: '#FFC72C',
+      primaryTextColor: '#1b1b1b',
+      primaryBorderColor: '#DA291C',
+      lineColor: '#DA291C',
+      secondaryColor: '#f5e8c5',
+      tertiaryColor: '#f7eed3',
+      noteBkgColor: '#262b36',
+      noteTextColor: '#e8e6e1',
+      noteBorderColor: '#FFC72C',
+      clusterBkg: '#faf7ed',
+      clusterBorder: '#FFC72C',
+      titleColor: '#1b1b1b',
+      edgeLabelBackground: '#faf7ed'
+    },
+    flowchart: { curve: 'basis', useMaxWidth: true, htmlLabels: true }
+  });
+</script>
+</body>
+</html>

@@ -102,12 +102,12 @@ def _demo_candidates(task: TaskInput) -> list:
             ),
         ]
 
-    if task.channel == "企微 1v1":
+    if task.channel == "企微1v1":
         return [
             Candidate(
                 id="A", strategy="A_核心利益直给",
                 title="", body=f"专属福利：{benefit}",
-                reason="突出「专属」+「福利」命中企微 1v1 必带词",
+                reason="突出「专属」+「福利」命中企微1v1 必带词",
             ),
             Candidate(
                 id="B", strategy="B_消费场景切入",
@@ -121,7 +121,7 @@ def _demo_candidates(task: TaskInput) -> list:
             ),
         ]
 
-    # APP Push / 站内信：默认带标题
+    # APP Push：默认带标题
     return [
         Candidate(
             id="A", strategy="A_核心利益直给",
@@ -266,4 +266,14 @@ def build_record(
     )
 
 
-__all__ = ["GenerationError", "generate", "build_record", "rank_candidates_by_ctr"]
+# ── 读路径包装（CLAUDE.md §4.1：页面层不直调 repository）───────────
+def read_recent(limit: int = 10000) -> list:
+    """最近 limit 条 generation_records（按 id DESC，JSON 字段已解析）。
+
+    给 05_feedback 的"与生成记录 join 情况"用——按 signature join 找匹配。
+    """
+    from repositories import sqlite_repository
+    return sqlite_repository.list_all(limit=limit)
+
+
+__all__ = ["GenerationError", "generate", "build_record", "rank_candidates_by_ctr", "read_recent"]

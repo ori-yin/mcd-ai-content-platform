@@ -41,37 +41,20 @@ from adapters.llm_adapter import call_llm
 from ui.llm_status import render_banner
 from ui.notice import render_advanced_notice
 from ui.plotly_helpers import rate_value
-from ui.styles import inject_base_css
+from ui.page_chrome import page_setup
 
 
 # ============================================================
 # Page config
 # ============================================================
 
-st.set_page_config(
-    page_title="02 文案诊断",
-    page_icon=None,
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-inject_base_css()
+page_setup("02 文案诊断", "单条文案诊断 · 本地规则 · 词语表现 · 历史相似 · CTR 入口 B · AI 改写")
 
 # 进阶能力 banner（决策文档 Demo 范围 §2）
 render_advanced_notice()
 
 # LLM 未配置提示（业务确认 #10）
 render_banner()
-
-st.markdown(
-    """
-    <div class="mcd-header">
-        <h1>02 文案诊断</h1>
-        <p>单条文案诊断 · 本地规则 · 词语表现 · 历史相似 · CTR 入口 B · AI 改写</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 
 # ============================================================
@@ -136,7 +119,7 @@ def _render_input():
             index=CHANNELS.index(cur_channel) if cur_channel in CHANNELS else 0,
         )
         title = st.text_input(
-            "标题（短信 / 企微 1v1 可空）",
+            "标题（短信 / 企微1v1 可空）",
             value=cur_title,
             max_chars=200,
             placeholder="例：新品小卡来啦",
@@ -318,7 +301,13 @@ def _render_middle_column():
 
 def _render_channel_preview(channel: str, title: str, body: str):
     st.markdown("**渠道预览**")
-    show_title = title or "（无标题）"
+    # XSS 防御（Phase 23 · 2026-08-28）：title/body 可能含用户输入或历史数据，
+    # 进 unsafe_allow_html 前必须 html.escape。原始长度用于短信分段统计，
+    # 避免 < > 等被 escape 后长度变长导致段数算多。
+    from html import escape as _esc
+    body_len_raw = len(body)
+    show_title = _esc(title) if title else "（无标题）"
+    body = _esc(body)
 
     if channel == "APP Push":
         preview_html = (
@@ -330,31 +319,21 @@ def _render_channel_preview(channel: str, title: str, body: str):
             f'<div class="pv-meta">APP Push · 点击查看</div>'
             f'</div>'
         )
-    elif channel == "企微 1v1":
+    elif channel == "企微1v1":
         preview_html = (
             f'<div class="preview-card">'
             f'<div style="font-size:0.78em;opacity:0.6;margin-bottom:0.4rem;">麦当劳客服 · 现在</div>'
             f'<div class="pv-body">{body}</div>'
-            f'<div class="pv-meta">企微 1v1 · 立即查看</div>'
+            f'<div class="pv-meta">企微1v1 · 立即查看</div>'
             f'</div>'
         )
     elif channel == "短信":
-        seg = max(1, (len(body) + 69) // 70)
+        seg = max(1, (body_len_raw + 69) // 70)
         preview_html = (
             f'<div class="preview-card">'
             f'<div style="font-size:0.78em;opacity:0.55;margin-bottom:0.4rem;">106xxxxxxxx</div>'
             f'<div class="pv-body">{body}</div>'
-            f'<div class="pv-meta">短信 · {len(body)} 字 / {seg} 段</div>'
-            f'</div>'
-        )
-    elif channel == "站内信":
-        preview_html = (
-            f'<div class="preview-card">'
-            f'<div style="font-size:0.78em;opacity:0.55;margin-bottom:0.4rem;">'
-            f'McDonald\'s App · 消息中心</div>'
-            f'<div class="pv-title">{show_title}</div>'
-            f'<div class="pv-body">{body}</div>'
-            f'<div class="pv-meta">站内信 · 查看详情</div>'
+            f'<div class="pv-meta">短信 · {body_len_raw} 字 / {seg} 段</div>'
             f'</div>'
         )
     else:

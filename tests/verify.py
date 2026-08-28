@@ -360,6 +360,7 @@ _section("11) ProviderRouter JSON 解析")
 
 def test_provider_router_parse():
     from core import ProviderRouter
+    from core.llm_gateway import _classify_call_error, _sanitize_error
 
     # 标准 JSON 数组
     raw = '[{"pred_ctr": 0.04, "confidence": 0.8, "suggestion": "ok"}]'
@@ -405,6 +406,73 @@ def test_provider_router_parse():
     except ValueError:
         raised = True
     _check("非法 provider → ValueError", raised, "should reject")
+
+    # ── Phase 23 regression（Critical-1 · 锁住 API key 不外漏）───────────
+    # 现实场景：OpenAI AuthenticationError.message 含 sk- 前缀
+    class _FakeAuthenticationError(Exception):
+        pass
+    fake_msg = "Incorrect API key provided: sk-AbCdEfGhiJklMnOpQrStUvWxYz1234567"
+    err_code = _classify_call_error(_FakeAuthenticationError(fake_msg))
+    _check("Critical-1: 鉴权错误分类（无 sk- 泄漏）",
+           "鉴权" in err_code and "sk-" not in err_code,
+           f"got {err_code!r}")
+    # sanitize 行为：sk-AbCdEfGhi... 整段被替换成 ***，原 key 子串不得残留在输出
+    sanitized = _sanitize_error(fake_msg)
+    _check("Critical-1: sanitize 屏蔽 sk- 前缀",
+           "sk-AbCdEfGhi" not in sanitized
+           and "AbCdEfGhi" not in sanitized
+           and "Incorrect API key" in sanitized,
+           f"got {sanitized!r}")
+
+    # ── Phase 23 regression（Critical-2 · 锁住 XSS escape + 短信长度）───
+    from html import escape as _html_escape
+    _check("Critical-2: html.escape 屏蔽 <script>",
+           "&lt;script&gt;" in _html_escape("<script>alert(1)</script>"),
+           f"got {_html_escape('<script>alert(1)</script>')!r}")
+    _check("Critical-2: 短信段数按 escape 前长度算（escape 幂等性）",
+           _html_escape("x" * 200) == "x" * 200,
+           f"len mismatch")
+
+    # ── Phase 23 regression（Critical-1 · 真覆盖调用点）─────────────────
+    # 上面"鉴权错误分类"只测了 _classify_call_error helper。还得测：
+    # ProviderRouter.call() → _call_openai → openai.OpenAI().chat.completions.create()
+    # 抛鉴权错 → _call_openai 的 except 捕获 → 整条调用链都不能把 sk- 透到前端。
+    # 实现：mock sys.modules['openai'] 让 client.chat.completions.create() raise AuthErr。
+    import sys
+    fake_key = "sk-AbCdEfGhiJklMnOpQrStUvWxYz1234567"
+
+    class _FakeAuthenticationError(Exception):
+        """类名必须含 'Authentication'，否则 _classify_call_error 走到 fallback 分支，测不出真路径。"""
+        pass
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            raise _FakeAuthenticationError(f"Incorrect API key provided: {fake_key}")
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class _FakeOpenAI:
+        def __init__(self, *args, **kwargs):
+            self.chat = _FakeChat()
+
+    # 注入 fake openai 模块；_call_openai 内 `import openai` 拿到这个 fake
+    saved_openai = sys.modules.get("openai")
+    sys.modules["openai"] = type(sys)("openai")
+    sys.modules["openai"].OpenAI = _FakeOpenAI
+
+    try:
+        router = ProviderRouter(provider="openai", api_key=fake_key)
+        raw = router.call("test prompt")
+    finally:
+        if saved_openai is not None:
+            sys.modules["openai"] = saved_openai
+        else:
+            del sys.modules["openai"]
+
+    _check("Critical-1: ProviderRouter.call 调用点不透漏 sk-",
+           fake_key not in raw and "sk-" not in raw,
+           f"got {raw!r}")
 
 
 # ============================================================
@@ -1157,6 +1225,25 @@ def test_prompts():
     _check("rewrite get_system_prompt 'shorten' 非空", len(sp) > 0)
     parsed_rewrite = copy_rewrite.parse_response('{"title":"x","body":"y","reason":"z"}')
     _check("rewrite parse 正常 dict", parsed_rewrite.get("title") == "x")
+
+    # Phase 23 回归：parse_response 失败信息走 _sanitize_error 兜底（防 sk-/Bearer 模式泄漏）
+    # 模拟 json.loads 抛含假 key 的异常，看 error 字段是否屏蔽
+    from prompts import copy_rewrite as _cr
+    import json as _json
+
+    _FakeKey = "sk-AbCdEfGhiJklMnOpQrStUvWxYz1234567890"
+    orig_loads = _json.loads
+    def _bad_loads(s, *a, **kw):
+        # 仅在 parse_response 触发的调用上注入假异常，其它不受影响
+        raise ValueError(f"Incorrect API key provided: {_FakeKey}")
+    try:
+        _json.loads = _bad_loads
+        err = _cr.parse_response("not-json")
+    finally:
+        _json.loads = orig_loads
+    _check("rewrite parse 异常经 _sanitize_error 屏蔽 sk-",
+           err.get("error", "").startswith("JSON失败") and _FakeKey not in err.get("error", ""),
+           f"got {err!r}")
 
 
 # ============================================================
@@ -3436,8 +3523,6 @@ def test_phase17_6_dead_code():
            "from io import BytesIO" in src04)
     _check("04_historical_insights.py 含 _cached_parse_insights_file 缓存",
            "_cached_parse_insights_file" in src04)
-    _check("04_historical_insights.py 含 _cached_generation_records_list 缓存",
-           "_cached_generation_records_list" in src04)
 
     # ── 2) pages/05_feedback.py 含 _cached_recent_feedback / _cached_generation_records_list ──
     p05 = os.path.join(os.path.dirname(__file__), "..", "pages", "05_feedback.py")
@@ -3731,6 +3816,8 @@ def main():
     test_phase22_c_auto_rollback()
     # §60 Phase 22 D 批量预测自动落档 records.db
     test_phase22_d_batch_save_records()
+    # §61 Phase 24 全量 smoke sweep（防退化）
+    test_smoke_sweep()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")
@@ -4410,6 +4497,170 @@ def test_phase22_d_batch_save_records():
     # 清理
     import shutil as _sh2
     _sh2.rmtree(tmpdir, ignore_errors=True)
+
+
+# ============================================================
+# 38) Phase 24 — 全量 smoke sweep（防退化）
+# ============================================================
+_section("38) 全量 smoke sweep（防退化）")
+
+
+def test_smoke_sweep():
+    """Phase 24 · 2026-08-28：把 §17-19 跑的 sweep 固定下来，防止以后回归。
+
+    覆盖：
+    - 31 个核心模块可 import（core / services / adapters / repositories / prompts / ui）
+    - SQLite tmp dir 隔离读写（不污染 data/）
+    - rule_engine 边界（空 / 超长 / 4 渠道 / 未知渠道）
+    - ctr_prediction_service 5 modes（含 l1_model 真模型加载）
+    - TaskInput 必填校验（4 字段）
+    - similarity_service.find_similar 空 DB
+    - copy_analysis_service.diagnose 返回结构
+    - generation_service.read_recent 不同 limit
+    - feedback_service.import_feedback 空 CSV
+    """
+    import json as _json
+    import os as _os
+    import shutil as _sh3
+    import sys as _sys
+    import tempfile as _tf
+    import importlib as _il
+
+    _sys.path.insert(0, ".")
+
+    # 1) 31 个核心模块 import
+    _mods = [
+        "core.schemas", "core.llm_gateway", "core.analytics_utils",
+        "core.active_mode", "core.data_window",
+        "services.rule_engine", "services.copy_analysis_service",
+        "services.similarity_service", "services.ctr_prediction_service",
+        "services.feedback_service", "services.generation_service",
+        "services.text_analyzer",
+        "adapters.llm_adapter", "adapters.ctr_predictor_adapter",
+        "repositories.sqlite_repository", "repositories.feedback_repository",
+        "prompts.copy_generation", "prompts.copy_rewrite",
+        "ui.styles", "ui.page_chrome", "ui.plotly_helpers",
+        "ui.llm_status", "ui.notice",
+        "services.analytics.owner_compare", "services.analytics.similarity",
+        "adapters.ctr_predictor_adapter.char_utils",
+        "adapters.ctr_predictor_adapter.baseline_lookup",
+        "adapters.ctr_predictor_adapter.feedback_lookup",
+        "adapters.ctr_predictor_adapter.column_mapping",
+        "adapters.ctr_predictor_adapter.l1_predictor",
+        "adapters.ctr_predictor_adapter.prompt_builder",
+    ]
+    _imp_ok = 0
+    for _m in _mods:
+        try:
+            _il.import_module(_m)
+            _imp_ok += 1
+        except Exception as _e:
+            _check(f"sweep import {_m}", False, f"{type(_e).__name__}: {_e}")
+    _check(f"sweep 31 模块 import ({_imp_ok}/{len(_mods)})", _imp_ok == len(_mods))
+
+    # 2) SQLite tmp dir 隔离读写
+    _td = _tf.mkdtemp()
+    try:
+        _td_rec = _os.path.join(_td, "records.db")
+        _td_fb = _os.path.join(_td, "feedback.db")
+        from repositories import sqlite_repository as _sr, feedback_repository as _fr
+
+        _sr.save({
+            "signature": "sweep_001",
+            "task_json": _json.dumps({"channel": "APP Push"}),
+            "candidates_json": _json.dumps([{"id": "A"}]),
+            "ctr_results_json": _json.dumps([{"source": "demo", "pred_ctr": 0.05}]),
+            "selected_id": "A",
+            "created_at": "2026-08-28 22:00:00",
+        }, db_path=_td_rec)
+        _check("sweep records.save → 1 row", _sr.list_all(limit=5, db_path=_td_rec) and
+               _sr.list_all(limit=5, db_path=_td_rec)[0]["signature"] == "sweep_001")
+
+        _fr.save({
+            "task_signature": "sweep_001",
+            "channel": "APP Push",
+            "reach_success": 1000,
+            "click_count": 50,
+            "source": "sweep_test",
+        }, db_path=_td_fb)
+        _agg = _fr.aggregate_by_signature(db_path=_td_fb)
+        _check("sweep feedback.save + aggregate",
+               "sweep_001" in _agg and _agg["sweep_001"]["ctr"] == 5.0,
+               f"got {_agg}")
+    finally:
+        _sh3.rmtree(_td, ignore_errors=True)
+
+    # 3) rule_engine 边界
+    from services.rule_engine import load_rules as _lr, check_one as _co
+    _cr, _br = _lr()
+    _r1 = _co("", "", "APP Push", _cr, _br)
+    _check("sweep rule empty 文案 → fail", _r1.status == "fail")
+    _r2 = _co("T" * 300, "B" * 1000, "APP Push", _cr, _br)
+    _check("sweep rule 超长 → fail blocking",
+           _r2.status == "fail" and _r2.has_blocking)
+    for _ch in ["APP Push", "企微1v1", "短信", "未知渠道"]:
+        _rc = _co("标题", "正文", _ch, _cr, _br)
+        _check(f"sweep rule 渠道 {_ch} 不 crash",
+               _rc.status in ("pass", "warn", "fail"))
+
+    # 4) ctr_prediction_service 5 modes
+    from services.ctr_prediction_service import predict_one as _po
+    for _mode in ("existing_predictor", "baseline_only", "demo", "l1_model", "unavailable"):
+        try:
+            _pr = _po(title="测试", body="点击查看", channel="APP Push", mode=_mode)
+            _check(f"sweep ctr mode={_mode} OK",
+                   _pr.result_type in ("model_prediction", "baseline_only", "demo", "unavailable"))
+        except Exception as _e:
+            _check(f"sweep ctr mode={_mode} OK", False, f"{type(_e).__name__}: {_e}")
+
+    # 5) TaskInput 必填校验
+    from core.schemas import TaskInput as _TI
+    for _f in ("audience", "channel", "stage", "tone"):
+        _kw = {k: "x" for k in ("product_category", "benefit_type", "audience",
+                                  "channel", "objective", "stage", "scene",
+                                  "tone", "expected_action", "extra_requirements")}
+        _kw[_f] = ""
+        try:
+            _TI(**_kw)
+            _check(f"sweep TaskInput {_f} 必填校验", False, "未抛 ValueError")
+        except ValueError:
+            _check(f"sweep TaskInput {_f} 必填校验", True)
+
+    # 6) similarity_service 空 DB
+    from services.similarity_service import (
+        find_similar as _fs, summarize_similar as _ss,
+    )
+    _df = _fs("测试", "点击查看", "APP Push")
+    _check("sweep find_similar 空 DB → 空 df",
+           _df is None or len(_df) == 0)
+    _sm = _ss(_df)
+    _check("sweep summarize_similar 空 DB → count=0",
+           _sm.get("count") == 0 and _sm.get("avg_ctr") is None)
+
+    # 7) copy_analysis_service.diagnose 返回结构
+    from services.copy_analysis_service import diagnose as _dg
+    _dg_r = _dg("测试", "点击查看", channel="APP Push")
+    _check("sweep diagnose 含 score/grade/problems",
+           all(k in _dg_r for k in ("score", "grade", "problems")))
+
+    # 8) generation_service.read_recent 不同 limit
+    from services.generation_service import read_recent as _rr
+    _rr5 = _rr(limit=5)
+    _check("sweep read_recent(limit=5) ≤5",
+           0 <= len(_rr5) <= 5,
+           f"got {len(_rr5)}")
+    _rr_all = _rr(limit=10000)
+    _check("sweep read_recent(limit=10000) ≥ read_recent(limit=5)",
+           len(_rr_all) >= len(_rr5),
+           f"5={len(_rr5)} all={len(_rr_all)}")
+
+    # 9) feedback_service.import_feedback 空 CSV
+    import io as _io
+    from services.feedback_service import import_feedback as _ifb
+    _empty_csv = _io.BytesIO(b"task_signature,channel,reach_success,click_count\n")
+    _ifb_r = _ifb(_empty_csv.read(), filename="empty.csv")
+    _check("sweep import_feedback 空 CSV 不报错",
+           _ifb_r.get("n") == 0 and len(_ifb_r.get("errors") or []) == 0)
 
 
 if __name__ == "__main__":

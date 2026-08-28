@@ -19,38 +19,24 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from services.feedback_service import import_feedback
-from repositories import feedback_repository
+from services.feedback_service import (
+    import_feedback, count, aggregate_by_signature,
+    read_recent as read_feedback_recent,
+)
+from services.generation_service import read_recent as read_generations_recent
 from ui.notice import render_advanced_notice, render_ctr_feedback_notice
-from ui.styles import inject_base_css
+from ui.page_chrome import page_setup
 
 
 # ============================================================
 # Page config
 # ============================================================
 
-st.set_page_config(
-    page_title="05 真实结果回流",
-    page_icon=None,
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-inject_base_css()
+page_setup("05 真实结果回流", "真实投放数据回流 · 校验入库 · 按 signature 聚合 · CTR 反哺闭环数据源")
 
 # 进阶能力 + CTR 反哺 banner（决策文档 Demo 范围 §2 / §3）
 render_advanced_notice()
 render_ctr_feedback_notice()
-
-st.markdown(
-    """
-    <div class="mcd-header">
-        <h1>05 真实结果回流</h1>
-        <p>真实投放数据回流 · 校验入库 · 按 signature 聚合 · CTR 反哺闭环数据源</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 
 # ============================================================
@@ -106,7 +92,7 @@ def _do_import(uploaded, source_label: str):
 # 渲染：汇总 + 列表
 # ============================================================
 def _render_summary():
-    total = feedback_repository.count()
+    total = count()
     if total == 0:
         st.markdown("---")
         st.markdown(
@@ -118,7 +104,7 @@ def _render_summary():
     st.markdown("---")
     st.markdown("### 2 数据汇总")
 
-    agg = feedback_repository.aggregate_by_signature()
+    agg = aggregate_by_signature()
     n_sig = len(agg)
 
     total_reach = sum(v["reach"] for v in agg.values())
@@ -167,14 +153,13 @@ def _render_summary():
 # Phase 17.6：缓存 generation_records 列表（TTL 60s；变更不频繁）
 @st.cache_data(ttl=60, show_spinner=False)
 def _cached_generation_records_list() -> list:
-    from repositories import sqlite_repository
-    return sqlite_repository.list_all(limit=10000)
+    return read_generations_recent(limit=10000)
 
 
 # Phase 17.6：缓存 feedback 最近记录（TTL 30s；新上传后 30s 内可见）
 @st.cache_data(ttl=30, show_spinner=False)
 def _cached_recent_feedback(limit: int) -> list:
-    return feedback_repository.list_all(limit=limit)
+    return read_feedback_recent(limit=limit)
 
 
 def _render_join_status(agg: dict):

@@ -35,37 +35,20 @@ from services.batch_evaluation_service import (
 from ui.llm_status import render_banner
 from ui.notice import render_advanced_notice
 from ui.plotly_helpers import rate_value
-from ui.styles import inject_base_css
+from ui.page_chrome import page_setup
 
 
 # ============================================================
 # Page config
 # ============================================================
 
-st.set_page_config(
-    page_title="03 批量评估",
-    page_icon=None,
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-inject_base_css()
+page_setup("03 批量评估", "CSV / Excel 批量导入 · 规则 + CTR 批量评估 · 优化建议 · 结果导出")
 
 # 进阶能力 banner（决策文档 Demo 范围 §2）
 render_advanced_notice()
 
 # LLM 未配置提示（业务确认 #10）
 render_banner()
-
-st.markdown(
-    """
-    <div class="mcd-header">
-        <h1>03 批量评估</h1>
-        <p>CSV / Excel 批量导入 · 规则 + CTR 批量评估 · 优化建议 · 结果导出</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 
 # ============================================================

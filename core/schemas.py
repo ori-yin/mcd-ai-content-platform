@@ -194,9 +194,10 @@ class TaskInput:
     coupon: str = "未知"           # "实际是否用券"（form 字段，plan 维度）
     planned_send_date: Optional[str] = None   # 工作日类型标签："工作日"|"非工作日"（Phase 11 · 2026-08-27 用户简化拍板）。
                                               # 历史：v3.1 之前是 ISO 日期字符串；Handoff §6.2 #12 用户口径
-                                              #   不要日期选择器，改为 selectbox 2 值；字段名保留以避免破坏
-                                              #   records.db 老 schema 兼容（下游 baseline_lookup 走 row["工作日类型"]
-                                              #   不消费本字段，实际是孤儿字段）。
+                                              #   不要日期选择器，改为 selectbox 2 值。
+                                              # 透传：ctr_prediction_service._build_row 写到 row["工作日类型"]，
+                                              #   参与 baseline_lookup 工作日维度查找（Phase 14 修复后）。
+                                              # 字段名保留：避免破坏 records.db 老 schema 兼容。
     scene: str = ""                # Phase 12 #10 用户拍板：scene 从必填改为选填
     extra_requirements: str = ""
     # Phase A.1（2026-08-28）：产品权益 2 字段（启用，原 product_benefit 拆分）

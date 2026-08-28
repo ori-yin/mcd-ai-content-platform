@@ -127,7 +127,11 @@ class ProviderRouter:
             )
             return resp.choices[0].message.content.strip()
         except Exception as e:
-            return json.dumps({"_error": f"API错误: {str(e)[:50]}"}, ensure_ascii=False)
+            # 完整 message 仅写 server log（不外漏到前端，避免 key 泄漏）
+            import sys, traceback
+            print(f"[llm_gateway] openai call failed: {e!r}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            return json.dumps({"_error": _classify_call_error(e)}, ensure_ascii=False)
 
     # ── Anthropic 协议 ─────────────────────────────────────────────────
     def _call_anthropic(self, prompt: str, model: str) -> str:
@@ -151,7 +155,11 @@ class ProviderRouter:
             text_parts = [b.text for b in resp.content if getattr(b, "type", "") == "text"]
             return "\n".join(text_parts).strip()
         except Exception as e:
-            return json.dumps({"_error": f"API错误: {str(e)[:50]}"}, ensure_ascii=False)
+            # 完整 message 仅写 server log（不外漏到前端，避免 key 泄漏）
+            import sys, traceback
+            print(f"[llm_gateway] anthropic call failed: {e!r}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            return json.dumps({"_error": _classify_call_error(e)}, ensure_ascii=False)
 
     # ── JSON 解析（两个协议共用） ───────────────────────────────────────
     @staticmethod
@@ -199,8 +207,48 @@ class ProviderRouter:
                 r.setdefault("suggestion", default_suggestion)
             return results
         except json.JSONDecodeError as e:
-            return [_empty_row(f"JSON失败: {str(e)[:50]}")] * expected_count
+            # JSON 解析失败不涉及 key，但仍 sanitize 兜底（防御性）
+            return [_empty_row(f"JSON失败: {_sanitize_error(str(e))[:30]}")] * expected_count
 
 
 def _empty_row(error: str) -> dict:
     return {"pred_ctr": None, "confidence": None, "suggestion": error}
+
+
+# ── 错误安全（Phase 23 · 2026-08-28 防 key 泄漏）─────────────────────
+# 现实案例：OpenAI AuthenticationError.message 含
+#   "Incorrect API key provided: sk-AbCdEfGhi..."，
+# Anthropic 类似。所有透传到前端的 message 必须过两道关：
+#   ① 异常 class 归类（稳定错误码，不透传原文）
+#   ② sanitize 兜底（万一新 SDK class 不在白名单，屏蔽 sk-/Bearer 模式）
+_KEY_PATTERNS = [
+    re.compile(r"sk-[A-Za-z0-9_-]{16,}"),     # OpenAI / Anthropic key 前缀
+    re.compile(r"Bearer\s+[A-Za-z0-9_.-]{16,}"),  # Bearer token
+]
+
+
+def _sanitize_error(msg: str) -> str:
+    for p in _KEY_PATTERNS:
+        msg = p.sub("***", msg)
+    return msg
+
+
+def _classify_call_error(e: BaseException) -> str:
+    """把 SDK 异常归类为稳定错误码，不透传原始 message（含 key 风险）。
+
+    OpenAI/Anthropic 异常类名相似（AuthenticationError / RateLimitError /
+    APITimeoutError / APIConnectionError / BadRequestError 等），按名归类。
+    未识别类返回 "API异常: <classname>"，仍不暴露 str(e)。
+    """
+    cls_name = e.__class__.__name__
+    if "Authentication" in cls_name or "Permission" in cls_name:
+        return "API鉴权失败（检查 api_key）"
+    if "RateLimit" in cls_name:
+        return "API限流（稍后重试）"
+    if "Timeout" in cls_name:
+        return "API超时"
+    if "Connection" in cls_name:
+        return "API网络错误"
+    if "BadRequest" in cls_name:
+        return "API请求格式错误"
+    return f"API异常: {cls_name}"

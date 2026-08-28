@@ -60,21 +60,14 @@ from adapters.ctr_predictor_adapter import (
 )
 from ui.llm_status import render_banner
 from ui.plotly_helpers import rate_value
-from ui.styles import inject_base_css
+from ui.page_chrome import page_setup
 
 
 # ============================================================
 # Page config
 # ============================================================
 
-st.set_page_config(
-    page_title="01 内容创作",
-    page_icon=None,
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-inject_base_css()
+page_setup("01 内容创作", "定义任务 · 生成 3 条候选 · 规则 + CTR 评估 · 渠道预览 · 人工选择")
 
 # LLM 未配置提示（业务确认 #10）
 render_banner()
@@ -138,17 +131,6 @@ with st.sidebar:
             f"\"L1 预测 CTR\"，与现有基准对比；不影响主流程。",
         )
 
-st.markdown(
-    """
-    <div class="mcd-header">
-        <h1>01 内容创作</h1>
-        <p>定义任务 · 生成 3 条候选 · 规则 + CTR 评估 · 渠道预览 · 人工选择</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-
 # ============================================================
 # session_state 初始化
 # ============================================================
@@ -175,7 +157,10 @@ _init_state()
 # ============================================================
 # 工具：任务签名（PRD §17 字段变化 → 提示重新生成）
 # ============================================================
-def _task_signature(t: dict) -> str:
+def _form_change_signature(t: dict) -> str:
+    # form 字段变化检测签名（与 core.schemas.task_signature 不同：
+    # 那个是给 records.db 持久化 + 回流 join 用的 SHA1 截 12 位，含 title/body 桶；
+    # 这个是给"用户改字段 → toast 提示重新生成"用的纯字符串拼接）。
     # Phase A.1 · 2026-08-28：product_benefit 拆 2 字段，老字段下线
     keys = ("product_category", "benefit_type", "audience", "channel", "objective",
             "stage", "scene", "tone", "expected_action",
@@ -366,7 +351,7 @@ def _render_left_column(channel_rules: dict) -> Optional[TaskInput]:
             return None
 
         # PRD §17 字段变更检测
-        sig = _task_signature(form_dict)
+        sig = _form_change_signature(form_dict)
         if (st.session_state.candidates
                 and sig != st.session_state.last_generated_signature):
             st.toast("检测到字段已变更，请重新点击「生成」按钮", icon="⚠")
@@ -505,8 +490,13 @@ def _render_right_column(task: TaskInput, channel_rules: dict):
 
 def _render_channel_preview(task: TaskInput, c: Candidate):
     ch = task.channel
-    title = c.title or "（无标题）"
-    body = c.body
+    # XSS 防御（Phase 23 · 2026-08-28）：title/body 来源含 LLM 输出 + 用户输入，
+    # 进 unsafe_allow_html 前必须 html.escape，避免恶意 prompt 注入脚本。
+    # 原始 body 长度用于短信分段统计（escape 后会变长）。
+    from html import escape as _esc
+    body_len_raw = len(c.body)
+    title = _esc(c.title or "（无标题）")
+    body = _esc(c.body)
     if ch == "APP Push":
         preview_html = (
             f'<div class="preview-card">'
@@ -517,7 +507,7 @@ def _render_channel_preview(task: TaskInput, c: Candidate):
             f'<div class="pv-meta">APP Push · 点击查看</div>'
             f'</div>'
         )
-    elif ch == "企微 1v1":
+    elif ch == "企微1v1":
         # 仿企业微信聊天气泡（头像 + 服务名 + 卡片 + 时间戳）
         preview_html = (
             f'<div class="wechat-bubble-wrap">'
@@ -531,22 +521,12 @@ def _render_channel_preview(task: TaskInput, c: Candidate):
             f'</div>'
         )
     elif ch == "短信":
-        seg = max(1, (len(body) + 69) // 70)
+        seg = max(1, (body_len_raw + 69) // 70)
         preview_html = (
             f'<div class="preview-card">'
             f'<div style="font-size:0.78em;opacity:0.55;margin-bottom:0.4rem;">106xxxxxxxx</div>'
             f'<div class="pv-body">{body}</div>'
-            f'<div class="pv-meta">短信 · {len(body)} 字 / {seg} 段</div>'
-            f'</div>'
-        )
-    elif ch == "站内信":
-        preview_html = (
-            f'<div class="preview-card">'
-            f'<div style="font-size:0.78em;opacity:0.55;margin-bottom:0.4rem;">'
-            f"McDonald&apos;s App · 消息中心</div>"
-            f'<div class="pv-title">{title}</div>'
-            f'<div class="pv-body">{body}</div>'
-            f'<div class="pv-meta">站内信 · 查看详情</div>'
+            f'<div class="pv-meta">短信 · {body_len_raw} 字 / {seg} 段</div>'
             f'</div>'
         )
     else:
@@ -760,7 +740,7 @@ def main():
         first = candidates[0]
         sim_df = find_similar(first.title, first.body, new_task.channel)
         st.session_state.similar_summary = summarize_similar(sim_df)
-        st.session_state.last_generated_signature = _task_signature(new_task.to_dict())
+        st.session_state.last_generated_signature = _form_change_signature(new_task.to_dict())
         st.rerun()
 
     with middle:

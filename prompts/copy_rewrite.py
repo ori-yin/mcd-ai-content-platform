@@ -94,9 +94,15 @@ def get_system_prompt(action: str) -> str:
 
 
 def parse_response(raw: str) -> dict:
-    """解析单条改写结果 dict。失败返回 {"error": "..."}。"""
+    """解析单条改写结果 dict。失败返回 {"error": "..."}。
+
+    失败信息走 unsafe_allow_html（pages/02:435），str(e) 经 _sanitize_error
+    兜底屏蔽 sk-/Bearer 模式（防御性；Phase 23 与 llm_gateway 同源）。
+    """
     import json
     import re
+
+    from core.llm_gateway import _sanitize_error  # 复用 sanitizer，避免散落
 
     if not raw:
         return {"error": "空响应"}
@@ -114,7 +120,7 @@ def parse_response(raw: str) -> dict:
         d.setdefault("reason", "")
         return d
     except Exception as e:
-        return {"error": f"JSON失败: {str(e)[:80]}"}
+        return {"error": f"JSON失败: {_sanitize_error(str(e))[:80]}"}
 
 
 __all__ = ["VERSION", "get_system_prompt", "build_user_prompt", "parse_response"]

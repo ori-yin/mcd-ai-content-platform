@@ -17,8 +17,8 @@ channels:
     emoji_max: 2              # APP Push 业界约定 ≤2 个
     notes: "标题≤15 字优先、含数字/emoji/紧迫词、明确利益点"
 
-  企微 1v1:
-    title_max: 0              # 企微 1v1 无独立标题
+  企微1v1:
+    title_max: 0              # 企微1v1 无独立标题
     body_max: 200
     require_title: false
     emoji_max: 3
@@ -30,10 +30,3 @@ channels:
     require_title: false
     emoji_max: 0              # 短信不支持 emoji
     notes: "70 字单条；超长分条"
-
-  站内信:
-    title_max: 30
-    body_max: 100
-    require_title: true
-    emoji_max: 2
-    notes: "站内信标题≤30 字、正文≤100 字"

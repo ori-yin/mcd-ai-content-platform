@@ -27,6 +27,7 @@ import argparse
 import csv
 import json
 import sqlite3
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -42,6 +43,7 @@ DRIFT_LOG = ROOT / "data" / "drift_log.csv"
 
 DEFAULT_ALERT_RATIO = 1.3
 MIN_PAIR_COUNT = 5  # 至少 N 对预测+真回流才告警（防小样本误报）
+MIN_REAL_REACH = 50  # feedback 单 signature 触达过滤阈值（防单计划小样本配对）
 
 
 # ── records.db 读 L1 预测 ─────────────────────────────────────
@@ -233,18 +235,20 @@ def main():
     parser.add_argument("--no-log", action="store_true", help="不写 drift_log.csv")
     parser.add_argument("--no-active-mode", action="store_true",
                         help="不写/清 active_mode.txt（默认会根据告警等级自动回退）")
+    parser.add_argument("--min-real-reach", type=int, default=MIN_REAL_REACH,
+                        help=f"feedback 单 signature 触达过滤阈值（默认 {MIN_REAL_REACH}），低于此不参与 join")
     args = parser.parse_args()
 
     # 1) 加载基线 MAE
     if not META_PATH.exists():
         print(f"[FAIL] meta 文件不存在：{META_PATH}")
-        return 1
+        sys.exit(1)
     with open(META_PATH, encoding="utf-8") as f:
         meta = json.load(f)
     baseline_mae_pct = float(meta.get("test_metrics", {}).get("overall_mae_pct", 0.0))
     if baseline_mae_pct <= 0:
         print(f"[FAIL] meta 缺 test_metrics.overall_mae_pct（baseline={baseline_mae_pct}）")
-        return 1
+        sys.exit(1)
     print(f"[baseline] L1 历史最佳 MAE = {baseline_mae_pct:.3f}%  "
           f"(训练时间 {meta.get('trained_at','?')})")
 
@@ -260,14 +264,14 @@ def main():
     pairs = []
     for r in l1_rows:
         sig = r["signature"]
-        if sig in fb and fb[sig]["reach"] >= 50:  # 防小样本
+        if sig in fb and fb[sig]["reach"] >= args.min_real_reach:  # 防小样本
             pairs.append({
                 **r,
                 "real_ctr": fb[sig]["ctr"],
                 "real_reach": fb[sig]["reach"],
                 "real_click": fb[sig]["click"],
             })
-    print(f"[join] 配对 {len(pairs)} 对（min_reach=50 过滤后）")
+    print(f"[join] 配对 {len(pairs)} 对（min_real_reach={args.min_real_reach} 过滤后）")
 
     if len(pairs) < args.min_pairs:
         print(f"\n[skip] 配对数 {len(pairs)} < {args.min_pairs}，不评估（防小样本误报）")
@@ -338,5 +342,4 @@ def main():
 
 
 if __name__ == "__main__":
-    import sys
     sys.exit(main())

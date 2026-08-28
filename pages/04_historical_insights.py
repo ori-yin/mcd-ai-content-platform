@@ -39,35 +39,18 @@ from services.analytics.daily_trend import daily_aggregate, daily_summary
 from services.analytics.owner_compare import owner_compare
 from ui.notice import render_advanced_notice, render_ctr_feedback_notice
 from ui.plotly_helpers import rate_value
-from ui.styles import inject_base_css
+from ui.page_chrome import page_setup
 
 
 # ============================================================
 # Page config
 # ============================================================
 
-st.set_page_config(
-    page_title="04 历史洞察",
-    page_icon=None,
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-inject_base_css()
+page_setup("04 历史洞察", "高效 Plan 排行 · 高低表现词 · Emoji · 标题字数 · 历史相似 · 每日趋势 · Owner 对比")
 
 # 进阶能力 + CTR 反哺 banner（决策文档 Demo 范围 §2 / §3）
 render_advanced_notice()
 render_ctr_feedback_notice()
-
-st.markdown(
-    """
-    <div class="mcd-header">
-        <h1>04 历史洞察</h1>
-        <p>高效 Plan 排行 · 高低表现词 · Emoji · 标题字数 · 历史相似 · 每日趋势 · Owner 对比</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 
 # ============================================================
@@ -105,11 +88,6 @@ def _cached_parse_insights_file(file_bytes: bytes, filename: str):
     return df, meta
 
 
-@st.cache_data(ttl=60, show_spinner=False)
-def _cached_generation_records_list() -> list:
-    """generation_records 列表（TTL 60s；变更不频繁）"""
-    from repositories import sqlite_repository
-    return sqlite_repository.list_all(limit=10000)
 def _render_uploader():
     st.markdown("### 1 上传历史数据")
     st.caption(
