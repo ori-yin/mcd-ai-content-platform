@@ -47,6 +47,10 @@ from core.schemas import (
     TARGET_AUDIENCE, OBJECTIVES, CHANNELS, STAGES, SCENES,
     TONES, ACTIONS, PLAN_TYPES, COUPON_FLAGS,
 )
+from core.product_benefit import (
+    get_product_categories, get_benefit_types,
+    get_custom_label, options_with_custom,
+)
 from services.generation_service import generate, GenerationError, rank_candidates_by_ctr
 from services.rule_engine import load_rules, check_candidates
 from services.ctr_prediction_service import predict_for_candidates
@@ -192,15 +196,71 @@ def _render_left_column(channel_rules: dict) -> Optional[TaskInput]:
     cur = st.session_state.task_input or {}
 
     with st.form("task_form", clear_on_submit=False):
-        # 产品与权益：Demo 阶段灰态（PRD §26 业务确认 + 演示口径决策）
-        product_benefit = st.text_area(
-            "产品与权益（待开发·二期接入）",
-            value=cur.get("product_benefit", ""),
-            height=80,
-            disabled=True,
-            help="后续开放，敬请期待。本期不参与生成（决策文档 Demo 范围 §1）。",
-            placeholder="二期接入后可填写（如：Chiikawa 合作款 + 限定小卡）",
+        # Phase A.1 · 产品类别 + 权益类型（启用，不动 baseline）
+        product_cats = get_product_categories()
+        benefit_types = get_benefit_types()
+        custom_label = get_custom_label()
+        prod_cat_options = options_with_custom(product_cats)
+        benefit_type_options = options_with_custom(benefit_types)
+
+        # 当前已选值（用于 selectbox 默认 index 推断）
+        cur_pc = cur.get("product_category", "") or ""
+        cur_bt = cur.get("benefit_type", "") or ""
+        cur_pc_is_custom = cur_pc not in product_cats and bool(cur_pc)
+        cur_bt_is_custom = cur_bt not in benefit_types and bool(cur_bt)
+
+        # Phase A.1 · 2 列 selectbox（产品类别 + 权益类型）
+        pc_a, pc_b = st.columns(2)
+        with pc_a:
+            # selectbox 默认值：枚举内值 → 索引；自定义值 → "自定义" 索引 + 文本框
+            pc_default_idx = (
+                prod_cat_options.index(custom_label) if cur_pc_is_custom
+                else (product_cats.index(cur_pc) if cur_pc in product_cats else 0)
+            )
+            product_category_sel = st.selectbox(
+                "产品类别",
+                prod_cat_options,
+                index=pc_default_idx,
+                help="覆盖麦当劳主推品类（10 个）；选「自定义」可在下方文本框填单品",
+            )
+            product_category_custom = st.text_input(
+                "  └ 自定义产品类别",
+                value=cur_pc if cur_pc_is_custom else "",
+                placeholder="如：麦辣鸡腿堡中辣",
+                label_visibility="visible",
+                disabled=not cur_pc_is_custom and product_category_sel != custom_label,
+            )
+        with pc_b:
+            bt_default_idx = (
+                benefit_type_options.index(custom_label) if cur_bt_is_custom
+                else (benefit_types.index(cur_bt) if cur_bt in benefit_types else 0)
+            )
+            benefit_type_sel = st.selectbox(
+                "权益类型",
+                benefit_type_options,
+                index=bt_default_idx,
+                help="覆盖主要促销手法（8 个）；选「自定义」可在下方文本框填具体优惠",
+            )
+            benefit_type_custom = st.text_input(
+                "  └ 自定义权益类型",
+                value=cur_bt if cur_bt_is_custom else "",
+                placeholder="如：满 50 减 15、第二杯半价",
+                label_visibility="visible",
+                disabled=not cur_bt_is_custom and benefit_type_sel != custom_label,
+            )
+
+        # 解析最终值：枚举内 = selectbox 值；自定义 = 文本框值
+        product_category = (
+            product_category_custom.strip()
+            if product_category_sel == custom_label or cur_pc_is_custom
+            else product_category_sel
         )
+        benefit_type = (
+            benefit_type_custom.strip()
+            if benefit_type_sel == custom_label or cur_bt_is_custom
+            else benefit_type_sel
+        )
+
         c1, c2 = st.columns(2)
         with c1:
             audience = st.selectbox(
