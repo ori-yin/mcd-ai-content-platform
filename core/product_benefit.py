@@ -33,6 +33,13 @@ FALLBACK_BENEFIT_TYPES: Tuple[str, ...] = (
 )
 CUSTOM_LABEL = "自定义"
 
+# 兜底 dict（任一失败路径统一返回），避免 4 处 dict literal 重复
+_FALLBACK_CFG: dict = {
+    "product_categories": FALLBACK_PRODUCT_CATEGORIES,
+    "benefit_types": FALLBACK_BENEFIT_TYPES,
+    "custom_label": CUSTOM_LABEL,
+}
+
 
 @functools.lru_cache(maxsize=1)
 def load_product_benefit(path: str = str(DEFAULT_PATH)) -> dict:
@@ -47,28 +54,13 @@ def load_product_benefit(path: str = str(DEFAULT_PATH)) -> dict:
     """
     p = Path(path)
     if not p.exists():
-        return {
-            "product_categories": FALLBACK_PRODUCT_CATEGORIES,
-            "benefit_types": FALLBACK_BENEFIT_TYPES,
-            "custom_label": CUSTOM_LABEL,
-        }
+        return _FALLBACK_CFG
     try:
         import yaml  # PyYAML 在 services/rule_engine 已有依赖
-    except ImportError:
-        return {
-            "product_categories": FALLBACK_PRODUCT_CATEGORIES,
-            "benefit_types": FALLBACK_BENEFIT_TYPES,
-            "custom_label": CUSTOM_LABEL,
-        }
-    try:
         with open(p, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
     except Exception:
-        return {
-            "product_categories": FALLBACK_PRODUCT_CATEGORIES,
-            "benefit_types": FALLBACK_BENEFIT_TYPES,
-            "custom_label": CUSTOM_LABEL,
-        }
+        return _FALLBACK_CFG
     return {
         "product_categories": tuple(data.get("product_categories") or FALLBACK_PRODUCT_CATEGORIES),
         "benefit_types": tuple(data.get("benefit_types") or FALLBACK_BENEFIT_TYPES),
