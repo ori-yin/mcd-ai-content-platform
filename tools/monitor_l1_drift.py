@@ -162,6 +162,44 @@ def compute_metrics(pairs: list) -> dict:
     }
 
 
+# ── active_mode.txt 自动回退写入 ───────────────────────────────────
+# 告警时写文件覆盖 sidebar 默认值，让用户打开页面就看到已切走 L1
+# ALERT → demo（最保守）；WARN → baseline_only；OK → 删文件（恢复默认）
+ACTIVE_MODE_PATH = ROOT / "data" / "active_mode.txt"
+
+
+def apply_auto_rollback(alert_level: str, path: Path = ACTIVE_MODE_PATH) -> str:
+    """根据告警等级写/清 active_mode.txt，返回实际写入的内容（"cleared"/"demo"/...）。"""
+    if alert_level == "ALERT":
+        write_active_mode_safe("demo", path)
+        return "demo"
+    if alert_level == "WARN":
+        write_active_mode_safe("baseline_only", path)
+        return "baseline_only"
+    # OK → 删文件，恢复 sidebar 默认（env CTR_MODE → demo）
+    if clear_active_mode_safe(path):
+        return "cleared"
+    return "unchanged"
+
+
+def write_active_mode_safe(mode: str, path: Path) -> None:
+    """包一层 try/except，监控脚本不应因写文件失败而崩。"""
+    try:
+        from core.active_mode import write_active_mode
+        write_active_mode(mode, path)
+    except Exception as e:
+        print(f"[warn] 写 active_mode.txt 失败: {e}")
+
+
+def clear_active_mode_safe(path: Path) -> bool:
+    try:
+        from core.active_mode import clear_active_mode
+        return clear_active_mode(path)
+    except Exception as e:
+        print(f"[warn] 删 active_mode.txt 失败: {e}")
+        return False
+
+
 # ── drift_log.csv 写入 ───────────────────────────────────────
 def write_drift_log(row: dict, log_path: Path = DRIFT_LOG):
     """追加一行监控记录（CSV 头一次写入）。"""
@@ -193,6 +231,8 @@ def main():
     parser.add_argument("--min-pairs", type=int, default=MIN_PAIR_COUNT,
                         help=f"最小样本数（默认 {MIN_PAIR_COUNT}），低于此不评估")
     parser.add_argument("--no-log", action="store_true", help="不写 drift_log.csv")
+    parser.add_argument("--no-active-mode", action="store_true",
+                        help="不写/清 active_mode.txt（默认会根据告警等级自动回退）")
     args = parser.parse_args()
 
     # 1) 加载基线 MAE
@@ -267,7 +307,19 @@ def main():
         ch_n = sum(1 for p in pairs if (p.get("channel") or "未知") == ch)
         print(f"  {ch:12s} n={ch_n:4d}  MAE={mae:.3f}%")
 
-    # 7) 写日志
+    # 7) 自动回退 active_mode.txt
+    if not args.no_active_mode:
+        action = apply_auto_rollback(alert_level)
+        if action == "cleared":
+            print(f"[rollback] active_mode.txt 已清除（sidebar 恢复默认）")
+        elif action == "unchanged":
+            print(f"[rollback] active_mode.txt 不存在，无需清除")
+        elif action == "demo":
+            print(f"[rollback] 写入 active_mode.txt = demo（强告警，自动回退到 demo）")
+        elif action == "baseline_only":
+            print(f"[rollback] 写入 active_mode.txt = baseline_only（预警，降级到 baseline）")
+
+    # 8) 写日志
     if not args.no_log:
         write_drift_log({
             "timestamp": datetime.now().isoformat(timespec="seconds"),
