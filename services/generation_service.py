@@ -69,8 +69,23 @@ class GenerationError(Exception):
 
 # ── Demo 模式占位候选（PRD §19.1 稳定占位）──────────────────────
 def _demo_candidates(task: TaskInput) -> list:
-    """3 条稳定占位候选，A/B/C 策略不同。"""
-    benefit = task.product_benefit or "新品限时优惠"
+    """3 条稳定占位候选，A/B/C 策略不同。
+
+    Phase A.1 · 2026-08-28：
+      - 原 product_benefit 拆为 product_category + benefit_type
+      - 演示文本拼接改为「类别 + 权益」（仅其一非空时用其一，都空时走兜底默认）
+    """
+    # A.1：组合成一段"产品-权益"短语，无值时给稳定兜底
+    pc = task.product_category or ""
+    bt = task.benefit_type or ""
+    if pc and bt:
+        benefit = f"{pc} {bt}"
+    elif pc:
+        benefit = f"{pc} 优惠"
+    elif bt:
+        benefit = bt
+    else:
+        benefit = "新品限时优惠"
     scene = task.scene or "日常"
     action = task.expected_action or "查看"
 
