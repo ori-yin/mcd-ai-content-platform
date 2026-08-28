@@ -155,9 +155,6 @@ def _validate(rows: list) -> list:
             raise GenerationError(f"候选 {ids[i]} strategy 不匹配：{s}（需 {e}）")
 
     for r in rows[:3]:
-        if not r.get("title", "").strip() and r.get("title") != "":
-            # 允许 title 空（短信 / 企微 1v1），但如果非空则要 strip 非空
-            pass
         if not r.get("body", "").strip():
             raise GenerationError(f"候选 {r.get('id')} body 为空")
 
