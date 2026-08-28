@@ -50,7 +50,7 @@ from ui.styles import inject_base_css
 
 st.set_page_config(
     page_title="02 文案诊断",
-    page_icon="🔍",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
