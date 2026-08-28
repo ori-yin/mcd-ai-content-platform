@@ -41,6 +41,7 @@ import streamlit as st
 
 from core.data_window import classify_today_type
 from core.text_classifier import classify_coupon_in_text
+from core.active_mode import read_active_mode
 from core.schemas import (
     TaskInput, Candidate, RuleResult, PredictionResult,
     TARGET_AUDIENCE, OBJECTIVES, CHANNELS, STAGES, SCENES,
@@ -87,8 +88,18 @@ with st.sidebar:
         l1_model_disabled = True
     else:
         l1_model_disabled = False
-    # 默认值沿用历史：CTR_MODE env → demo
+    # 默认值沿用历史：active_mode.txt（漂移自动回退）→ CTR_MODE env → demo
     default_mode = os.environ.get("CTR_MODE", "demo")
+    auto_mode = read_active_mode()
+    auto_rollback_msg = None
+    if auto_mode:
+        if auto_mode in mode_options:
+            default_mode = auto_mode
+            auto_rollback_msg = f"⚠️ CTR 模式已被 monitor_l1_drift 自动回退到 {auto_mode}（漂移告警）"
+        else:
+            # 文件说 l1_model 但当前 l1 不可用，强制退回 demo
+            default_mode = "demo"
+            auto_rollback_msg = f"⚠️ active_mode.txt={auto_mode} 但 L1 当前不可用，已退回 demo"
     if default_mode not in mode_options:
         default_mode = "demo"
     st.session_state["ctr_mode"] = st.selectbox(
@@ -100,6 +111,8 @@ with st.sidebar:
         key="ctr_mode_select",
         disabled=False,
     )
+    if auto_rollback_msg:
+        st.caption(auto_rollback_msg)
     if l1_model_disabled:
         st.caption(f"⚠️ L1 模型当前不可用（status={l1_status}），l1_model 不可选")
 
