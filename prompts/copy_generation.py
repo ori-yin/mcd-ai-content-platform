@@ -20,7 +20,7 @@ from __future__ import annotations
 from core.schemas import TaskInput
 
 
-VERSION = "v1.0"
+VERSION = "v1.1"
 
 
 SYSTEM_PROMPT = """你是麦当劳企微 1v1 / Push 文案顾问。基于输入的"经营任务"生成 3 条候选内容。
@@ -34,7 +34,7 @@ SYSTEM_PROMPT = """你是麦当劳企微 1v1 / Push 文案顾问。基于输入�
     "body": "...",
     "reason": "为什么这条匹配任务",
     "risk_flags": [],
-    "used_input_fields": ["product_benefit", "campaign_stage", ...]
+    "used_input_fields": ["product_category", "benefit_type", "campaign_stage", ...]
   },
   {"id": "B", "strategy": "B_消费场景切入", ...},
   {"id": "C", "strategy": "C_行动号召强化", ...}
@@ -52,7 +52,13 @@ SYSTEM_PROMPT = """你是麦当劳企微 1v1 / Push 文案顾问。基于输入�
 
 
 def build_user_prompt(task: TaskInput, channel_rules: dict) -> str:
-    """拼装 user prompt。channel_rules 是 config/channel_rules.yaml 加载的 dict。"""
+    """拼装 user prompt。channel_rules 是 config/channel_rules.yaml 加载的 dict。
+
+    Phase A.1 · 2026-08-28：
+      - 原 product_benefit 字段拆为 product_category + benefit_type 两行
+      - 任一为空时该行不拼（避免 prompt 里出现"产品类别："空值）
+      - 都不为空时拼 2 行（产品类别 / 权益类型）
+    """
     rules = channel_rules.get(task.channel, {})
     title_max = rules.get("title_max", 15)
     body_max = rules.get("body_max", 60)
@@ -60,15 +66,18 @@ def build_user_prompt(task: TaskInput, channel_rules: dict) -> str:
 
     parts = [
         "【经营任务】",
-        # Demo 阶段·灰态字段：空时整行不拼（避免 prompt 里出现"产品与权益："空值）
+        # Demo 阶段·灰态字段：空时整行不拼（避免 prompt 里出现空值行）
         f"目标人群：{task.audience}",
         f"投放渠道：{task.channel}",
         f"活动阶段：{task.stage}",
         f"消费场景：{task.scene}",
         f"内容语气：{task.tone}",
     ]
-    if task.product_benefit:
-        parts.append(f"产品与权益：{task.product_benefit}")
+    # Phase A.1：产品类别 + 权益类型（拆 2 行，便于 LLM 看清两个独立维度）
+    if task.product_category:
+        parts.append(f"产品类别：{task.product_category}")
+    if task.benefit_type:
+        parts.append(f"权益类型：{task.benefit_type}")
     if task.objective:
         parts.append(f"投放目标：{task.objective}")
     if task.expected_action:
