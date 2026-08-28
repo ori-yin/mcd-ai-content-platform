@@ -77,6 +77,7 @@ def _init_state():
         "batch_df_raw": None,
         "batch_rows": [],
         "batch_eval_done": False,
+        "batch_save_to_records": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -162,6 +163,14 @@ def _render_preview():
     with c1:
         if st.button("开始批量评估", type="primary", use_container_width=True):
             _run_evaluation()
+    with c2:
+        st.session_state.batch_save_to_records = st.checkbox(
+            "保存预测到 records.db（用于漂移监控 + 后续校准）",
+            value=st.session_state.batch_save_to_records,
+            help="勾选后，评估完成的每行 CTR 预测会落档 records.db（带 signature）。"
+                 "下次上传真实 CTR 到 pages/05 时可自动 join 算误差。"
+                 "默认关，按需开启（每行 1 条 record，1000 行 ≈ 1000 条）。",
+        )
 
 
 # ============================================================
@@ -186,6 +195,18 @@ def _run_evaluation():
     st.session_state.batch_rows = rows
     st.session_state.batch_eval_done = True
     st.success(f"评估完成：{len(rows)} 行")
+
+    # Phase 22 D：用户勾选后把预测落档 records.db
+    if st.session_state.get("batch_save_to_records"):
+        try:
+            from services.batch_evaluation_service import save_predictions_to_records
+            n_saved = save_predictions_to_records(rows)
+            if n_saved > 0:
+                st.info(f"已保存 {n_saved} 条预测到 records.db（带 signature，下次上传真实 CTR 可 join）")
+            else:
+                st.warning("无可保存的预测（所有行都无 CTR 结果）")
+        except Exception as e:
+            st.error(f"保存到 records.db 失败：{e}")
 
 
 # ============================================================
