@@ -17,6 +17,9 @@
 #   - 仅影响：①AI 文案生成（prompt 注入）②产品词典 jieba 词条扩展
 #   - 产品词典按用户在 data/custom_dict.txt 维护，本文件只枚举"大类"
 #
+# ⚠️ 双源同步：本文件枚举 与 core/product_benefit.py:FALLBACK_PRODUCT_CATEGORIES /
+# FALLBACK_BENEFIT_TYPES 保持同步（后者仅在 yaml 缺失/解析失败时兜底用）
+#
 # 注意：
 #   - jieba 词典与 yaml 枚举解耦并行：jieba = 内容运营维护单品词典
 #     （如"麦辣鸡腿堡"），yaml = 产品经理维护业务大类
