@@ -171,6 +171,88 @@ def rows_to_dataframe(rows: List[Dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# ── records.db 落档（用户主动勾选，详 Phase 22 D）─────────────────
+def batch_signature(row: Dict[str, Any]) -> str:
+    """批量评估行的 signature（与 core.schemas.task_signature 字段一致）。
+
+    字段：channel/coupon/plan_type/audience/stage/scene + 标题桶/正文桶
+    batch 缺 audience/stage/scene → 空串
+    SHA1 截前 12 位
+    """
+    import hashlib
+    title = str(row.get("title", "") or "")
+    body = str(row.get("body", "") or "")
+    title_bucket = f"{(len(title) // 5) * 5}"
+    body_bucket = f"{(len(body) // 10) * 10}"
+    raw = (
+        f"{row.get('channel', '')}|{row.get('coupon', '')}|"
+        f"{row.get('plan_type', '')}|{row.get('audience', '')}|"
+        f"{row.get('stage', '')}|{row.get('scene', '')}|"
+        f"{title_bucket}|{body_bucket}"
+    )
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+
+def save_predictions_to_records(
+    rows: List[Dict[str, Any]],
+    db_path: Optional[str] = None,
+) -> int:
+    """把批量评估结果落档到 records.db。
+
+    每条 row 包成单候选 GenerationRecord 写入（id="A"，strategy="batch_eval"）。
+    仅保存 CTR 预测成功的行（ctr_result_type 非空）；签名 = batch_signature(row)。
+    返回成功写入条数。
+    """
+    import json
+    from datetime import datetime
+    from repositories.sqlite_repository import save
+
+    n_saved = 0
+    now = datetime.now().isoformat(timespec="seconds")
+    for r in rows:
+        if not r.get("ctr_result_type"):
+            continue
+        try:
+            task = {
+                "channel": r.get("channel", ""),
+                "plan_type": r.get("plan_type") or "未知",
+                "coupon": r.get("coupon") or "未知",
+                "audience": "",
+                "stage": "",
+                "scene": "",
+            }
+            cand = {
+                "id": "A",
+                "strategy": "batch_eval",
+                "title": r.get("title", ""),
+                "body": r.get("body", ""),
+            }
+            ctr_dict = {
+                "result_type": r.get("ctr_result_type", ""),
+                "pred_ctr": r.get("ctr_pred"),
+                "baseline_ctr": r.get("ctr_baseline"),
+                "confidence": r.get("ctr_confidence"),
+                "error": r.get("ctr_error") or None,
+                "source": f"batch_{r.get('ctr_result_type', 'unknown')}",
+            }
+            row_dict = {
+                "task_json": json.dumps(task, ensure_ascii=False),
+                "candidates_json": json.dumps([cand], ensure_ascii=False),
+                "rule_results_json": None,
+                "ctr_results_json": json.dumps([ctr_dict], ensure_ascii=False),
+                "similar_summary_json": None,
+                "selected_id": "A",
+                "created_at": now,
+                "signature": batch_signature(r),
+            }
+            save(row_dict, db_path=db_path)
+            n_saved += 1
+        except Exception:
+            # 单行失败不影响其他行
+            continue
+    return n_saved
+
+
 def rows_to_csv_bytes(rows: List[Dict[str, Any]]) -> bytes:
     """评估结果 → CSV bytes（UTF-8 BOM，Excel 兼容）。"""
     df = rows_to_dataframe(rows)
