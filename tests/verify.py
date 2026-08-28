@@ -3635,6 +3635,8 @@ def main():
     test_phase18_lgbm()
     # §56 Phase 19 L1 静默双轨接入（adapters/ctr_predictor_adapter/l1_predictor.py）
     test_phase19_l1_predictor()
+    # §57 Phase 20 l1_model mode + L1 漂移监控（CTRPredictionAdapter.mode + monitor_l1_drift.py）
+    test_phase20_l1_main_and_drift()
 
     print("\n" + "=" * 60)
     print(f"结果: {_passed} PASS, {_failed} FAIL")
@@ -3776,6 +3778,132 @@ def test_phase19_l1_predictor():
                "l1_ctr" in src and "_render_ctr_card(selected_ctr, l1_ctr=l1_ctr_pair)" in src)
         _check("01_content_studio.py import L1_SUPPORTED_CHANNELS",
                "L1_SUPPORTED_CHANNELS" in src)
+
+
+# §57 Phase 20 l1_model mode 主流程接入 + L1 漂移监控
+def test_phase20_l1_main_and_drift():
+    """Phase 20 · l1_model mode 主流程切换 + 漂移监控脚本。
+
+    覆盖：
+    1) CTRPredictionAdapter.mode="l1_model" 加入 VALID_MODES
+    2) l1_model 端到端：APP Push → model_prediction；小程序 → unavailable
+    3) l1_model 透传 4 态（baseline_only 也透传）
+    4) UI sidebar 模式选择器（selectbox 而非硬编码 demo）
+    5) 漂移监控脚本存在 + baseline 加载
+    6) 漂移监控对空 DB 优雅降级（0 配对 → skip，不评估）
+    """
+    # ── 1) VALID_MODES 含 l1_model ──
+    from adapters.ctr_predictor_adapter import CTRPredictionAdapter, VALID_MODES
+    _check("VALID_MODES 含 l1_model", "l1_model" in VALID_MODES)
+    _check("VALID_MODES 共 5 个值（existing_predictor/baseline_only/demo/l1_model/unavailable）",
+           len(VALID_MODES) == 5)
+
+    # ── 2) l1_model 端到端 ──
+    from core.schemas import TaskInput, Candidate
+    from services.ctr_prediction_service import _candidate_to_row
+
+    task = TaskInput(
+        audience="常规大盘", channel="APP Push", stage="活动预热", tone="直接利益型",
+        plan_type="AARRPlan", coupon="是", planned_send_date="工作日",
+    )
+    candidate = Candidate(id="A", strategy="A_核心利益直给",
+                          title="夏日新品限时尝鲜，9.9 元起点击立享",
+                          body="点击查看详情")
+
+    adapter = CTRPredictionAdapter(mode="l1_model")
+    rows = [_candidate_to_row(candidate, task)]
+    results = adapter.predict_batch(rows)
+    r = results[0]
+    _check("l1_model APP Push → model_prediction",
+           r.result_type == "model_prediction" and r.pred_ctr and 0 < r.pred_ctr < 1,
+           f"got result_type={r.result_type} pred_ctr={r.pred_ctr}")
+    _check("l1_model source 含 l1_lightgbm",
+           "l1_lightgbm" in (r.source or ""),
+           f"got source={r.source}")
+
+    # 小程序 → unavailable（渠道不在训练范围）
+    task_xp = TaskInput(audience="常规大盘", channel="微信小程序订阅消息",
+                        stage="活动预热", tone="直接利益型")
+    rows_xp = [_candidate_to_row(candidate, task_xp)]
+    results_xp = adapter.predict_batch(rows_xp)
+    r_xp = results_xp[0]
+    _check("l1_model 微信小程序订阅消息 → unavailable",
+           r_xp.result_type == "unavailable",
+           f"got result_type={r_xp.result_type}")
+    _check("l1_model unavailable 带合理错误信息",
+           r_xp.error and "微信小程序订阅消息" in r_xp.error,
+           f"got error={r_xp.error}")
+
+    # ── 3) baseline_only 透传（pkl 缺失场景）──
+    # 通过 monkey patch _load_model_and_meta 来模拟
+    from adapters.ctr_predictor_adapter import l1_predictor as lp
+    orig_load = lp._load_model_and_meta
+    # 清 lru_cache（lru_cache 装饰器返回的 wrapper 有 cache_clear；raw 函数没有）
+    try:
+        lp._load_model_and_meta.cache_clear()
+    except AttributeError:
+        pass
+    lp._load_model_and_meta = lambda: (None, None)  # 强制模型缺失
+    try:
+        ctr, st = lp.predict_l1(
+            title="测试", body="", channel="APP Push",
+            plan_type="AARRPlan", coupon="否", workday="工作日",
+        )
+        _check("predict_l1 pkl 缺失 → baseline_only",
+               st == "baseline_only" and ctr is None,
+               f"got ctr={ctr} status={st}")
+    finally:
+        lp._load_model_and_meta = orig_load
+        try:
+            lp._load_model_and_meta.cache_clear()
+        except AttributeError:
+            pass
+
+    # ── 4) UI sidebar 模式选择器 ──
+    studio_page = ROOT / "pages" / "01_content_studio.py"
+    src = studio_page.read_text(encoding="utf-8")
+    _check("01_content_studio.py sidebar 含 ctr_mode selectbox",
+           "ctr_mode" in src and "selectbox" in src and "CTR 主流程模式" in src)
+    _check("01_content_studio.py predict_for_candidates 用 session_state ctr_mode",
+           'st.session_state.get("ctr_mode"' in src)
+    _check("01_content_studio.py 模式选项含 l1_model",
+           "l1_model" in src)
+
+    # ── 5) 漂移监控脚本 ──
+    monitor_script = ROOT / "tools" / "monitor_l1_drift.py"
+    _check("tools/monitor_l1_drift.py 存在", monitor_script.exists())
+    if monitor_script.exists():
+        ms = monitor_script.read_text(encoding="utf-8")
+        _check("monitor_l1_drift.py 含 alert_ratio 参数",
+               "--alert-ratio" in ms)
+        _check("monitor_l1_drift.py 含 1.3 阈值常量",
+               "1.3" in ms or "DEFAULT_ALERT_RATIO = 1.3" in ms)
+        _check("monitor_l1_drift.py 含 drift_log.csv 写入",
+               "drift_log.csv" in ms and "write_drift_log" in ms)
+        _check("monitor_l1_drift.py 含 baseline 加载（lgbm_feature_meta.json）",
+               "lgbm_feature_meta.json" in ms and "test_metrics" in ms)
+        _check("monitor_l1_drift.py 含 records.db 读取",
+               "records.db" in ms and "load_l1_predictions" in ms)
+        _check("monitor_l1_drift.py 含 feedback.db 读取",
+               "feedback.db" in ms and "load_real_ctr_by_signature" in ms)
+        _check("monitor_l1_drift.py 含 min-pairs 防误报",
+               "min-pairs" in ms and "min_pairs" in ms)
+
+    # ── 6) 漂移监控空 DB 优雅降级（无需写入 records.db）──
+    if monitor_script.exists():
+        import subprocess
+        out = subprocess.run(
+            ["python", str(monitor_script), "--no-log"],
+            capture_output=True, text=True, encoding="utf-8",
+            cwd=str(ROOT),
+        )
+        out_text = out.stdout + out.stderr
+        _check("monitor_l1_drift.py 空 DB 优雅降级（[skip]）",
+               "[skip]" in out_text or "配对数" in out_text,
+               f"got: {out_text[:200]}")
+        _check("monitor_l1_drift.py 返回 0（不告警，因无数据）",
+               out.returncode == 0,
+               f"got returncode={out.returncode}")
 
 
 if __name__ == "__main__":
