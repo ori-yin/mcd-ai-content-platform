@@ -237,6 +237,29 @@
   - 决策文档：`Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`（含 2 条修正记录）+ `Downloads/decision-objective-multiselect-correction-2026-08-26.md`（盲点修正）
   - 测试：未动代码 → 473 PASS / 0 FAIL 不变
 
+- **2026-08-28**：Phase 22 B/C/D 完成（用户拍板节奏：B → C → D → A，A 最后做）：
+  - **B 特征重要性月报脚本**（用户拍板：月报 + 自己看为主，不分享业务部）：
+    - 新增 `tools/print_feature_importance.py`（217 行）：加载 lgbm_model_v1.pkl + lgbm_feature_meta.json，算 importance_type="gain"（支持 split），Top N 默认 10，与上次快照对比名次变化（±2 名算"涨/跌"，标 ↑/↓/新）；落档 `data/feature_importance_history/importance_YYYY-MM-DD_HHMMSS.json` + `data/reports/feature_importance_YYYY-MM-DD.txt`；Windows console 编码 fix（sys.stdout.reconfigure UTF-8 防 GBK 乱码）
+    - humanizer 把内部列名翻成人话（`channel_APP_Push` → "渠道: APP Push"，`ch_x_wd_APP_Push_工作日` → "渠道×工作日: APP Push × 工作日"，`plan_type_te` → "计划类型 (target encoding)"）
+    - 首次跑结果：Top 5 = 正文长度 35.19% / 标题长度 22.92% / 高效词命中数 14.59% / 渠道: 短信 8.63% / 计划类型 TE 6.48%（CTR 受文案长度主导，渠道影响排第 4，印证用户口径）
+    - 测试：§58 新增 22 用例（humanizer 12 + compute_importance 5 + diff 5 + save/render/CLI 5）
+    - 不动：L1 模型 / l1_predictor / baseline JSON / pages/01 sidebar（自己用的工具）
+  - **C 漂移自动回退**（用户拍板：自动切回 L0，不让人介入）：
+    - 新增 `core/active_mode.py`（read/write/clear 三态 + ALLOWED_MODES = {demo, baseline_only, l1_model}）
+    - `tools/monitor_l1_drift.py` 加 `apply_auto_rollback(alert_level)`：ALERT → 写 demo / WARN → 写 baseline_only / OK → 清文件（恢复默认）；加 `--no-active-mode` CLI flag（默认开）
+    - `pages/01_content_studio.py` 启动读 `data/active_mode.txt` → 覆盖 sidebar 默认 ctr_mode + 黄色 banner 提示"已被自动回退到 {mode}（漂移告警）"
+    - 工作流：monitor 跑出告警 → 写文件 → 下次开 01 页面 sidebar 自动显示 demo + 红字提示；人工确认后手动删文件恢复
+    - 测试：§59 新增 31 用例（active_mode 读写清 + 三档 ALERT/WARN/OK 端到端 + 01 sidebar 集成 + CLI 跑通）
+    - 不动：l1_predictor / l1_drift 的 baseline / records.db schema / feedback.db
+  - **D 批量预测自动落档 records.db**（用户口径：批量跑的预测一定会投出去，必须回收校准）：
+    - `services/batch_evaluation_service.py` 加 `batch_signature(row)`（与 task_signature 同字段顺序：channel/coupon/plan_type/audience/stage/scene + 标题桶/正文桶，SHA1 截 12 位，batch 缺后 3 字段填空串）+ `save_predictions_to_records(rows, db_path)`（仅写 ctr_result_type 非空行，包成单候选 id="A" strategy="batch_eval" + ctr source 标 "batch_{result_type}"，单行失败不影响其他）
+    - `pages/03_batch_evaluation.py` 加 checkbox「保存预测到 records.db（用于漂移监控 + 后续校准）」（默认关，按需开启）；评估完成自动调 save + 显示"已保存 N 条"
+    - 闭环：03 上传 CSV → 勾选 → 跑评估 → 自动落档 → 后续 `pages/05_feedback` 上传真实 CTR 时 feedback_repository 自动 join signature 算 MAE/MAPE
+    - 测试：§60 新增 24 用例（batch_signature 6 + save 端到端 10 + 边界 3 + 03 集成 5）
+    - 不动：01 主流程 / 04 历史洞察 / pages/02/05 / baseline JSON / feedback_repository（不需改，自动 join）
+  - 总用例：697 → **794 PASS / 0 FAIL**（pytest 双路一致）
+  - **A 待启动**：用户口径"A 很重，最后做"——产品权益+投放目标维度扩展（Phase 9 已拍板），代码未动
+
 ### §5.5 CTR 准确率学习 Roadmap（2026-08-26 · 重要背景）
 
 **完整原文**：`Downloads\CTR准确率学习-Roadmap附录_2026-08-26.md`。**此处给执行摘要**。
@@ -304,14 +327,15 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：**核心全链路完成 + L1 LightGBM 接入 + 切主流程 + 漂移监控 + simplify 清理**（Phase 21 · 2026-08-28）
-- **用例**：697 PASS / 0 FAIL（`python tests/verify.py`，630 → 697，§56+§57 新增 42 用例）= pytest 双路一致
+- **阶段**：**Phase 22 B/C/D 完成 + A 待启动**（2026-08-28）
+- **用例**：794 PASS / 0 FAIL（`python tests/verify.py`，697 → 794，§58/§59/§60 新增 77 用例）= pytest 双路一致
 - **已可用模块**：①内容创作（01 生成 3 候选 + CTR 评估 + 阈值生效）；②真实回流（04 上传 CSV/Excel → 入库 → 4 维度聚合 → 写 baseline）；③历史洞察（04 七 Tab）；④批量评估 CTR（03）
 - **L1 静默双轨 + 切主流程**：admin 在 sidebar ①勾选"显示 L1 实验对比（仅管理员）"才显示 L1 预测列（默认关）；②selectbox 选 "CTR 主流程模式"（demo / baseline_only / l1_model，默认 demo）—— 用户主动切 L1 时改这里即可；模型缺失/渠道不在训练范围时静默降级 unavailable，主流程不受影响
 - **L1 漂移监控**：`tools/monitor_l1_drift.py` —— records.db (l1_model 预测) join feedback.db (真 CTR) → 整体/分渠道 MAE；超 baseline × 1.3 → 红字告警 + 写 data/drift_log.csv 留档；空 DB 优雅降级（配对数 < 5 不评估防误报）
 - **代码质量清理**：02 页面 bug 修复 / LLM call LRU cache / weighted_ctr 合并 / 注释对齐 / 死代码删除 / CSV reader 合并 / rule_engine 重构 / jieba 批量向量化 / Streamlit 页面缓存 / 5 处死代码清理 / L1 predictor 静默双轨
 - **未做（用户拍板延后）**：自动定时校准（`weekly_calibrate.bat` 仅落档不调度）/ 训练责任人 + 特征重要性周报（详 §6.3）
 - **首要任务**：真回流数据进来时手动跑 `python tools/calibrate_baseline.py --db data/feedback.db` 重算 baseline；切 L1 后跑 `python tools/monitor_l1_drift.py` 监控漂移；**用户在 sidebar selectbox 主动切 l1_model**
+- **下一阶段（候选待启动）**：UI 整体重设计（用户反馈太丑，整体架构 + 布局待重构）—— find-skills 已调研，详见 §6.3 UI 重设计段
 - **决策文档**：`Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`
 - **口径文档**：`docs/ctr-kpi-definition-proposal-v0.2.md`（v3.1 拍板稿；v3.1.1 渠道清理已落档）+ `docs/feedback-ctr.md`
 
@@ -346,6 +370,9 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 19** L1 LightGBM 生产接入 + 静默双轨（§56 · 2026-08-28） | 用户拍板"接入生产，方案 B 静默双轨"。**接入**：新建 `adapters/ctr_predictor_adapter/l1_predictor.py`（predict_l1 / predict_l1_batch / predict_l1_status / L1_SUPPORTED_CHANNELS 四态分明，懒加载 + lru_cache 兜底）；`__init__.py` 导出 4 符号。**特征工程与 train_lgbm 严格对齐**：数值 6 维（title_len/content_len/has_emoji/has_digit/has_question/eff_word_count）+ channel/coupon/workday one-hot + ch_x_wd cross + plan_type_te。**静默双轨**：`pages/01_content_studio.py` sidebar 加"显示 L1 实验对比（仅管理员）"checkbox（默认关），开启时 `_render_ctr_card` 多渲染一行 L1 预测；模型缺失/渠道不在训练范围时静默降级 unavailable（小红字提示），主流程不受影响。**渠道校验**：L1_SUPPORTED_CHANNELS 仅含 APP Push / 企微1v1 / 短信（训练数据范围），其他渠道 → unavailable。**容错**：lru_cache(maxsize=1) 加载模型，异常路径返回 (None, "unavailable") 不抛错。verify 655 → 677 PASS（§56 新增 22 用例） | **677（CLI）/ 54（pytest，双路一致）** |
 | **Phase 20** l1_model mode 主流程接入 + 漂移监控（§57 · 2026-08-28） | 用户拍板"切 L1 时点用户主动" + "误差大告警"。**l1_model mode**：`CTRPredictionAdapter.VALID_MODES` 加 `"l1_model"`（5 态）；新方法 `_l1_model_pred` 走 `predict_l1`，4 态透传（model→model_prediction/source=l1_lightgbm，baseline_only→baseline_only，unavailable→unavailable）。**UI 主动切**：`pages/01_content_studio.py` sidebar 新增 "CTR 主流程模式" selectbox（demo/baseline_only/l1_model，默认 demo，env CTR_MODE 可覆盖）；L1 模型缺失时 l1_model 不可选。**漂移监控**：`tools/monitor_l1_drift.py` records.db (source=l1_lightgbm) join feedback.db (按 task_signature 聚合真 CTR) → 整体/分渠道 MAE vs baseline（lgbm_feature_meta.json）→ 超 1.3 倍红字告警 + 写 data/drift_log.csv 留档；配对数 < 5 优雅跳过（防小样本误报）。**切 L1 时点 / 误差告警阈值（30%）**：业务拍板 2 项已落，详见 §6.3。verify 677 → 697 PASS（§57 新增 20 用例） | **697（CLI）/ 55（pytest，双路一致）** |
 | **Phase 21** simplify pass · 文档漂移 + 死代码 + UI emoji 清理（§58 · 2026-08-28） | 用户拍板"谨慎点修复，怕你修坏整体了"。先 Explore agent 逐项 grep 验证为死代码/漂移才动手：(1) **CLAUDE.md 漂移**：§3 架构图删 `services/record_service`（Phase 17 已删）+ `adapters/cache_adapter`（从未实现）；§4.4 `pytest tests/test_ctr_adapter.py` 加注释（文件尚未拆分）；§6.2 加 `l1_model` 模式（Phase 20 已落地）。(2) **死代码**：pages/05 删 2 个未用 import（`Optional` / `rate_value`）；pages/03 删 `show_col_map` 死 dict（保留「`suggestion` → `建议`」映射逻辑 + 加 `not in display.columns` 防御）；services/generation_service `_validate()` 删 if-pass 死块（body 是 `pass`，whitespace-only title 会进但无副作用）。(3) **UI emoji 清理**（CLAUDE.md §9 红线合规）：5 个 pages `page_icon` → `None`；home.py 内嵌 `<h1>🍟</h1>` `<h2>🚀</h2>` 删。**不动**：P2 灰色地带（pages/02 自构造 ProviderRouter）+ P3 风格（04 空行/01 三栏比例）+ adapter 末尾 import 顺序（已 `# noqa: E402`，运行无问题）。**验证**：Explore agent 确认无 verify.py 用例拦截；py_compile 3 个 .py 干净；verify.py 仍 **697 PASS / 0 FAIL**（无回归）。**不在 Phase 21 范围**：emoji 用法 P0 决策（红线本身是否调整）；CLAUDE.md §3 架构图与 Handoff 同步方式长期治理 | **697（CLI）/ 55（pytest，双路一致）** |
+| **Phase 22 B** 特征重要性月报脚本（§58 · 2026-08-28） | 用户拍板"自己看为主，月报"。**新增 `tools/print_feature_importance.py`**（217 行）：加载 lgbm_model_v1.pkl + lgbm_feature_meta.json，算 importance_type=gain（支持 split），Top N 默认 10，与上次快照对比名次变化（±2 名算涨/跌，标 ↑/↓/新）；落档 `data/feature_importance_history/importance_YYYY-MM-DD_HHMMSS.json` + `data/reports/feature_importance_YYYY-MM-DD.txt`；Windows console 编码 fix（sys.stdout.reconfigure UTF-8）。**humanizer** 把内部列名翻成人话（`channel_APP_Push` → "渠道: APP Push"）。**首次跑结果**：正文长度 35.19% / 标题长度 22.92% / 高效词命中数 14.59% / 渠道: 短信 8.63% / 计划类型 TE 6.48%。verify 697 → **719 PASS**（§58 新增 22 用例） | **719（CLI）/ 56（pytest）** |
+| **Phase 22 C** 漂移自动回退（§59 · 2026-08-28） | 用户拍板"自动切回 L0，不让人介入"。**新增 `core/active_mode.py`**（read/write/clear 三态 + ALLOWED_MODES = {demo, baseline_only, l1_model}）。**`tools/monitor_l1_drift.py` 加 `apply_auto_rollback(alert_level)`**：ALERT → 写 demo / WARN → 写 baseline_only / OK → 清文件；加 `--no-active-mode` CLI flag（默认开）。**`pages/01_content_studio.py` 启动读 `data/active_mode.txt`** → 覆盖 sidebar 默认 ctr_mode + 黄色 banner 提示"已被自动回退到 {mode}（漂移告警）"。**工作流**：monitor 跑出告警 → 写文件 → 下次开 01 页面 sidebar 自动显示 demo + 红字提示；人工确认后手动删文件恢复。verify 719 → **750 PASS**（§59 新增 31 用例） | **750（CLI）/ 57（pytest）** |
+| **Phase 22 D** 批量预测自动落档 records.db（§60 · 2026-08-28） | 用户口径"批量跑的预测一定会投出去，必须回收校准"。**`services/batch_evaluation_service.py` 加 `batch_signature(row)`**（与 task_signature 同字段顺序：channel/coupon/plan_type/audience/stage/scene + 标题桶/正文桶，SHA1 截 12 位，batch 缺后 3 字段填空串）+ **`save_predictions_to_records(rows, db_path)`**（仅写 ctr_result_type 非空行，包成单候选 id="A" strategy="batch_eval" + ctr source 标 "batch_{result_type}"，单行失败不影响其他）。**`pages/03_batch_evaluation.py` 加 checkbox「保存预测到 records.db」**（默认关，按需开启）；评估完成自动调 save + 显示"已保存 N 条"。**闭环**：03 上传 CSV → 勾选 → 跑评估 → 自动落档 → 后续 `pages/05_feedback` 上传真实 CTR 时 feedback_repository 自动 join signature 算 MAE/MAPE。verify 750 → **794 PASS**（§60 新增 24 用例） | **794（CLI）/ 59（pytest，双路一致）** |
 
 > 详细 bullets 全部移入 §5 决策记录（按 commit hash 可追溯）。本表为速查。
 
@@ -534,6 +561,37 @@ records.db    feedback.db
 4. **与 L1 联动**：要不要 P4 先于 L1 做（先有"看"再有"用"）？
 
 **建议节奏**：P4 先做（3 天）→ L1 后做（10 天）。先有"看"的能力，再上"用"的模型。
+
+---
+
+#### UI · 整体重设计（候选 · 2026-08-28 find-skills 调研）
+
+**用户反馈（2026-08-28）**：核心逻辑（Phase 19-21 L1 主流程 + simplify 清理）已完成，**UI 太丑，整体架构 + 布局都有大问题**。下一步计划整体重构，不是修修补补。
+
+**find-skills 调研结论**（2026-08-28）：
+
+**已装可直接用**（`~\.claude\skills\`）：
+- `developing-with-streamlit` —— **最对口**，Streamlit 官方，覆盖 dashboards / themes / layouts / 自定义组件 / 美化主题 / 性能
+- `frontend-design` —— 通用前端设计
+- `designing-beautiful-websites` —— 通用网站美化
+
+**skills.sh 命中度高**（待评估装不装）：
+| Skill | installs | 备注 |
+|---|---|---|
+| `vercel-labs/agent-skills@web-design-guidelines` | **584.6K** ⭐ | 通用 web 设计准则（Vercel/Next 背景） |
+| `nextlevelbuilder/ui-ux-pro-max-skill@ckm:design-system` | 32.8K | UI/UX 设计系统（通用） |
+| `firecrawl/firecrawl-workflows@firecrawl-dashboard-reporting` | 31.1K | dashboard 报告 |
+| `wshobson/agents@kpi-dashboard-design` | 13.3K | KPI dashboard 设计 |
+
+**SkillHub 国内源**：`skillhub: command not found`（CLI 未装），按 memory `install_skills.md` 应补装后同步搜国内源。
+
+**下一步行动**：
+1. 先跑 `python "C:/Users/a952462/.claude/skills/developing-with-streamlit/scripts/discover.py" --project-dir "C:/ideon/mcd-ai-content-platform"` 拿项目级 recommendations
+2. 按 discover.py 输出决定要不要补装 `vercel-labs/agent-skills@web-design-guidelines`（设计规范通用补充）或 `ui-ux-pro-max-skill@design-system`（设计系统）
+3. 选定 skill 后整体重构（CLAUDE.md §9 红线 + 走 skill 流水线，不自己糊 CSS）
+4. Streamlit UI 改动注意 `feedback-streamlit-ui-iteration` 4 个常见坑（清理列表冲突、类名冲突、注入 DOM 不归 React 管、CSS 时序）
+
+**作用域**：当前页面 6 个（app + 00-05）+ 顶部 banner 系统 + sidebar 主题；**不动后端逻辑**（已稳定，Phase 19-21 验证 697 PASS）。
 
 ---
 
