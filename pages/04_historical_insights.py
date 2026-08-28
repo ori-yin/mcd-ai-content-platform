@@ -48,7 +48,7 @@ from ui.styles import inject_base_css
 
 st.set_page_config(
     page_title="04 历史洞察",
-    page_icon="📈",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
