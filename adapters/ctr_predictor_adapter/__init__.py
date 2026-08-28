@@ -13,6 +13,7 @@ Phase 1b 新增（CLAUDE.md §6.2 CTR_MODE）：
     - existing_predictor: 调真实 LLM（需注入 ProviderRouter）
     - baseline_only:       仅历史基准
     - demo:                演示数据稳定占位
+    - l1_model:            L1 LightGBM 模型（Phase 20 · 业务主动切主流程）
     - unavailable:         无有效结果
 
 Phase 19 新增（L1 LightGBM 静默双轨）：
@@ -20,6 +21,13 @@ Phase 19 新增（L1 LightGBM 静默双轨）：
     - 四态：model / baseline_only（模型缺失）/ unavailable（渠道不在训练范围）
     - 默认 silent；UI 必须显式开启 sidebar checkbox 才走预测
     - 模型缺失或特征构造失败均静默降级，不影响主流程
+
+Phase 20 新增（CTR 主流程 mode="l1_model"）：
+- CTRPredictionAdapter.mode 加 "l1_model"
+- 路径调 predict_l1()：model→model_prediction，baseline_only→baseline_only，
+  unavailable→unavailable（双轨口径统一，UI 无需特殊处理）
+- UI 切到 L1：pages/01_content_studio.py sidebar 加 mode selectbox，用户主动切
+- 业务拍板"切 L1 时点"（§6.3 #1）= 用户在 UI 主动操作
 
 红线（CLAUDE.md §4.1）：
 - 页面层不得 import 此 adapter 的内部模块，统一通过本 __init__.py
@@ -57,7 +65,7 @@ from typing import Optional  # noqa: E402
 from core import PredictionResult, ProviderRouter  # noqa: E402
 
 
-VALID_MODES = ("existing_predictor", "baseline_only", "demo", "unavailable")
+VALID_MODES = ("existing_predictor", "baseline_only", "demo", "l1_model", "unavailable")
 
 
 class CTRPredictionAdapter:
@@ -113,6 +121,9 @@ class CTRPredictionAdapter:
 
         if self.mode == "demo":
             return [self._demo_pred(r) for r in enriched]
+
+        if self.mode == "l1_model":
+            return [self._l1_model_pred(r) for r in enriched]
 
         # mode == "existing_predictor"
         return self._llm_predict_batch(enriched, **kwargs)
@@ -176,7 +187,7 @@ class CTRPredictionAdapter:
                 ))
         return results
 
-    # ── baseline_only / demo 工厂 ─────────────────────────────────────
+    # ── baseline_only / demo / l1_model 工厂 ───────────────────────────
     def _baseline_only_pred(self, r: dict) -> PredictionResult:
         bl = _safe_ctr(r.get("_bl_str"))
         return PredictionResult.baseline_only(
@@ -215,6 +226,49 @@ class CTRPredictionAdapter:
             time_multiplier=tm,
         )
 
+    # ── l1_model 路径（Phase 20）───────────────────────────────────
+    def _l1_model_pred(self, r: dict) -> PredictionResult:
+        """Phase 20 · l1_model mode 主路径。
+
+        enrich row 的中英文 key → predict_l1 接收的 kwargs 映射：
+            标题 → title / 内容 → body / 渠道 → channel /
+            计划类型 → plan_type / 是否用券 → coupon /
+            工作日类型 → workday / _bl_str → baseline 透传
+        """
+        bl = _safe_ctr(r.get("_bl_str"))
+        tm = r.get("_tm", 1.0)
+        ctr, l1_status = _predict_l1_impl(
+            title=r.get("标题", "") or r.get("title", "") or "",
+            body=r.get("内容", "") or r.get("body", "") or "",
+            channel=r.get("渠道", "") or r.get("channel", "") or "",
+            plan_type=r.get("计划类型") or r.get("plan_type"),
+            coupon=r.get("是否用券") or r.get("coupon"),
+            workday=r.get("工作日类型") or r.get("workday"),
+        )
+        if l1_status == "model" and ctr is not None:
+            return PredictionResult.model_prediction(
+                pred_ctr=ctr,
+                confidence=0.6,  # LightGBM 无原生置信度，给个中等值便于 UI 显示
+                suggestion=f"L1 LightGBM 预测（模型上次训练见 lgbm_feature_meta.json）",
+                baseline_ctr=bl,
+                time_multiplier=tm,
+                source="ctr_predictor_adapter/l1_lightgbm",
+            )
+        if l1_status == "baseline_only":
+            return PredictionResult.baseline_only(
+                baseline_ctr=bl,
+                suggestion="L1 模型暂不可用（pkl/meta 缺失），已回退到历史基准",
+                time_multiplier=tm,
+                source="ctr_predictor_adapter/l1_fallback",
+            )
+        # unavailable：渠道不在训练范围 / 特征构造失败
+        return PredictionResult.unavailable(
+            error=f"L1 不可用：渠道 {r.get('渠道','?')} 不在训练范围（仅 APP Push / 企微1v1 / 短信）"
+                  if r.get("渠道") and r.get("渠道") not in L1_SUPPORTED_CHANNELS
+                  else "L1 不可用：特征构造失败",
+            suggestion="请切回 demo 或 baseline_only 模式",
+        )
+
 
 def _safe_ctr(bl_str) -> Optional[float]:
     """从 '_bl_str' 字段（如 "3.572%" 或 "未知"）解析出 float，失败返回 None。"""
@@ -224,6 +278,12 @@ def _safe_ctr(bl_str) -> Optional[float]:
         return float(str(bl_str).rstrip("%")) / 100.0
     except (ValueError, AttributeError):
         return None
+
+
+# ── l1_model 工厂（Phase 20） ──────────────────────────────────────
+# CTRPredictionAdapter._l1_model_pred 定义在 class 内（闭包访问 self.predict_l1）。
+# 此处保留纯函数包装 predict_l1，方便测试与外部调用。
+from .l1_predictor import predict_l1 as _predict_l1_impl  # noqa: E402
 
 
 __all__ = [
