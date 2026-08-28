@@ -304,7 +304,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：**核心全链路完成 + L1 LightGBM 接入 + 切主流程 + 漂移监控**（Phase 19/20 · 2026-08-28）
+- **阶段**：**核心全链路完成 + L1 LightGBM 接入 + 切主流程 + 漂移监控 + simplify 清理**（Phase 21 · 2026-08-28）
 - **用例**：697 PASS / 0 FAIL（`python tests/verify.py`，630 → 697，§56+§57 新增 42 用例）= pytest 双路一致
 - **已可用模块**：①内容创作（01 生成 3 候选 + CTR 评估 + 阈值生效）；②真实回流（04 上传 CSV/Excel → 入库 → 4 维度聚合 → 写 baseline）；③历史洞察（04 七 Tab）；④批量评估 CTR（03）
 - **L1 静默双轨 + 切主流程**：admin 在 sidebar ①勾选"显示 L1 实验对比（仅管理员）"才显示 L1 预测列（默认关）；②selectbox 选 "CTR 主流程模式"（demo / baseline_only / l1_model，默认 demo）—— 用户主动切 L1 时改这里即可；模型缺失/渠道不在训练范围时静默降级 unavailable，主流程不受影响
@@ -345,6 +345,7 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 | **Phase 18** L1 LightGBM PoC（剔除小程序 + 高效词 + 时间衰减） | 用户拍板"先试试看"。基于 cnn_backup_cleaned.xlsx 4.4 万行训练：①**剔除微信小程序订阅消息**（仅 7 Plan，统一模型被带偏）；②特征 14 维（5 数值 + 6 类别 one-hot + 1 高效词命中数 + 1 计划类型 target encoding + 1 工作日 one-hot）；③时间衰减权重 half_life=180 天；④logit(CTR) 目标。结果：L1 MAE 0.353%（vs L0 0.414% 降 14.8%），R² 0.136（vs L0 -0.005）。**3 渠道 L1 全胜**：APP Push 0.272%（vs L0 0.309%）/ 企微1v1 0.631%（vs L0 0.740%）/ 短信 0.215%（vs L0 0.351%）。**关键发现**：A/B 对比验证渠道×工作日交叉特征为负向（LightGBM 自己能学，显式加 = 特征冗余）。`tools/train_lgbm.py` 训练 + `tools/evaluate_lgbm.py` L1 vs L0 同口径对比 + `data/lgbm_model_v1.pkl` 模型 + `data/effective_words.json` 高效词表（62 词来自 word_frequency 差值>0.5）+ `data/lgbm_feature_meta.json` 特征元信息。**待做**：`adapters/ctr_predictor_adapter/l1_predictor.py` 接入 + 4 态分明 + 误差监控 + 业务方拍"特征重要性 Top10 每周给业务看" / "切 L1 时点" / "误差告警阈值" / "训练责任人"（§6.3）。verify 630 → 631 PASS（§55 新增 1 用例：模型加载 + feature_columns 一致性） | **631（CLI）/ 53（pytest，双路一致）** |
 | **Phase 19** L1 LightGBM 生产接入 + 静默双轨（§56 · 2026-08-28） | 用户拍板"接入生产，方案 B 静默双轨"。**接入**：新建 `adapters/ctr_predictor_adapter/l1_predictor.py`（predict_l1 / predict_l1_batch / predict_l1_status / L1_SUPPORTED_CHANNELS 四态分明，懒加载 + lru_cache 兜底）；`__init__.py` 导出 4 符号。**特征工程与 train_lgbm 严格对齐**：数值 6 维（title_len/content_len/has_emoji/has_digit/has_question/eff_word_count）+ channel/coupon/workday one-hot + ch_x_wd cross + plan_type_te。**静默双轨**：`pages/01_content_studio.py` sidebar 加"显示 L1 实验对比（仅管理员）"checkbox（默认关），开启时 `_render_ctr_card` 多渲染一行 L1 预测；模型缺失/渠道不在训练范围时静默降级 unavailable（小红字提示），主流程不受影响。**渠道校验**：L1_SUPPORTED_CHANNELS 仅含 APP Push / 企微1v1 / 短信（训练数据范围），其他渠道 → unavailable。**容错**：lru_cache(maxsize=1) 加载模型，异常路径返回 (None, "unavailable") 不抛错。verify 655 → 677 PASS（§56 新增 22 用例） | **677（CLI）/ 54（pytest，双路一致）** |
 | **Phase 20** l1_model mode 主流程接入 + 漂移监控（§57 · 2026-08-28） | 用户拍板"切 L1 时点用户主动" + "误差大告警"。**l1_model mode**：`CTRPredictionAdapter.VALID_MODES` 加 `"l1_model"`（5 态）；新方法 `_l1_model_pred` 走 `predict_l1`，4 态透传（model→model_prediction/source=l1_lightgbm，baseline_only→baseline_only，unavailable→unavailable）。**UI 主动切**：`pages/01_content_studio.py` sidebar 新增 "CTR 主流程模式" selectbox（demo/baseline_only/l1_model，默认 demo，env CTR_MODE 可覆盖）；L1 模型缺失时 l1_model 不可选。**漂移监控**：`tools/monitor_l1_drift.py` records.db (source=l1_lightgbm) join feedback.db (按 task_signature 聚合真 CTR) → 整体/分渠道 MAE vs baseline（lgbm_feature_meta.json）→ 超 1.3 倍红字告警 + 写 data/drift_log.csv 留档；配对数 < 5 优雅跳过（防小样本误报）。**切 L1 时点 / 误差告警阈值（30%）**：业务拍板 2 项已落，详见 §6.3。verify 677 → 697 PASS（§57 新增 20 用例） | **697（CLI）/ 55（pytest，双路一致）** |
+| **Phase 21** simplify pass · 文档漂移 + 死代码 + UI emoji 清理（§58 · 2026-08-28） | 用户拍板"谨慎点修复，怕你修坏整体了"。先 Explore agent 逐项 grep 验证为死代码/漂移才动手：(1) **CLAUDE.md 漂移**：§3 架构图删 `services/record_service`（Phase 17 已删）+ `adapters/cache_adapter`（从未实现）；§4.4 `pytest tests/test_ctr_adapter.py` 加注释（文件尚未拆分）；§6.2 加 `l1_model` 模式（Phase 20 已落地）。(2) **死代码**：pages/05 删 2 个未用 import（`Optional` / `rate_value`）；pages/03 删 `show_col_map` 死 dict（保留「`suggestion` → `建议`」映射逻辑 + 加 `not in display.columns` 防御）；services/generation_service `_validate()` 删 if-pass 死块（body 是 `pass`，whitespace-only title 会进但无副作用）。(3) **UI emoji 清理**（CLAUDE.md §9 红线合规）：5 个 pages `page_icon` → `None`；home.py 内嵌 `<h1>🍟</h1>` `<h2>🚀</h2>` 删。**不动**：P2 灰色地带（pages/02 自构造 ProviderRouter）+ P3 风格（04 空行/01 三栏比例）+ adapter 末尾 import 顺序（已 `# noqa: E402`，运行无问题）。**验证**：Explore agent 确认无 verify.py 用例拦截；py_compile 3 个 .py 干净；verify.py 仍 **697 PASS / 0 FAIL**（无回归）。**不在 Phase 21 范围**：emoji 用法 P0 决策（红线本身是否调整）；CLAUDE.md §3 架构图与 Handoff 同步方式长期治理 | **697（CLI）/ 55（pytest，双路一致）** |
 
 > 详细 bullets 全部移入 §5 决策记录（按 commit hash 可追溯）。本表为速查。
 
@@ -739,8 +740,8 @@ Phase 6 P1 把 `product_benefit` 切灰态改成 `str = ""`，但忘了挪位置
 ## 10. Self-check
 
 - [x] 临时文件全清（`_*.py / *.bak / *.log / *.pyc`）— `tools/_push_phase6p4_once.py` 一次性脚本已删；`data/ctr_baseline_v3.1.1.bak.json` 是 baseline 版本备份非临时文件
-- [x] `python tests/verify.py` 全过（**522 PASS / 0 FAIL**，Phase 12 §46/§47 新增 31 用例 + 5 个旧用例契约更新）
+- [x] `python tests/verify.py` 全过（**697 PASS / 0 FAIL**，Phase 20 §57 + Phase 21 §58 增量无回归）
 - [x] `python -m py_compile $(git ls-files '*.py')` 全过
 - [x] 关键改动进 commit（如 git 化）
-- [x] UI 无 emoji，沟通全中文
-- [x] Phase 11 + Phase 12 Handoff §5/§6.0/§6.1/§6.2/§8/§9/§10 同步（#12 状态从 3 值拍板稿改成 2 值已落地；#8/#9/#10/#11 全部 Phase 12 落地；#11 用户假设反转保留双字段）
+- [x] UI 无 emoji，沟通全中文（Phase 21 清理 7 处 page_icon/inline emoji，CLAUDE.md §9 红线合规）
+- [x] Phase 18-20 + Phase 21 Handoff §5/§6.0/§6.1/§6.2/§8/§9/§10 同步（L1 LightGBM PoC + 静默双轨 + 切主流程 + 漂移监控；§58 simplify pass 文档漂移 + 死代码 + UI emoji 三件套）
