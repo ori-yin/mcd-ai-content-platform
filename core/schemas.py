@@ -169,10 +169,14 @@ class TaskInput:
     必填 4 项：audience / channel / stage / tone
               ↑ scene 从必填改为选填（Phase 12 #10 用户拍板 2026-08-27：
                 场景由文案内容推断；form SCENES 字段保留但允许空）
-    可选 4 项（Demo 阶段·灰态）：product_benefit / objective
-              ↑ 这两个前端 disabled，后端空字符串兜底，
+    可选启用 2 项（Phase A.1 · 2026-08-28）：product_category / benefit_type
+              ↑ 这两个从原 product_benefit 拆出来，前端 selectbox + 自定义输入
+                不参与 CTR baseline（用户拍板：直接 baseline 数据稀疏）
+                仅影响：①AI 文案生成 prompt 注入 ②产品词典 jieba 词条扩展
+    可选灰态 1 项（A.2 待开发）：objective
+              ↑ 前端 disabled，后端空字符串兜底，
                 generation_service 在缺失时走 Demo 默认占位，
-                不报错、不阻塞。等领导 demo 后业务确认枚举值再启用（PRD §26 #1/#2）。
+                不报错、不阻塞。等 UI 重构 + L2 之后再启动 A.2（PRD §26 #2）。
     可选 5 项：expected_action / plan_type / coupon / planned_send_date / scene
     用券双字段（Phase 12 #11 用户拍板）：
       - coupon          "实际是否用券"（form 字段，plan 维度）
@@ -195,9 +199,12 @@ class TaskInput:
                                               #   不消费本字段，实际是孤儿字段）。
     scene: str = ""                # Phase 12 #10 用户拍板：scene 从必填改为选填
     extra_requirements: str = ""
+    # Phase A.1（2026-08-28）：产品权益 2 字段（启用，原 product_benefit 拆分）
+    # 数据源：core/product_benefit.load_product_benefit()（10 产品 + 8 权益 + 自定义）
+    product_category: str = ""
+    benefit_type: str = ""
     # Demo 阶段灰态字段必须在尾部（dataclass 要求：no-default 字段在前）
-    product_benefit: str = ""     # 前端 disabled，后端空串兜底
-    objective: str = ""           # 前端 disabled，后端空串兜底
+    objective: str = ""           # A.2 待开发：前端 disabled，后端空串兜底
     text_has_coupon: str = ""     # Phase 12 #11 用户拍板："标题正文是否带券"（文案推断）
 
     REQUIRED_FIELDS: tuple = (
@@ -224,10 +231,8 @@ class TaskInput:
     def from_form(cls, form_data: dict) -> "TaskInput":
         """从 st.session_state / form dict 构造（缺失字段填空串不抛错）。"""
         return cls(
-            product_benefit=(form_data.get("product_benefit") or "").strip(),
             audience=form_data.get("audience") or "",
             channel=form_data.get("channel") or "",
-            objective=form_data.get("objective") or "",
             stage=form_data.get("stage") or "",
             tone=form_data.get("tone") or "",
             expected_action=form_data.get("expected_action") or "",
@@ -236,6 +241,9 @@ class TaskInput:
             planned_send_date=form_data.get("planned_send_date") or None,
             scene=form_data.get("scene") or "",
             extra_requirements=(form_data.get("extra_requirements") or "").strip(),
+            product_category=(form_data.get("product_category") or "").strip(),
+            benefit_type=(form_data.get("benefit_type") or "").strip(),
+            objective=form_data.get("objective") or "",
             text_has_coupon=form_data.get("text_has_coupon") or "",
         )
 
