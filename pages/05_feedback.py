@@ -16,15 +16,12 @@ PRD v0.2 §步骤④ + docs/feedback-ctr.md §P1：
 
 from __future__ import annotations
 
-from typing import Optional
-
 import pandas as pd
 import streamlit as st
 
 from services.feedback_service import import_feedback
 from repositories import feedback_repository
 from ui.notice import render_advanced_notice, render_ctr_feedback_notice
-from ui.plotly_helpers import rate_value
 from ui.styles import inject_base_css
 
 
@@ -34,7 +31,7 @@ from ui.styles import inject_base_css
 
 st.set_page_config(
     page_title="05 真实结果回流",
-    page_icon="🔁",
+    page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded",
 )
