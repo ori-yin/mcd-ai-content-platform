@@ -132,6 +132,15 @@
 
 > 详见 [`Handoff-todo.md` §6.3](Handoff-todo.md#63-候选详-55-ctr-roadmap)。
 
+### 6.5 历史发现索引（防会话间记忆丢失）
+
+> **铁律**（Handoff-lessons.md 第 9 条）：每次跑完 EDA / SHAP / 维度分析 / 业务统计 → 落档 `data/findings/<topic>_<date>.json` + 本表加一行。否则下次 session = 没跑。
+
+| 主题 | 数据源 | 关键结论 | 文件 |
+|---|---|---|---|
+| 维度影响度分析（η²）⚠️ stale | `C:\Users\a952462\常用文件\数据\CNN历史备份0830.xlsx`（48,930 行） | η² 单维度方差解释度，作 L1 对照用。**主结论以 L1 行（feature_importance）为准**。本数据无 audience / stage / tone / scene 字段。 | [`data/findings/dimension_impact_2026-08-31_151231.json`](data/findings/dimension_impact_2026-08-31_151231.json) + [.md](data/findings/dimension_impact_2026-08-31_151231.md) |
+| L1 特征重要性（首次跑 · 2026-08-28） | 4.4 万行训练 | Top 5：正文长度 35.19% / 标题长度 22.92% / 高效词命中 14.59% / 渠道: 短信 8.63% / 计划类型 TE 6.48% | [`data/reports/feature_importance_2026-08-31.txt`](data/reports/feature_importance_2026-08-31.txt) |
+
 ### 6.4 PRD §26 12 项已拍板 ✅ 2026-08-26
 详见 `docs/architecture.md §五`。按议题：
 
