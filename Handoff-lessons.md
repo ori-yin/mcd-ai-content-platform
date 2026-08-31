@@ -57,6 +57,16 @@ cmd 严格要 CRLF；Write 工具默认 LF。
 - 修：一次性 Python 脚本 `b'\n' → b'\r\n'`
 - 铁律：所有 Windows bat 必须 CRLF；新建 bat 后立刻验证
 
+### 9. 会话间记忆丢失：跑分析不写 Handoff = 等于没跑（2026-08-31）
+
+**防**：
+- 每次跑完 EDA / SHAP / 维度统计 / 业务指标分析 → 强制落档 `data/findings/<topic>_<date>.json + .md`
+- Handoff.md §6.5 维护一个**历史发现索引**（path + 一句话结论）
+- 每次开新 session 第一步：grep §6.5 看有没有遗漏
+- 工具脚本必须复用现有解析，不重新实现
+
+**铁律**：跑完不写 Handoff = 没跑。落档路径必须有规律（`data/findings/` 不是 `tmp/`）。
+
 ---
 
 ## 已删（详见 git log 早期 commit / memory）
