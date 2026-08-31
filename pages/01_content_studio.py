@@ -40,34 +40,52 @@ from typing import Optional, Tuple
 import streamlit as st
 
 from core.data_window import classify_today_type
-from core.text_classifier import classify_coupon_in_text
 from core.active_mode import read_active_mode
 from core.schemas import (
-    TaskInput, Candidate, RuleResult, PredictionResult,
-    TARGET_AUDIENCE, OBJECTIVES, CHANNELS, STAGES, SCENES,
-    TONES, ACTIONS, PLAN_TYPES, COUPON_FLAGS,
+    TaskInput,
+    Candidate,
+    RuleResult,
+    PredictionResult,
+    TARGET_AUDIENCE,
+    OBJECTIVES,
+    CHANNELS,
+    STAGES,
+    SCENES,
+    TONES,
+    ACTIONS,
+    PLAN_TYPES,
+    COUPON_FLAGS,
 )
 from core.product_benefit import (
-    get_product_categories, get_benefit_types,
-    get_custom_label, options_with_custom,
+    get_product_categories,
+    get_benefit_types,
+    get_custom_label,
+    options_with_custom,
 )
-from services.generation_service import generate, GenerationError, rank_candidates_by_ctr
+from services.generation_service import (
+    generate,
+    GenerationError,
+    rank_candidates_by_ctr,
+)
 from services.rule_engine import load_rules, check_candidates
 from services.ctr_prediction_service import predict_for_candidates
 from services.similarity_service import find_similar, summarize_similar
 from adapters.ctr_predictor_adapter import (
-    predict_l1, predict_l1_status, L1_SUPPORTED_CHANNELS,
+    predict_l1,
+    predict_l1_status,
+    L1_SUPPORTED_CHANNELS,
 )
 from ui.llm_status import render_banner
 from ui.plotly_helpers import rate_value
 from ui.page_chrome import page_setup
 
-
 # ============================================================
 # Page config
 # ============================================================
 
-page_setup("01 内容创作", "定义任务 · 生成 3 条候选 · 规则 + CTR 评估 · 渠道预览 · 人工选择")
+page_setup(
+    "01 内容创作", "定义任务 · 生成 3 条候选 · 规则 + CTR 评估 · 渠道预览 · 人工选择"
+)
 
 # LLM 未配置提示（业务确认 #10）
 render_banner()
@@ -92,11 +110,15 @@ with st.sidebar:
     if auto_mode:
         if auto_mode in mode_options:
             default_mode = auto_mode
-            auto_rollback_msg = f"⚠️ CTR 模式已被 monitor_l1_drift 自动回退到 {auto_mode}（漂移告警）"
+            auto_rollback_msg = (
+                f"⚠️ CTR 模式已被 monitor_l1_drift 自动回退到 {auto_mode}（漂移告警）"
+            )
         else:
             # 文件说 l1_model 但当前 l1 不可用，强制退回 demo
             default_mode = "demo"
-            auto_rollback_msg = f"⚠️ active_mode.txt={auto_mode} 但 L1 当前不可用，已退回 demo"
+            auto_rollback_msg = (
+                f"⚠️ active_mode.txt={auto_mode} 但 L1 当前不可用，已退回 demo"
+            )
     if default_mode not in mode_options:
         default_mode = "demo"
     st.session_state["ctr_mode"] = st.selectbox(
@@ -128,23 +150,24 @@ with st.sidebar:
     if st.session_state["show_l1"]:
         st.caption(
             f"L1 状态：{l1_status}；CTR 卡片将额外显示一列"
-            f"\"L1 预测 CTR\"，与现有基准对比；不影响主流程。",
+            f'"L1 预测 CTR"，与现有基准对比；不影响主流程。',
         )
+
 
 # ============================================================
 # session_state 初始化
 # ============================================================
 def _init_state():
     defaults = {
-        "task_input": None,           # TaskInput dict
-        "candidates": [],             # list[Candidate]
+        "task_input": None,  # TaskInput dict
+        "candidates": [],  # list[Candidate]
         "selected_id": "A",
-        "rule_results": [],           # list[RuleResult]
-        "ctr_results": [],            # list[PredictionResult]
-        "similar_summary": {},        # dict
+        "rule_results": [],  # list[RuleResult]
+        "ctr_results": [],  # list[PredictionResult]
+        "similar_summary": {},  # dict
         "last_generated_signature": "",
-        "show_l1": False,             # Phase 19 L1 静默双轨开关（仅管理员）
-        "ctr_mode": "demo",           # Phase 20 CTR 主流程模式（用户主动切）
+        "show_l1": False,  # Phase 19 L1 静默双轨开关（仅管理员）
+        "ctr_mode": "demo",  # Phase 20 CTR 主流程模式（用户主动切）
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -162,9 +185,20 @@ def _form_change_signature(t: dict) -> str:
     # 那个是给 records.db 持久化 + 回流 join 用的 SHA1 截 12 位，含 title/body 桶；
     # 这个是给"用户改字段 → toast 提示重新生成"用的纯字符串拼接）。
     # Phase A.1 · 2026-08-28：product_benefit 拆 2 字段，老字段下线
-    keys = ("product_category", "benefit_type", "audience", "channel", "objective",
-            "stage", "scene", "tone", "expected_action",
-            "plan_type", "coupon", "extra_requirements")
+    keys = (
+        "product_category",
+        "benefit_type",
+        "audience",
+        "channel",
+        "objective",
+        "stage",
+        "scene",
+        "tone",
+        "expected_action",
+        "plan_type",
+        "coupon",
+        "extra_requirements",
+    )
     return "|".join(str(t.get(k, "")) for k in keys)
 
 
@@ -183,7 +217,11 @@ def _render_benefit_select(
     """
     is_custom_cur = cur_value not in enum_values and bool(cur_value)
     if is_custom_cur:
-        default_idx = enum_values.index(custom_label) if custom_label in enum_values else len(enum_values)
+        default_idx = (
+            enum_values.index(custom_label)
+            if custom_label in enum_values
+            else len(enum_values)
+        )
     elif cur_value in enum_values:
         default_idx = enum_values.index(cur_value)
     else:
@@ -244,56 +282,92 @@ def _render_left_column(channel_rules: dict) -> Optional[TaskInput]:
         c1, c2 = st.columns(2)
         with c1:
             audience = st.selectbox(
-                "目标人群 *", TARGET_AUDIENCE,
-                index=TARGET_AUDIENCE.index(cur.get("audience", "常规大盘"))
-                if cur.get("audience") in TARGET_AUDIENCE else 0,
+                "目标人群 *",
+                TARGET_AUDIENCE,
+                index=(
+                    TARGET_AUDIENCE.index(cur.get("audience", "常规大盘"))
+                    if cur.get("audience") in TARGET_AUDIENCE
+                    else 0
+                ),
             )
             # 投放目标：Demo 阶段灰态
             objective = st.selectbox(
-                "投放目标（待开发·二期接入）", OBJECTIVES,
-                index=OBJECTIVES.index(cur.get("objective", "建立认知"))
-                if cur.get("objective") in OBJECTIVES else 0,
+                "投放目标（待开发·二期接入）",
+                OBJECTIVES,
+                index=(
+                    OBJECTIVES.index(cur.get("objective", "建立认知"))
+                    if cur.get("objective") in OBJECTIVES
+                    else 0
+                ),
                 disabled=True,
                 help="后续开放，敬请期待。本期不参与生成（决策文档 Demo 范围 §1）。",
             )
             stage = st.selectbox(
-                "活动阶段 *", STAGES,
-                index=STAGES.index(cur.get("stage", "活动预热"))
-                if cur.get("stage") in STAGES else 0,
+                "活动阶段 *",
+                STAGES,
+                index=(
+                    STAGES.index(cur.get("stage", "活动预热"))
+                    if cur.get("stage") in STAGES
+                    else 0
+                ),
             )
             tone = st.selectbox(
-                "内容语气 *", TONES,
-                index=TONES.index(cur.get("tone", "直接利益型"))
-                if cur.get("tone") in TONES else 0,
+                "内容语气 *",
+                TONES,
+                index=(
+                    TONES.index(cur.get("tone", "直接利益型"))
+                    if cur.get("tone") in TONES
+                    else 0
+                ),
             )
         with c2:
             channel = st.selectbox(
-                "投放渠道 *", CHANNELS,
-                index=CHANNELS.index(cur.get("channel", "APP Push"))
-                if cur.get("channel") in CHANNELS else 0,
+                "投放渠道 *",
+                CHANNELS,
+                index=(
+                    CHANNELS.index(cur.get("channel", "APP Push"))
+                    if cur.get("channel") in CHANNELS
+                    else 0
+                ),
             )
             scene = st.selectbox(
-                "消费场景 *", SCENES,
-                index=SCENES.index(cur.get("scene", "早餐"))
-                if cur.get("scene") in SCENES else 0,
+                "消费场景 *",
+                SCENES,
+                index=(
+                    SCENES.index(cur.get("scene", "早餐"))
+                    if cur.get("scene") in SCENES
+                    else 0
+                ),
             )
             expected_action = st.selectbox(
-                "期望动作", ACTIONS,
-                index=ACTIONS.index(cur.get("expected_action", "点击"))
-                if cur.get("expected_action") in ACTIONS else 0,
+                "期望动作",
+                ACTIONS,
+                index=(
+                    ACTIONS.index(cur.get("expected_action", "点击"))
+                    if cur.get("expected_action") in ACTIONS
+                    else 0
+                ),
             )
             plan_type = st.selectbox(
-                "Plan 类型", PLAN_TYPES,
-                index=PLAN_TYPES.index(cur.get("plan_type", "AARRPlan"))
-                if cur.get("plan_type") in PLAN_TYPES else 0,
+                "Plan 类型",
+                PLAN_TYPES,
+                index=(
+                    PLAN_TYPES.index(cur.get("plan_type", "AARRPlan"))
+                    if cur.get("plan_type") in PLAN_TYPES
+                    else 0
+                ),
             )
 
         c3, c4 = st.columns(2)
         with c3:
             coupon = st.selectbox(
-                "实际是否用券", COUPON_FLAGS,
-                index=COUPON_FLAGS.index(cur.get("coupon", "否"))
-                if cur.get("coupon") in COUPON_FLAGS else 1,
+                "实际是否用券",
+                COUPON_FLAGS,
+                index=(
+                    COUPON_FLAGS.index(cur.get("coupon", "否"))
+                    if cur.get("coupon") in COUPON_FLAGS
+                    else 1
+                ),
                 help="plan 维度的用券标记（form 字段，主导 CTR）",
             )
         with c4:
@@ -324,7 +398,9 @@ def _render_left_column(channel_rules: dict) -> Optional[TaskInput]:
         )
 
         submitted = st.form_submit_button(
-            "生成 3 条候选内容", type="primary", use_container_width=True,
+            "生成 3 条候选内容",
+            type="primary",
+            use_container_width=True,
         )
 
     if submitted:
@@ -352,8 +428,10 @@ def _render_left_column(channel_rules: dict) -> Optional[TaskInput]:
 
         # PRD §17 字段变更检测
         sig = _form_change_signature(form_dict)
-        if (st.session_state.candidates
-                and sig != st.session_state.last_generated_signature):
+        if (
+            st.session_state.candidates
+            and sig != st.session_state.last_generated_signature
+        ):
             st.toast("检测到字段已变更，请重新点击「生成」按钮", icon="⚠")
 
         return task
@@ -377,7 +455,7 @@ def _render_middle_column(task: TaskInput, channel_rules: dict):
     cols = st.columns(3)
     for i, c in enumerate(candidates):
         with cols[i]:
-            is_selected = (c.id == selected_id)
+            is_selected = c.id == selected_id
             border_color = "#FFC72C" if is_selected else "#E0E0E0"
             border_w = "3px" if is_selected else "1px"
             st.markdown(
@@ -395,7 +473,8 @@ def _render_middle_column(task: TaskInput, channel_rules: dict):
             )
             # 单选按钮
             if st.button(
-                f"选 {c.id}", key=f"sel_{c.id}",
+                f"选 {c.id}",
+                key=f"sel_{c.id}",
                 type="primary" if is_selected else "secondary",
                 use_container_width=True,
             ):
@@ -414,19 +493,28 @@ def _render_rule_panel(c: Candidate, task: TaskInput, channel_rules: dict):
     """选中候选的规则诊断面板（PRD §8.4）。"""
     rule_results: list = st.session_state.rule_results
     selected_idx = next(
-        (i for i, x in enumerate(st.session_state.candidates) if x.id == c.id), 0,
+        (i for i, x in enumerate(st.session_state.candidates) if x.id == c.id),
+        0,
     )
-    rr: RuleResult = rule_results[selected_idx] if selected_idx < len(rule_results) else RuleResult()
+    rr: RuleResult = (
+        rule_results[selected_idx] if selected_idx < len(rule_results) else RuleResult()
+    )
     if rr.items:
         st.markdown(f"#### 候选 {c.id} · 规则诊断")
         for it in rr.items:
             icon = {"pass": "✓", "warn": "!", "fail": "✗"}.get(it.severity, "?")
-            color = {"pass": "#2E7D32", "warn": "#F9A825", "fail": "#C62828"}.get(it.severity, "#666")
+            color = {"pass": "#2E7D32", "warn": "#F9A825", "fail": "#C62828"}.get(
+                it.severity, "#666"
+            )
             st.markdown(
                 f'<div style="color:{color};font-size:14px;margin:2px 0;">'
-                f'<b>{icon} {it.category}</b> · {it.message}'
-                + (f'<br/><span style="color:#888;font-size:12px;">建议：{it.suggestion}</span>' if it.suggestion else "")
-                + '</div>',
+                f"<b>{icon} {it.category}</b> · {it.message}"
+                + (
+                    f'<br/><span style="color:#888;font-size:12px;">建议：{it.suggestion}</span>'
+                    if it.suggestion
+                    else ""
+                )
+                + "</div>",
                 unsafe_allow_html=True,
             )
 
@@ -448,8 +536,12 @@ def _render_right_column(task: TaskInput, channel_rules: dict):
 
     selected = next((c for c in candidates if c.id == selected_id), candidates[0])
     selected_idx = candidates.index(selected)
-    selected_rule: RuleResult = rule_results[selected_idx] if selected_idx < len(rule_results) else RuleResult()
-    selected_ctr: Optional[PredictionResult] = ctr_results[selected_idx] if selected_idx < len(ctr_results) else None
+    selected_rule: RuleResult = (
+        rule_results[selected_idx] if selected_idx < len(rule_results) else RuleResult()
+    )
+    selected_ctr: Optional[PredictionResult] = (
+        ctr_results[selected_idx] if selected_idx < len(ctr_results) else None
+    )
 
     # ── Phase 19 L1 静默双轨：仅管理员开启时跑 L1 预测
     l1_ctr_pair: Optional[Tuple[Optional[float], str]] = None
@@ -494,6 +586,7 @@ def _render_channel_preview(task: TaskInput, c: Candidate):
     # 进 unsafe_allow_html 前必须 html.escape，避免恶意 prompt 注入脚本。
     # 原始 body 长度用于短信分段统计（escape 后会变长）。
     from html import escape as _esc
+
     body_len_raw = len(c.body)
     title = _esc(c.title or "（无标题）")
     body = _esc(c.body)
@@ -505,7 +598,7 @@ def _render_channel_preview(task: TaskInput, c: Candidate):
             f'<div class="pv-title">{title}</div>'
             f'<div class="pv-body">{body}</div>'
             f'<div class="pv-meta">APP Push · 点击查看</div>'
-            f'</div>'
+            f"</div>"
         )
     elif ch == "企微1v1":
         # 仿企业微信聊天气泡（头像 + 服务名 + 卡片 + 时间戳）
@@ -517,8 +610,8 @@ def _render_channel_preview(task: TaskInput, c: Candidate):
             f'<div class="wc-title">{title}</div>'
             f'<div class="wc-body">{body}</div>'
             f'<div class="wc-meta">今天 {datetime.now().strftime("%H:%M")} · 已送达</div>'
-            f'</div>'
-            f'</div>'
+            f"</div>"
+            f"</div>"
         )
     elif ch == "短信":
         seg = max(1, (body_len_raw + 69) // 70)
@@ -527,17 +620,21 @@ def _render_channel_preview(task: TaskInput, c: Candidate):
             f'<div style="font-size:0.78em;opacity:0.55;margin-bottom:0.4rem;">106xxxxxxxx</div>'
             f'<div class="pv-body">{body}</div>'
             f'<div class="pv-meta">短信 · {body_len_raw} 字 / {seg} 段</div>'
-            f'</div>'
+            f"</div>"
         )
     else:
-        preview_html = '<div class="warning-banner">该渠道预览待 P1 实现（PRD §8.2）</div>'
+        preview_html = (
+            '<div class="warning-banner">该渠道预览待 P1 实现（PRD §8.2）</div>'
+        )
 
     st.markdown("**渠道预览**")
     st.markdown(preview_html, unsafe_allow_html=True)
 
 
-def _render_ctr_card(ctr: Optional[PredictionResult],
-                     l1_ctr: Optional[Tuple[Optional[float], str]] = None):
+def _render_ctr_card(
+    ctr: Optional[PredictionResult],
+    l1_ctr: Optional[Tuple[Optional[float], str]] = None,
+):
     """CTR 参考卡片。
 
     l1_ctr: Phase 19 双轨开关。None 或 (None, _) 时不显示 L1 行；
@@ -545,8 +642,10 @@ def _render_ctr_card(ctr: Optional[PredictionResult],
     """
     st.markdown("**CTR 参考结果**")
     if ctr is None:
-        st.markdown('<div class="warning-banner">CTR 参考：暂不可用</div>',
-                    unsafe_allow_html=True)
+        st.markdown(
+            '<div class="warning-banner">CTR 参考：暂不可用</div>',
+            unsafe_allow_html=True,
+        )
         # 即便主 CTR 不可用，若 L1 开启也可显示 L1 行
         if l1_ctr is not None:
             _render_l1_inline(l1_ctr)
@@ -565,14 +664,20 @@ def _render_ctr_card(ctr: Optional[PredictionResult],
         parts.append(f"**预测 CTR**：{rate_value(ctr.pred_ctr)}")
     if ctr.baseline_ctr is not None:
         parts.append(f"**历史基准**：{rate_value(ctr.baseline_ctr)}")
-    if ctr.pred_ctr is not None and ctr.baseline_ctr is not None and ctr.baseline_ctr > 0:
+    if (
+        ctr.pred_ctr is not None
+        and ctr.baseline_ctr is not None
+        and ctr.baseline_ctr > 0
+    ):
         diff_pp = (ctr.pred_ctr - ctr.baseline_ctr) * 100
         sign = "+" if diff_pp >= 0 else ""
         parts.append(f"**相对基准**：{sign}{diff_pp:.2f} 个百分点")
-    st.markdown(f'<div class="kpi-tile"><div class="label">状态：{label}</div>'
-                + "".join(f'<div>{p}</div>' for p in parts)
-                + '</div>',
-                unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="kpi-tile"><div class="label">状态：{label}</div>'
+        + "".join(f"<div>{p}</div>" for p in parts)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
     if ctr.suggestion:
         st.caption(f"建议：{ctr.suggestion}")
     if l1_ctr is not None:
@@ -598,7 +703,9 @@ def _render_l1_inline(l1_ctr: Tuple[Optional[float], str]):
     elif status == "baseline_only":
         st.caption("L1 实验对比：模型暂不可用（data/lgbm_model_v1.pkl 缺失）")
     elif status == "unavailable":
-        st.caption("L1 实验对比：本渠道不在 L1 训练范围（L1 仅覆盖 APP Push / 企微1v1 / 短信）")
+        st.caption(
+            "L1 实验对比：本渠道不在 L1 训练范围（L1 仅覆盖 APP Push / 企微1v1 / 短信）"
+        )
     else:
         st.caption("L1 实验对比：暂无结果")
 
@@ -610,7 +717,11 @@ def _render_reason_card(task: TaskInput, c: Candidate, rule: RuleResult):
         reasons.append(f"规则通过 {len(rule.passes)} 项")
     if c.reason:
         reasons.append(c.reason)
-    reasons.append(f"匹配 {task.objective} + {task.stage} 目标" if task.objective else f"匹配 {task.stage} 目标")
+    reasons.append(
+        f"匹配 {task.objective} + {task.stage} 目标"
+        if task.objective
+        else f"匹配 {task.stage} 目标"
+    )
     if task.scene and task.scene != "其他":
         reasons.append(f"场景：{task.scene}")
     if not reasons:
@@ -619,7 +730,7 @@ def _render_reason_card(task: TaskInput, c: Candidate, rule: RuleResult):
     st.markdown(
         '<div class="decision-card"><ul>'
         + "".join(f"<li>{r}</li>" for r in reasons)
-        + '</ul></div>',
+        + "</ul></div>",
         unsafe_allow_html=True,
     )
 
@@ -656,7 +767,7 @@ def _render_confidence_card(ctr: Optional[PredictionResult], similar: dict):
         f'<div class="kpi-tile"><div class="label">参考可信度</div>'
         f'<div class="value">{level}</div>'
         + "".join(f'<div class="sub">{r}</div>' for r in reasons)
-        + '</div>',
+        + "</div>",
         unsafe_allow_html=True,
     )
 
@@ -675,7 +786,7 @@ def _render_rule_diagnostics(rule: RuleResult):
         sug = f"<br><small>建议：{it.suggestion}</small>" if it.suggestion else ""
         st.markdown(
             f'<div class="{cls}"><b>[{it.severity.upper()}]</b> '
-            f'<b>{it.category}</b>：{it.message}{sug}</div>',
+            f"<b>{it.category}</b>：{it.message}{sug}</div>",
             unsafe_allow_html=True,
         )
 
@@ -685,7 +796,7 @@ def _render_recommendation(task: TaskInput, c: Candidate, rule: RuleResult):
     if rule.has_blocking:
         st.markdown(
             '<div class="warning-banner"><b>存在阻断项，不推荐正式使用。</b>'
-            '请先修改后再次评估。</div>',
+            "请先修改后再次评估。</div>",
             unsafe_allow_html=True,
         )
         return
@@ -724,11 +835,16 @@ def main():
         st.session_state.selected_id = "A"
         # 重算规则 + CTR + 相似
         st.session_state.rule_results = check_candidates(
-            candidates, new_task.channel, channel_rules, brand_rules,
+            candidates,
+            new_task.channel,
+            channel_rules,
+            brand_rules,
         )
         ctr_mode = st.session_state.get("ctr_mode", "demo")  # Phase 20 sidebar 模式选择
         ctr_results = predict_for_candidates(
-            candidates, new_task, mode=ctr_mode,
+            candidates,
+            new_task,
+            mode=ctr_mode,
         )
         # 反哺影响排序（Phase 7.2 #6 拍板）：按 pred_ctr 降序，title 长度兜底
         candidates, ctr_results = rank_candidates_by_ctr(candidates, ctr_results)
@@ -740,13 +856,16 @@ def main():
         first = candidates[0]
         sim_df = find_similar(first.title, first.body, new_task.channel)
         st.session_state.similar_summary = summarize_similar(sim_df)
-        st.session_state.last_generated_signature = _form_change_signature(new_task.to_dict())
+        st.session_state.last_generated_signature = _form_change_signature(
+            new_task.to_dict()
+        )
         st.rerun()
 
     with middle:
         task_for_display = (
             TaskInput.from_form(st.session_state.task_input)
-            if st.session_state.task_input else None
+            if st.session_state.task_input
+            else None
         )
         if task_for_display:
             _render_middle_column(task_for_display, channel_rules)

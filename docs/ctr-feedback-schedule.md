@@ -1,39 +1,44 @@
-# CTR 反哺 · 触发条件与执行节奏（2026-08-26 业务拍板）
+# CTR 反哺 · 触发条件与执行节奏
 
-> 对应 Handoff §6.2 第一梯队 #3——CTR 反哺**触发条件**拍板。
-> 配套文档：`docs/ctr-kpi-definition-proposal-v0.2.md`（口径 v3.1）+ `docs/feedback-ctr.md`（反哺思考笔记）
+> **2026-08-26 拍板（每周一上午）→ 2026-08-31 用户会话改月度手动**。
+> 对应 Handoff §6.2 第一梯队 #3 + 第二梯队 #4——CTR 反哺**触发条件 + 校准频率**拍板。
+> 配套文档：`docs/ctr-kpi-definition-proposal-v0.2.md`（口径 v3.1）+ `docs/feedback-ctr.md`（反哺思考笔记）+ `docs/l1-training-runbook.md`（L1 月度同步流程）
 
 ## 一句话
 
-**每周一上午手动跑一次 `tools/calibrate_baseline.py`**——节奏稳定、人可控、不漂移、阻塞感低。
+**每月 1 号上午手动跑一次 `tools/calibrate_baseline.py`**（旧版：每周一上午，2026-08-31 改月度）——节奏稳定、人可控、不漂移、阻塞感低。
 
-## 为什么是手动一周一次
+## 为什么是手动月度
 
 | 维度 | 评估 |
 |---|---|
 | **人可控** | 业务确认前不接实时回流，手动节奏避免口径返工 |
-| **节奏稳定** | 漏一周 = 空一周；固定每周一同一天，可设日历提醒 |
-| **不漂移** | 不做实时自动校准——baseline 滞后一周，CTR 突变场景（促销/换季）响应慢，但**接受这个代价换稳定性** |
-| **阻塞感低** | 业务方每周只需要：① 上传上周真实 CSV/Excel → ② 跑一次脚本 → ③ 看 diff 报告 |
+| **节奏稳定** | 漏一月 = 空一月；固定每月 1 号同一天，可设日历提醒 |
+| **不漂移** | 不做实时自动校准——baseline 滞后一月，CTR 突变场景（促销/换季）响应慢，但**接受这个代价换稳定性** |
+| **阻塞感低** | 用户每月只需要：① 上传上月真实 CSV/Excel → ② 跑一次脚本 → ③ 看 diff 报告 → ④ 跑 `tools/monitor_l1_drift.py` 检查 L1 漂移 |
 
-## 执行流程（每周一上午，~5 分钟）
+## 执行流程（每月 1 号上午，~5 分钟）
 
 ```
 1. 打开 pages/05_feedback（或直接命令行）
-   上传上周真实投放 CSV/Excel → 写入 data/feedback.db
+   上传上月真实投放 CSV/Excel → 写入 data/feedback.db
 
 2. 跑校准：
    python tools/calibrate_baseline.py --db data/feedback.db
 
 3. 看输出：
-   - 渠道维度：T-1 → T+7 的 CTR diff
+   - 渠道维度：上月 vs 上上月的 CTR diff
    - 渠道×用券维度：同上
    - 跳过提示：n_plans<5 跳过（保留旧 baseline）
 
 4. 校对结果：
-   - data/ctr_baseline_v3.x.json：新版本（v3.x → v3.x+1）
-   - data/ctr_baseline_v3.x.json.bak：旧版本备份
+   - data/ctr_baseline.json：新版本（version 字段 +1；文件名无版本后缀）
+   - data/ctr_baseline.bak.json：旧版本备份
    - diff 报告：终端输出已打印
+
+5. （如已切 L1）跑漂移监控：
+   python tools/monitor_l1_drift.py --min-real-reach 50
+   OK 继续 / WARN/ALERT → 详 docs/l1-training-runbook.md §3 人工处理
 ```
 
 ## 跳过条件（防过拟合）
@@ -48,11 +53,11 @@
 
 **铁律**：哪怕只有 1 个 plan 也不要用它覆盖 baseline——CTR 方差极大，单 plan 会拉偏。
 
-## 漏周策略
+## 漏月策略
 
-- **漏 1 周**：当周 baseline 保持不变，下周合并 2 周数据正常跑
-- **漏 ≥ 2 周**：累积 ≥ 3 周数据时 n_plans 容易越过 20 → 全量覆盖；**业务方自己心里有数就行**，无需特殊处理
-- **业务方主动补**：周一忘了可以周二/周三跑——节奏不是强约束
+- **漏 1 月**：当月 baseline 保持不变，下月合并 2 月数据正常跑
+- **漏 ≥ 2 月**：累积 ≥ 2 月数据时 n_plans 容易越过 20 → 全量覆盖；**用户自己心里有数就行**，无需特殊处理
+- **主动补**：1 号忘了可以 2 号/3 号跑——节奏不是强约束
 
 ## 校准后看什么
 

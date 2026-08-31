@@ -15,11 +15,18 @@ from __future__ import annotations
 import streamlit as st
 
 from ui.theme_tokens import (
-    MCD_RED, MCD_GOLD, MCD_DARK_RED, MCD_BG, MCD_BG_DARK,
-    MCD_GRAY, MCD_LIGHT_GRAY, MCD_GREEN, MCD_YELLOW, MCD_BORDER,
+    MCD_RED,
+    MCD_GOLD,
+    MCD_DARK_RED,
+    MCD_BG,
+    MCD_BG_DARK,
+    MCD_GRAY,
+    MCD_LIGHT_GRAY,
+    MCD_GREEN,
+    MCD_YELLOW,
+    MCD_BORDER,
     FONT_FAMILY,
 )
-
 
 # 阴影 / 圆角 token（页面层不直接用，全走 class）
 SHADOW_SM = "0 1px 3px rgba(0,0,0,0.06)"
@@ -315,6 +322,22 @@ def inject_base_css() -> None:
         .home-section-advanced a {{ color: {MCD_DARK_RED}; text-decoration: none; }}
         .home-section-advanced ul {{ margin: 0.4rem 0 0 1.2rem; padding: 0; }}
         .home-section-advanced li {{ margin: 0.25rem 0; }}
+
+        /* ====== L1 实验预测 pill（01_content_studio:_render_l1_inline） ====== */
+        .l1-pill {{
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.7rem;
+            margin: 0.3rem 0;
+            background: {MCD_BG};
+            border: 1px solid {MCD_GOLD};
+            border-radius: {RADIUS_SM};
+            font-size: 0.85em;
+        }}
+        .l1-label {{ color: {MCD_DARK_RED}; font-weight: 600; }}
+        .l1-value {{ color: {MCD_GOLD}; font-weight: 700; font-size: 1.05em; }}
+        .l1-meta {{ color: #888; font-size: 0.85em; }}
         </style>
         """,
         unsafe_allow_html=True,

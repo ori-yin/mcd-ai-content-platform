@@ -24,8 +24,8 @@
 **第二梯队（中低返工 · 可后置）**
 - [x] **#1** 产品与权益 维度枚举 + 是否参与生成 —— ✅ **Phase 9 已拍板**，详 `Downloads/decision-product-benefit-2026-08-26.md`（拆 `product_category` + `benefit_type` 两字段；10 产品 + 8 权益枚举 +「自定义」输入兜底；必填 + 参与生成；jieba 词典与 yaml 枚举解耦并行）
 - [x] **#2** 投放目标 维度枚举 + 是否参与生成 —— ✅ **Phase 9 已拍板**，详 `Downloads/decision-objective-2026-08-26.md`（6 值 → 4 值收敛：品牌认知 / 点击驱动 / 转化促成 / 用户召回；**支持多选，逗号分隔，max 3，union 合并**；必填 + 参与生成 + 影响 strategy+tone，不约束 product；baseline 新增 objective_x_渠道 = 90 key，7 级回退兜底）
-- [ ] **#4** CTR 校准频率（手动 / T+1 / 周）
-- [ ] **#7** 02-05 附属页面**是否纳入正式版**（含字典维护 UI `pages/06_settings.py` 议题）
+- [x] **#4** CTR 校准频率 —— ✅ **用户拍板（2026-08-31）**：从 Phase 7.1「每周一上午手动」改为**每月一次手动**（建议每月 1 号上午跑）。`tools/weekly_calibrate.bat` 仍落档不调度，月初手动执行；`docs/ctr-feedback-schedule.md` 频率段待同步修订
+- [x] **#7** 02-05 附属页面 + 字典维护 UI 纳入正式版 —— ✅ **用户拍板（2026-08-31）**：UI 重设阶段一起做（首页 00 入口重排 + 字典 UI 独立页 `pages/06_settings.py`）。02 单条诊断 / 03 批量评估 / 04 七 Tab 洞察 / 05 上传回流 + 06 字典维护全部进正式版
 
 **第三梯队（用户口径 · Phase 10 拍板稿 · 2026-08-27 用户会话提）**
 
@@ -85,149 +85,64 @@
 
 ### 6.3 候选（详 §5.5 CTR Roadmap）
 
-**业务确认后启动**（下方 2 项候选 L1 + P4 待业务拍板；§6.3 原 P3 维度权重动态 + demo 数据回灌已在 Phase 6 P4 完成，见 §5）。
+> **业务确认后启动**（下方 P4 / UI 重设计 待拍板；L1 已落地 → docs/l1-training-runbook.md）。
 
-#### L1 · LightGBM 回归替 baseline 查找表（详 §5.5）✅ **Phase 18 已落地（2026-08-28）**
+#### L1 · LightGBM 回归替 baseline 查找表 ✅ 已落地
 
-> **用户拍板"先试试看"**（2026-08-28），基于历史 CNN 4.4 万行数据直接训练。详见下方"Phase 18 L1 LightGBM PoC"段。下方为原 §5.5 设计稿，实际落地配置按 PoC 结果（剔除小程序 + 高效词 + 时间衰减）。
+- Phase 18 PoC + Phase 19 入生产 + Phase 20 l1_model mode + Phase 22 B/C/D 闭环 + Phase 24 sweep 确认 live
+- **业务拍板 4 项全部 ✅**（2026-08-31）：切 L1 时点 = 用户主动 / 训练责任人 = 用户自己 / 误差告警阈值 = baseline × 1.3 / 可解释输出 = 月报 + 用户自看
+- **训练 / 监控 / 漂移处理 / 回退 / 月报 5 步流程**见 `docs/l1-training-runbook.md`
+- **回退机制基本闭环**：Phase 22 C 已落 `core/active_mode.py` + monitor_l1_drift.py:apply_auto_rollback（drift → 写 active_mode.txt → 01 启动读 + 黄 banner）
 
-**一句话**：用 LightGBM 回归替 baseline 7 维查表，**结构化特征 + 中样本 + 可解释**三场景适配 GBDT，DNN 是过度设计。
+#### L1 详档
 
-**为什么是 GBDT 不是 DNN**：
-- 输入 = 结构化表格（7 维 + 字数 + emoji + 命中词），不是文本/图像
-- 样本 = 几千到几万（麦当劳业务体量），不是亿级
-- 可解释 = 刚需——业务问"为什么这个 Plan CTR 高"，GBDT 出特征重要性，DNN 给一堆注意力
-- DeepFM/DIN/Transformer 要亿级样本回本，喂不饱
-
-**关键设计点**：
-- **特征 X**：7 维基础 + 文本衍生（title_len/body_len/emoji_count/命中词数）+ 历史衍生（past_ctr_similar）+ 时段衍生（dayofweek/hour/is_holiday）
-- **训练集**：feedback.db（真实 CTR）按 signature join records.db → 每个 plan 一行 (X, y)
-- **样本阈值**：< 50 plan 走 baseline / 50-500 走 L0 EMA / **~ 1000 切 L1**（< 1000 易过拟合，叶节点多 + 噪声大）
-- **离线回测门禁**：L1 MAE > L0 × 1.05 → 拒绝上线，回退 L0
-- **冷启动兜底**：新维度组合 L1 也查不到，走 baseline 兜底（4 态分明不变）
-- **误差曲线**（必备）：预测 vs 真实 MAE/MAPE 散点 + 时间趋势图；曲线往下 = 在学，平/往上 = 漂移触发告警
-
-**落地步骤**（粗估 10 工作日）：
-1. `tools/train_l1_model.py`（~150 行：加载 feedback.db → join → 训练集 → LightGBM 训练 → 保存 .pkl）
-2. `adapters/ctr_predictor_adapter/l1_predictor.py`（~50 行：加载 .pkl + predict）
-3. `CTRPredictionAdapter` mode 加 `"l1_model"`（~30 行）
-4. `tools/plot_error_curve.py`（~80 行：每周预测 vs 真实 MAE 散点图）
-5. `tests/verify.py §43` L1 模块（~10 用例）
-6. 业务反馈：误差曲线图、特征重要性 Top10、模型切换门禁报告
-
-**风险**：
-1. **过拟合**：< 千条样本时 GBDT 不如 L0 EMA
-2. **冷启动**：新维度组合必须走 baseline 兜底
-3. **误差曲线不一定往下走**——可能持平或上漂，这是诊断信号（"在学" vs "漂移"）
-4. **责任划分**：谁负责训练 / 谁负责监控 / 谁有权批准上线
-
-**业务要拍 4 项**：
-1. ✅ **切 L1 时点**：用户主动（sidebar selectbox 切到 l1_model 即可）—— Phase 20 已落地
-2. ⏳ **谁来训练**：业务方跑 / 平台自动 / 数据团队跑？ → 待业务拍板
-3. ✅ **误差告警阈值**：MAE 涨到 baseline × 1.3 触发告警 —— Phase 20 `tools/monitor_l1_drift.py` 已落地（建议 30%，工具参数可调 `--alert-ratio`）
-4. ⏳ **可解释输出**：要不要把"特征重要性 Top10 维度"每周给业务看？ → 待业务拍板
-
-**Phase 19 完成项（2026-08-28）**：
-- ✅ `adapters/ctr_predictor_adapter/l1_predictor.py` 接入生产（predict_l1 / predict_l1_batch / predict_l1_status）
-- ✅ `__init__.py` 导出 4 符号
-- ✅ 静默双轨：`pages/01_content_studio.py` sidebar admin 开关，默认关
-- ✅ 4 态分明：model / baseline_only（模型缺）/ unavailable（渠道不在训练范围 + 特征构造失败）
-- ✅ 渠道校验：L1_SUPPORTED_CHANNELS = (APP Push, 企微1v1, 短信)
-- ✅ 容错：lru_cache 加载 + 异常路径静默降级（不抛错影响主流程）
-- ✅ 验证：verify 655 → 677 PASS（§56 新增 22 用例）
-
-**Phase 20 完成项（2026-08-28）**：
-- ✅ `CTRPredictionAdapter.VALID_MODES` 加 `"l1_model"`（5 态：existing_predictor/baseline_only/demo/l1_model/unavailable）
-- ✅ `_l1_model_pred` 走 predict_l1 → 4 态透传（model→model_prediction/source=l1_lightgbm，baseline_only→baseline_only，unavailable→unavailable）
-- ✅ `pages/01_content_studio.py` sidebar "CTR 主流程模式" selectbox（demo/baseline_only/l1_model，默认 demo，env CTR_MODE 可覆盖）；L1 模型缺失时 l1_model 不可选
-- ✅ `tools/monitor_l1_drift.py` records.db join feedback.db → MAE vs baseline → 1.3x 告警 + drift_log.csv 留档
-- ✅ 验证：verify 677 → 697 PASS（§57 新增 20 用例）
-
-**Phase 19+20 未做（留给后续 Phase）**：
-- ⏳ 训练责任人 + 重训调度机制
-- ⏳ `tools/print_feature_importance.py` 特征重要性 Top10 周报
-- ⏳ CTRPredictionAdapter mode 切主流程的回滚机制（万一 L1 漂移自动回退 demo）
+- 业务拍板 4 项历史拍板稿 + Phase 18 PoC 设计稿（GBDT vs DNN / 特征工程 / 样本阈值）已合并到 `Handoff-decisions.md` §5.5 CTR Roadmap（**Roadmap 摘要 + 拍板记录**）
 
 ---
 
-#### P4 · 历史洞察签名关联（04 七 Tab 加 signature 视角）
+#### P4 · 历史洞察签名关联（候选 · 2026-08-31 延后到 UI 重设一起做）
 
-**一句话**：把"哪条 Plan 后来效果如何"接进洞察 Tab，让业务闭环"看"反哺。
+**一句话**：04 第 8 Tab 加 signature 视角，让业务闭环"看"反哺（采纳数 / 预测 CTR 平均 / 真实 CTR 中位数 / 预测 vs 真实 diff）。
 
-**当前状态**：`pages/04_historical_insights.py` 七 Tab 按 plan / 文案维度统计，没有"采纳后真实效果"视角。P4 加 signature 视角 = 新增第 8 Tab"签名关联"。
+**2026-08-31 拍板延后**：P4 跟 UI 重设阶段一起做，避免改两次 04 页面结构（当前 P4 候选 + UI 重设都要动 04）。
 
-**为什么重要**：
-- 闭环到"看"——业务验证"我推荐的文案投出去后真有人点吗"
-- 反哺闭环可视化——哪些文案被采纳 → 投出去 → 真实 CTR 多高
-- 找高效 Plan 模板——相似文案 vs 真实 CTR 找规律
+**业务要拍 4 项**（UI 重设启动时确认）：
+1. **要不要加** → ✅ 用户已确认（"P4 现在可以做到了吗？就是 CTR 预测 + feedback 对吧"）
+2. **CTR 列显示阈值**：建议 ≥ 5（feedback 样本 ≥ 5 才显示真实 CTR 列）
+3. **展示粒度**：建议 signature 12 位（细 12 位指纹）+ 可展开看 strategy
+4. **与 L1 联动**：先有"看"再有"用"，P4 数据正好是 L1 训练数据
 
-**Tab 内容**：
-- 表格按 signature 分组聚合：`signature` / `采纳数` / `预测 CTR 平均` / **feedback 接入后**加 `真实 CTR 中位数/P90` / `预测 vs 真实 diff`
-- 散点图：预测 CTR (x) vs 真实 CTR (y)，每点一个 plan
-- Top10 复用模板：采纳数最多的 signature
+**数据基础已就绪**（Phase 5 P0/P1/P2）：records.signature ↔ feedback.task_signature 可 join；signature_insight_service 预估 ~100 行 + pages/04 加第 8 Tab。
 
-**数据来源**：
-```
-records.db    feedback.db
-   ↓              ↓
-   selected_id ←─signature─→ 真实 CTR（按 signature join）
-```
-
-没有 feedback 数据时只能看"采纳数"，无法做 CTR 对比——这正是当前状态。
-
-**风险**：
-1. **没数据时空着**——业务确认前不接真实数据，Tab 加了但只能看采纳数，可能觉得"没用"
-2. **数据稀疏**——单 signature 可能只 1-2 个 plan，"中位数 CTR"无意义；加阈值保护（≥ N 才显示 CTR 列）
-3. **混淆"采纳"和"成功"**——selected_id ≠ 投放成功，只是"运营最终选的那条"
-4. **CTR 散点少时画不出**——feedback 样本 < 50 时散点只有几个点，无诊断价值
-5. **与 L1 联动**——L1 训练数据正是"signature + 真实 CTR"，P4 是 L1 的"查看界面"
-
-**落地步骤**（粗估 3 工作日）：
-1. `services/signature_insight_service.py`（~100 行）
-   - `summarize_signatures(records, feedback)` → `list[{signature, count, pred_ctr_avg, real_ctr_median}]`
-   - 空数据兜底：`feedback is None` → 只返回采纳数维度
-2. `pages/04_historical_insights.py` 加第 8 Tab（~80 行 + plotly 散点）
-3. `tests/verify.py §43`（~6 用例：聚合、join、空数据兜底、稀疏过滤）
-4. **联动 L1**：`signature_insight_service` 直接给 `train_l1_model.py` 提供训练数据
-
-**业务要拍 4 项**：
-1. **要不要加这个 Tab**：业务确认前不接真实数据，Tab 加了只能看采纳数——值不值得？
-2. **CTR 列显示阈值**：feedback 样本 ≥ 多少才显示 CTR 列？建议 ≥ 50
-3. **展示粒度**：signature（细 12 位指纹）vs strategy（A_核心利益直给 3 选 1）？
-4. **与 L1 联动**：要不要 P4 先于 L1 做（先有"看"再有"用"）？
-
-**建议节奏**：P4 先做（3 天）→ L1 后做（10 天）。先有"看"的能力，再上"用"的模型。
+**前提**：feedback.db 当前 0 行 → 真实反馈回灌前 CTR 列会全空（P4 Tab 加了先看"采纳数"维度）。
 
 ---
 
-#### UI · 整体重设计（候选 · 2026-08-28 find-skills 调研）
+#### UI · 整体重设计（候选 · 2026-08-31 延后，最后做）
 
-**用户反馈（2026-08-28）**：核心逻辑（Phase 19-21 L1 主流程 + simplify 清理）已完成，**UI 太丑，整体架构 + 布局都有大问题**。下一步计划整体重构，不是修修补补。
+**用户反馈（2026-08-28）**：核心逻辑已完成，**UI 太丑，整体架构 + 布局都有大问题**。下一步计划整体重构，不是修修补补。
+
+**2026-08-31 拍板**：UI 重设**最后做**；P4 + 字典维护 UI（`pages/06_settings.py`，#7 拍板纳入）跟 UI 重设一起做。
 
 **find-skills 调研结论**（2026-08-28）：
 
 **已装可直接用**（`~\.claude\skills\`）：
-- `developing-with-streamlit` —— **最对口**，Streamlit 官方，覆盖 dashboards / themes / layouts / 自定义组件 / 美化主题 / 性能
-- `frontend-design` —— 通用前端设计
-- `designing-beautiful-websites` —— 通用网站美化
+- `developing-with-streamlit` —— **最对口**，Streamlit 官方
+- `frontend-design` / `designing-beautiful-websites` —— 通用
 
-**skills.sh 命中度高**（待评估装不装）：
+**skills.sh 高命中**（待评估装不装）：
 | Skill | installs | 备注 |
 |---|---|---|
-| `vercel-labs/agent-skills@web-design-guidelines` | **584.6K** ⭐ | 通用 web 设计准则（Vercel/Next 背景） |
-| `nextlevelbuilder/ui-ux-pro-max-skill@ckm:design-system` | 32.8K | UI/UX 设计系统（通用） |
-| `firecrawl/firecrawl-workflows@firecrawl-dashboard-reporting` | 31.1K | dashboard 报告 |
-| `wshobson/agents@kpi-dashboard-design` | 13.3K | KPI dashboard 设计 |
+| `vercel-labs/agent-skills@web-design-guidelines` | **58.4 万** ⭐ | 通用 web 设计准则 |
+| `nextlevelbuilder/ui-ux-pro-max-skill@ckm:design-system` | 3.3 万 | UI/UX 设计系统 |
 
-**SkillHub 国内源**：`skillhub: command not found`（CLI 未装），按 memory `install_skills.md` 应补装后同步搜国内源。
+**下一步行动**（启动时）：
+1. 跑 `developing-with-streamlit/scripts/discover.py` 拿项目级 recommendations
+2. 按输出决定补装外部 skill
+3. 走 skill 流水线整体重构（CLAUDE.md §9 红线）
+4. 同步做 P4 第 8 Tab + 字典维护 UI + 02-05 正式版统一
 
-**下一步行动**：
-1. 先跑 `python "C:/Users/a952462/.claude/skills/developing-with-streamlit/scripts/discover.py" --project-dir "C:/ideon/mcd-ai-content-platform"` 拿项目级 recommendations
-2. 按 discover.py 输出决定要不要补装 `vercel-labs/agent-skills@web-design-guidelines`（设计规范通用补充）或 `ui-ux-pro-max-skill@design-system`（设计系统）
-3. 选定 skill 后整体重构（CLAUDE.md §9 红线 + 走 skill 流水线，不自己糊 CSS）
-4. Streamlit UI 改动注意 `feedback-streamlit-ui-iteration` 4 个常见坑（清理列表冲突、类名冲突、注入 DOM 不归 React 管、CSS 时序）
-
-**作用域**：当前页面 6 个（app + 00-05）+ 顶部 banner 系统 + sidebar 主题；**不动后端逻辑**（已稳定，Phase 19-21 验证 697 PASS）。
+**作用域**：6 页面（app + 00-05）+ banner 系统 + sidebar 主题；**不动后端逻辑**。
 
 ---
 

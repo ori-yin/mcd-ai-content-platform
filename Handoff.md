@@ -61,13 +61,15 @@
 
 ### 6.0 当前快照（最快定位状态）
 
-- **阶段**：**Phase 22 B/C/D 完成 + Phase 23 安全加固 + Phase 24 全量 sweep**（2026-08-28）
+- **阶段**：**Phase 22 B/C/D 完成 + Phase 23 安全加固 + Phase 24 全量 sweep + Phase 25 死代码清理/L1 runbook/Handoff 压缩**（2026-08-28 → 2026-08-31）
 - **用例**：**854 PASS / 0 FAIL**（`python tests/verify.py`，794 → 854，§61 sweep 新增 24 用例 + §11b Critical-1/2 回归 6 用例）= pytest 双路一致
 - **已可用模块**：①内容创作（01 生成 3 候选 + CTR 评估 + 阈值生效）；②真实回流（04 上传 CSV/Excel → 入库 → 4 维度聚合 → 写 baseline）；③历史洞察（04 七 Tab）；④批量评估 CTR（03）
 - **L1 静默双轨 + 切主流程**：admin 在 sidebar ①勾选"显示 L1 实验对比（仅管理员）"才显示 L1 预测列（默认关）；②selectbox 选 "CTR 主流程模式"（demo / baseline_only / l1_model，默认 demo）—— 用户主动切 L1 时改这里即可；模型缺失/渠道不在训练范围时静默降级 unavailable，主流程不受影响
 - **L1 漂移监控**：`tools/monitor_l1_drift.py` —— records.db (l1_model 预测) join feedback.db (真 CTR) → 整体/分渠道 MAE；超 baseline × 1.3 → 红字告警 + 写 data/drift_log.csv 留档；空 DB 优雅降级（配对数 < 5 不评估防误报）
 - **代码质量清理**：02 页面 bug 修复 / LLM call LRU cache / weighted_ctr 合并 / 注释对齐 / 死代码删除 / CSV reader 合并 / rule_engine 重构 / jieba 批量向量化 / Streamlit 页面缓存 / 5 处死代码清理 / L1 predictor 静默双轨
-- **未做（用户拍板延后）**：自动定时校准（`weekly_calibrate.bat` 仅落档不调度）/ 训练责任人 + 特征重要性周报（详 §6.3）
+- **Phase 25 死代码清理 + L1 runbook（2026-08-31）**：`tools/push_*_via_api.py` ×9 → `tools/_archive/`；`ui/plotly_helpers.axis_rate()` 删；`pages/01/02` 各 1 个 unused import 删；`ui/styles.py` 加 .l1-pill/.l1-label/.l1-value/.l1-meta 4 类（之前 01 引用但未声明）；black 格式化 3 文件；`docs/l1-training-runbook.md` 落地（**5 步流程：训练 → 切 L1 → 监控 → 自动回退 → 月报**）
+- **Handoff 压缩（2026-08-31）**：4 文件总 ~103KB → ~32KB（Phase 1-10 早期决策压 1-2 行 + why；Phase 11+ 保留；L1 已落地段指向 runbook；P4 + UI 重设延后标记）
+- **已拍板落档（2026-08-31 用户会话，详 §6.2/§6.3）**：①自动定时校准延后（`weekly_calibrate.bat` 仅落档不调度）；②CTR 校准频率从每周一上午（Phase 7.1）改为**每月一次手动**（建议每月 1 号上午跑，`docs/ctr-feedback-schedule.md` 已同步修订 + §3.5 加 L1 漂移监控步骤）；③02-05 附属页 + 字典维护 UI（`pages/06_settings.py`）纳入正式版，UI 重设阶段一起做；④L1 训练责任人 = 用户自己跑；⑤L1 特征重要性**月报** + 用户自己看（Phase 22 B 已落）
 - **首要任务**：真回流数据进来时手动跑 `python tools/calibrate_baseline.py --db data/feedback.db` 重算 baseline；切 L1 后跑 `python tools/monitor_l1_drift.py` 监控漂移；**用户在 sidebar selectbox 主动切 l1_model**
 - **下一阶段（候选待启动）**：UI 整体重设计（用户反馈太丑，整体架构 + 布局待重构）—— find-skills 已调研，详见 §6.3 UI 重设计段
 - **决策文档**：`Downloads/decision-product-benefit-2026-08-26.md` + `Downloads/decision-objective-2026-08-26.md`
@@ -109,6 +111,7 @@
 | **Phase 22 D** 批量预测自动落档 records.db（§60 · 2026-08-28） | 用户口径"批量跑的预测一定会投出去，必须回收校准"。**`services/batch_evaluation_service.py` 加 `batch_signature(row)`**（与 task_signature 同字段顺序：channel/coupon/plan_type/audience/stage/scene + 标题桶/正文桶，SHA1 截 12 位，batch 缺后 3 字段填空串）+ **`save_predictions_to_records(rows, db_path)`**（仅写 ctr_result_type 非空行，包成单候选 id="A" strategy="batch_eval" + ctr source 标 "batch_{result_type}"，单行失败不影响其他）。**`pages/03_batch_evaluation.py` 加 checkbox「保存预测到 records.db」**（默认关，按需开启）；评估完成自动调 save + 显示"已保存 N 条"。**闭环**：03 上传 CSV → 勾选 → 跑评估 → 自动落档 → 后续 `pages/05_feedback` 上传真实 CTR 时 feedback_repository 自动 join signature 算 MAE/MAPE。verify 750 → **794 PASS**（§60 新增 24 用例） | **794（CLI）/ 59（pytest，双路一致）** |
 | **Phase 23** 安全加固 · Critical-1/2 + 3 处小修（§11b · 2026-08-28） | 用户拍板"1改，2改，3改"（Critical-1 API key 泄漏 + Critical-2 XSS + Required-1 page→core 误判跳过）。**(1) Critical-1**：`core/llm_gateway.py` 加 `_KEY_PATTERNS = [sk-..., Bearer ...]` + `_sanitize_error()` 兜底 + `_classify_call_error()` 归类 6 种稳定错误码（Authentication/Permission/RateLimit/Timeout/Connection/BadRequest，未识别走 fallback "API异常: <cls>"）；3 处 `_call_openai / _call_anthropic / parse_json_response` 全替换 str(e)[:N] → 稳定错误码 + stderr 完整日志（仅服务端）。**(2) Critical-2 XSS**：pages/01/02 `_render_channel_preview` 用 `html.escape()` 包 title/body；短信段数按 escape 前原始长度算（防 body_len 算多）；删除 5 个 pages 的死 import。**(3) Required-1 误判**：经核查 services/feedback_service.py 已走 repository 抽象、pages 只 import services 不直 repository（CLAUDE.md §4.1 合规），**误判跳过**。**(4) 3 处小修**：`prompts/copy_rewrite.py:117` parse_response 用 `_sanitize_error(str(e))[:80]` 兜底（防御性，同 Critical-1 模式）；`tools/monitor_l1_drift.py` 统一 `sys.exit(1)` + 抽 `MIN_REAL_REACH=50` 常量 + 新增 `--min-real-reach` arg + `import sys` 移顶部。**(5) page_setup 模块**：抽 `ui/page_chrome.py` `page_setup(page_id, subtitle)` 消除 5 pages × 14 行 chrome 模板。verify 794 → **830 PASS**（§11b 新增 6 回归用例：4 helper-level + 1 call-site mock 测 ProviderRouter.call 不透漏 sk-，+1 copy_rewrite sanitize） | **830（CLI）/ 60（pytest，双路一致）** |
 | **Phase 24** 全量 smoke sweep（防退化 · §61 · 2026-08-28） | 用户拍板"完整测试"。把 §17-19 跑的 sweep 固定下来防回归：**§38 test_smoke_sweep** 24 用例覆盖 ①31 模块 import（core/services/adapters/repositories/prompts/ui 全集）②SQLite tmp dir 隔离读写（**关键：必须用 db_path 参数，不能默认走 data/**）③rule_engine 4 边界（空/超长/4 渠道/未知渠道不 crash）④ctr 5 modes 全过（含 l1_model 真模型加载：pred=0.00116，模型已 live）⑤TaskInput 4 必填字段校验（audience/channel/stage/tone）⑥similarity_service 空 DB ⑦copy_analysis_service.diagnose 返回结构 ⑧read_recent limit 边界 ⑨import_feedback 空 CSV。**新发现**：l1_model mode 实际能跑（lgbm_model_v1.pkl 已存在并能加载），PRD/CLAUDE.md 仅说 capability，**首次确认 L1 模型 live**。verify 830 → **854 PASS**（§61 sweep 新增 24 用例） | **854（CLI）/ 61（pytest，双路一致）** |
+| **Phase 25** 死代码清理 + L1 runbook + Handoff 压缩（2026-08-31） | 用户拍板"按节奏继续"：(1) `tools/push_via_api.py` + `tools/push_phase18-23_via_api.py` + `tools/push_simplify_a1_via_api.py` + `tools/push_phase22_a1_via_api.py` × 9 个历史 push 脚本 → `tools/_archive/`（untracked 用 `mv` 而非 `git mv`）；(2) `ui/plotly_helpers.axis_rate()` 0-caller 删；(3) `pages/01_content_studio.py` 删 `from core.text_classifier import classify_coupon_in_text`（line 43 unused）+ `pages/02_copy_diagnosis.py` 删 `from adapters.llm_adapter import call_llm`（line 40 unused，走 ProviderRouter）；(4) `ui/styles.py` 加 .l1-pill/.l1-label/.l1-value/.l1-meta 4 类 CSS（之前 01 引用但未声明）；(5) black 格式化 3 文件；(6) `docs/l1-training-runbook.md` 落地（5 步流程：训练 → 切 L1 → 监控 → 自动回退 → 月报）；(7) `docs/ctr-feedback-schedule.md` 从"每周一上午"改为"每月 1 号上午手动"（用户拍板）+ §3.5 加 L1 漂移监控步骤；(8) **Handoff 4 文件压缩**（~103KB → ~32KB）。verify **854 PASS**（无回归） | **854（CLI）/ 61（pytest，双路一致）** |
 
 > 详细 bullets 全部移入 §5 决策记录（按 commit hash 可追溯）。本表为速查。
 
@@ -135,7 +138,7 @@
 
 ## 7. 教训（避坑）
 
-> 详见 [`Handoff-lessons.md`](Handoff-lessons.md)（~183 行 / 15KB，含目录）。
+> 详见 [`Handoff-lessons.md`](Handoff-lessons.md)（**8 条核心教训**，~70 行 / 5KB，含已删节索引）。
 
 ---
 
@@ -146,9 +149,12 @@
 | `C:\ideon\mcd-ai-content-platform\` | 新项目根 |
 | `C:\ideon\mcd-ai-content-platform\PRD.md` | 产品需求文档（版本号见文件头） |
 | `C:\ideon\mcd-ai-content-platform\CLAUDE.md` | AI 会话入门（必读） |
-| `C:\ideon\mcd-ai-content-platform\Handoff-decisions.md` | **Phase 1-22 决策记录详（拆出，~285 行 / 40KB）** |
-| `C:\ideon\mcd-ai-content-platform\Handoff-todo.md` | **待办与候选详（拆出，~225 行 / 18KB）** |
-| `C:\ideon\mcd-ai-content-platform\Handoff-lessons.md` | **教训全集（拆出，~183 行 / 15KB）** |
+| `C:\ideon\mcd-ai-content-platform\Handoff-decisions.md` | **Phase 1-25 决策记录详（拆出，Phase 1-10 压 1-2 行 + why；Phase 11+ 保留，~200 行 / 15KB）** |
+| `C:\ideon\mcd-ai-content-platform\Handoff-todo.md` | **待办与候选详（拆出，§6.3 候选已压摘要，~160 行 / 7.5KB）** |
+| `C:\ideon\mcd-ai-content-platform\Handoff-lessons.md` | **教训全集（拆出，8 条核心，~70 行 / 5KB）** |
+| `C:\ideon\mcd-ai-content-platform\docs\l1-training-runbook.md` | **L1 LightGBM 训练与运维 Runbook（5 步流程：训练 → 切 L1 → 监控 → 自动回退 → 月报；责任人=用户，月度手动）** |
+| `C:\ideon\mcd-ai-content-platform\tools\_archive\` | **历史 push 脚本归档（push_via_api.py / push_phase18-23_via_api.py / push_simplify_a1_via_api.py / push_phase22_a1_via_api.py ×9，Phase 25 mv 不 git mv）** |
+| `C:\ideon\mcd-ai-content-platform\docs\ctr-feedback-schedule.md` | **CTR 校准触发条件（每月 1 号上午手动跑 calibrate_baseline.py）+ §3.5 L1 漂移监控步骤** |
 | `C:\ideon\mcd-ai-content-platform\data\ctr_baseline.json` | CTR 基准 **7 维**（channel/audience/coupon/stage/scene/plan_type/owner） |
 | `C:\ideon\mcd-ai-content-platform\data\records.db` | 生成记录 SQLite（自动建） |
 | `C:\ideon\mcd-ai-content-platform\data\feedback.db` | 真实 CTR 回流 SQLite（Phase 5 P1） |
@@ -182,7 +188,7 @@
    - 决策背景 → `Handoff-decisions.md`（Phase 1-22 详，按 Phase 编号搜）
    - 历史教训 → `Handoff-lessons.md`（按目录/关键词搜）
    - 待办与候选 → `Handoff-todo.md`（§6.2 待确认 + §6.3 候选）
-6. 当前是 **Phase 22 B/C/D 完成 + Phase 23 安全加固 + Phase 24 全量 sweep**（2026-08-28）
+6. 当前是 **Phase 22 B/C/D 完成 + Phase 23 安全加固 + Phase 24 全量 sweep + Phase 25 死代码清理/L1 runbook/Handoff 压缩**（2026-08-28 → 2026-08-31）
 
 ---
 
@@ -194,3 +200,4 @@
 - [x] 关键改动进 commit（如 git 化）
 - [x] UI 无 emoji，沟通全中文（Phase 21 清理 7 处 page_icon/inline emoji，CLAUDE.md §9 红线合规）
 - [x] Phase 18-22 + Phase 23 + Phase 24 Handoff §5/§6.0/§6.1/§6.2/§8/§9/§10 同步（Critical-1/2 安全加固 + 3 处小修 + 全量 smoke sweep；L1 模型首次确认 live，l1_model mode 真能跑）
+- [x] **Phase 25 Handoff 同步**（2026-08-31）：§6.0 加 Phase 25 + Handoff 压缩 2 行；§6.1 Phase 25 行；§7 lessons 文件大小更新；§8 加 l1-training-runbook.md + tools/_archive/ + ctr-feedback-schedule.md；§10 self-check 加 Phase 25；Handoff 4 文件总 ~103KB → ~32KB

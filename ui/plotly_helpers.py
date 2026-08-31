@@ -2,28 +2,11 @@
 r"""
 ui/plotly_helpers.py — Plotly 辅助函数
 
-复用自 C:\ideon\mcd-copy-analyzer\config.py 的 axis_rate 函数
-新项目不直接 import 旧项目，在此独立维护
-
-Phase 0：仅 axis_rate 基础函数
-Phase 2+：按需扩展（color sequences / themes / figure helpers）
+仅保留 `rate_value`（table/text 用）。`axis_rate`（Plotly 轴用）于 2026-08-31 清死代码：
+项目未启用 Plotly，零调用方。`theme_tokens.py` 的 `PLOTLY_*` 同列待清理（不在本文件范围）。
 """
 
 from __future__ import annotations
-
-
-def axis_rate(axis, decimals: int = 2) -> None:
-    """
-    把 Plotly y/x 轴的 0.0355 格式化成 3.55% 显示。
-
-    用法：
-        fig.update_yaxes(axis_rate(fig.yaxis))
-    或：
-        axis_rate(fig.layout.yaxis)
-
-    复用自 mcd-copy-analyzer/config.py:axis_rate
-    """
-    axis.tickformat = f".{decimals}%"
 
 
 def rate_value(rate: float, decimals: int = 2) -> str:

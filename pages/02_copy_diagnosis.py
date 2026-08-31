@@ -29,26 +29,31 @@ from typing import Optional
 import streamlit as st
 
 from core.schemas import (
-    CHANNELS, RuleResult, PredictionResult,
-    SEVERITY_FAIL, SEVERITY_WARN, SEVERITY_PASS,
+    CHANNELS,
+    RuleResult,
+    PredictionResult,
+    SEVERITY_FAIL,
+    SEVERITY_WARN,
+    SEVERITY_PASS,
 )
 from services.rule_engine import load_rules, check_one
 from services.copy_analysis_service import diagnose
 from services.similarity_service import find_similar, summarize_similar
 from services.ctr_prediction_service import predict_one
 from prompts import copy_rewrite
-from adapters.llm_adapter import call_llm
 from ui.llm_status import render_banner
 from ui.notice import render_advanced_notice
 from ui.plotly_helpers import rate_value
 from ui.page_chrome import page_setup
 
-
 # ============================================================
 # Page config
 # ============================================================
 
-page_setup("02 文案诊断", "单条文案诊断 · 本地规则 · 词语表现 · 历史相似 · CTR 入口 B · AI 改写")
+page_setup(
+    "02 文案诊断",
+    "单条文案诊断 · 本地规则 · 词语表现 · 历史相似 · CTR 入口 B · AI 改写",
+)
 
 # 进阶能力 banner（决策文档 Demo 范围 §2）
 render_advanced_notice()
@@ -66,14 +71,14 @@ def _init_state():
         "diag_body": "",
         "diag_channel": "APP Push",
         "diag_action": "regen",
-        "diag_rule": None,           # RuleResult
-        "diag_diagnose": None,       # dict
+        "diag_rule": None,  # RuleResult
+        "diag_diagnose": None,  # dict
         "diag_similar_summary": {},
         "diag_similar_df": None,
-        "diag_ctr": None,            # PredictionResult
-        "diag_rewrites": [],         # list[dict]
+        "diag_ctr": None,  # PredictionResult
+        "diag_rewrites": [],  # list[dict]
         "diag_rewrite_error": "",
-        "diag_signatures": "",       # 上次评估签名（字段变更检测）
+        "diag_signatures": "",  # 上次评估签名（字段变更检测）
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -115,7 +120,8 @@ def _render_input():
 
     with st.form("diag_input", clear_on_submit=False):
         channel = st.selectbox(
-            "投放渠道 *", CHANNELS,
+            "投放渠道 *",
+            CHANNELS,
             index=CHANNELS.index(cur_channel) if cur_channel in CHANNELS else 0,
         )
         title = st.text_input(
@@ -135,7 +141,9 @@ def _render_input():
         col1, col2 = st.columns([1, 4])
         with col1:
             submitted = st.form_submit_button(
-                "开始诊断", type="primary", use_container_width=True,
+                "开始诊断",
+                type="primary",
+                use_container_width=True,
             )
         with col2:
             action = st.selectbox(
@@ -185,7 +193,10 @@ def _run_diagnosis():
     # 4. CTR 入口 B
     ctr_mode = "demo"  # 默认 demo；Phase 5 接 LLM 时按环境变量切
     st.session_state.diag_ctr = predict_one(
-        title=title, body=body, channel=channel, mode=ctr_mode,
+        title=title,
+        body=body,
+        channel=channel,
+        mode=ctr_mode,
     )
 
     # 5. 清空改写
@@ -207,14 +218,15 @@ def _render_left_column():
 
     # 规则总览
     status_label = {"pass": "全部通过", "warn": "有提醒", "fail": "存在阻断"}.get(
-        rule.status, rule.status,
+        rule.status,
+        rule.status,
     )
     st.markdown(
         f'<div class="kpi-tile">'
         f'<div class="label">规则状态</div>'
         f'<div class="value">{status_label}</div>'
         f'<div class="sub">通过 {len(rule.passes)} / 提醒 {len(rule.warns)} / 阻断 {len(rule.fails)}</div>'
-        f'</div>',
+        f"</div>",
         unsafe_allow_html=True,
     )
     if rule.has_blocking:
@@ -233,7 +245,7 @@ def _render_left_column():
         sug = f"<br><small>建议：{it.suggestion}</small>" if it.suggestion else ""
         st.markdown(
             f'<div class="{cls}"><b>[{it.severity.upper()}]</b> '
-            f'<b>{it.category}</b>：{it.message}{sug}</div>',
+            f"<b>{it.category}</b>：{it.message}{sug}</div>",
             unsafe_allow_html=True,
         )
 
@@ -251,7 +263,7 @@ def _render_left_column():
             f'<div class="kpi-tile">'
             f'<div class="label">文案评分</div>'
             f'<div class="value">{score} / 100 · {grade}</div>'
-            f'</div>',
+            f"</div>",
             unsafe_allow_html=True,
         )
 
@@ -305,6 +317,7 @@ def _render_channel_preview(channel: str, title: str, body: str):
     # 进 unsafe_allow_html 前必须 html.escape。原始长度用于短信分段统计，
     # 避免 < > 等被 escape 后长度变长导致段数算多。
     from html import escape as _esc
+
     body_len_raw = len(body)
     show_title = _esc(title) if title else "（无标题）"
     body = _esc(body)
@@ -317,7 +330,7 @@ def _render_channel_preview(channel: str, title: str, body: str):
             f'<div class="pv-title">{show_title}</div>'
             f'<div class="pv-body">{body}</div>'
             f'<div class="pv-meta">APP Push · 点击查看</div>'
-            f'</div>'
+            f"</div>"
         )
     elif channel == "企微1v1":
         preview_html = (
@@ -325,7 +338,7 @@ def _render_channel_preview(channel: str, title: str, body: str):
             f'<div style="font-size:0.78em;opacity:0.6;margin-bottom:0.4rem;">麦当劳客服 · 现在</div>'
             f'<div class="pv-body">{body}</div>'
             f'<div class="pv-meta">企微1v1 · 立即查看</div>'
-            f'</div>'
+            f"</div>"
         )
     elif channel == "短信":
         seg = max(1, (body_len_raw + 69) // 70)
@@ -334,7 +347,7 @@ def _render_channel_preview(channel: str, title: str, body: str):
             f'<div style="font-size:0.78em;opacity:0.55;margin-bottom:0.4rem;">106xxxxxxxx</div>'
             f'<div class="pv-body">{body}</div>'
             f'<div class="pv-meta">短信 · {body_len_raw} 字 / {seg} 段</div>'
-            f'</div>'
+            f"</div>"
         )
     else:
         preview_html = '<div class="warning-banner">该渠道预览待实现</div>'
@@ -363,7 +376,11 @@ def _render_ctr_card(ctr: Optional[PredictionResult]):
         parts.append(f"**预测 CTR**：{rate_value(ctr.pred_ctr)}")
     if ctr.baseline_ctr is not None:
         parts.append(f"**历史基准**：{rate_value(ctr.baseline_ctr)}")
-    if ctr.pred_ctr is not None and ctr.baseline_ctr is not None and ctr.baseline_ctr > 0:
+    if (
+        ctr.pred_ctr is not None
+        and ctr.baseline_ctr is not None
+        and ctr.baseline_ctr > 0
+    ):
         diff_pp = (ctr.pred_ctr - ctr.baseline_ctr) * 100
         sign = "+" if diff_pp >= 0 else ""
         parts.append(f"**相对基准**：{sign}{diff_pp:.2f} 个百分点")
@@ -374,8 +391,8 @@ def _render_ctr_card(ctr: Optional[PredictionResult]):
     st.markdown(
         f'<div class="kpi-tile">'
         f'<div class="label">状态：{ctr.label}</div>'
-        + "".join(f'<div>{p}</div>' for p in parts)
-        + '</div>',
+        + "".join(f"<div>{p}</div>" for p in parts)
+        + "</div>",
         unsafe_allow_html=True,
     )
     if ctr.suggestion:
@@ -409,14 +426,18 @@ def _render_right_column():
             f'<div class="label">相似 Plan 数</div>'
             f'<div class="value">{sim_count}</div>'
             f'<div class="sub">平均 CTR：{avg_ctr_html}</div>'
-            f'</div>',
+            f"</div>",
             unsafe_allow_html=True,
         )
         df = st.session_state.diag_similar_df
         if df is not None and not df.empty:
-            display_cols = [c for c in ("title", "body", "ctr", "similarity") if c in df.columns]
+            display_cols = [
+                c for c in ("title", "body", "ctr", "similarity") if c in df.columns
+            ]
             if display_cols:
-                st.dataframe(df[display_cols].head(3), use_container_width=True, hide_index=True)
+                st.dataframe(
+                    df[display_cols].head(3), use_container_width=True, hide_index=True
+                )
 
     st.markdown("---")
 
@@ -445,9 +466,13 @@ def _render_right_column():
             f'<div class="cand-header">改写 {i}</div>'
             f'<div class="cand-title">{t or "（无标题）"}</div>'
             f'<div class="cand-body">{b}</div>'
-            + (f'<div class="cand-body" style="margin-top:0.4rem;font-size:0.82em;'
-               f'color:#888;">理由：{reason}</div>' if reason else "")
-            + '</div>',
+            + (
+                f'<div class="cand-body" style="margin-top:0.4rem;font-size:0.82em;'
+                f'color:#888;">理由：{reason}</div>'
+                if reason
+                else ""
+            )
+            + "</div>",
             unsafe_allow_html=True,
         )
 
@@ -474,6 +499,7 @@ def _run_rewrite():
     # 导致 router 永远为 None、页面永远走 Demo。改成走 ui.llm_status 真实判断。
     from core.llm_gateway import ProviderRouter
     from ui.llm_status import load_config
+
     router = None
     try:
         cfg = load_config()  # {provider, base_url, model, api_key} dict
@@ -505,12 +531,13 @@ def _run_rewrite():
 
     # LLM 模式
     user_prompt = copy_rewrite.build_user_prompt(
-        action=action, title=title, body=body,
-        channel_max=channel_max, extra_context="",
+        action=action,
+        title=title,
+        body=body,
+        channel_max=channel_max,
+        extra_context="",
     )
-    full_prompt = (
-        f"{copy_rewrite.get_system_prompt(action)}\n\n{user_prompt}"
-    )
+    full_prompt = f"{copy_rewrite.get_system_prompt(action)}\n\n{user_prompt}"
     raw = router.call(full_prompt)
     parsed = copy_rewrite.parse_response(raw)
     if "error" in parsed:
