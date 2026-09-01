@@ -1,4 +1,4 @@
-﻿@echo off
+@echo off
 REM ============================================================
 REM MCD AI Content Platform - Setup and Run v6 (FastAPI)
 REM Phase 26 (2026-08-31): Streamlit -> FastAPI + Jinja2 + HTMX
