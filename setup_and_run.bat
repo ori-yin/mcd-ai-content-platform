@@ -1,9 +1,10 @@
-@echo off
+﻿@echo off
 REM ============================================================
 REM MCD AI Content Platform - Setup and Run v6 (FastAPI)
-REM Framework: FastAPI + Jinja2 + HTMX
+REM Phase 26 (2026-08-31): Streamlit -> FastAPI + Jinja2 + HTMX
 REM Default port: 8530
-REM Phase 26 (2026-08-31)
+REM Note: keep this file ASCII (no Chinese). Windows cmd default
+REM GBK parser will truncate UTF-8 first byte and break echo/pause.
 REM ============================================================
 
 setlocal enabledelayedexpansion
@@ -27,7 +28,7 @@ if errorlevel 1 (
 for /f "tokens=2" %%i in ('python --version') do set PYVER=%%i
 echo [OK] Python !PYVER!
 
-REM Change to script directory (项目根)
+REM Change to script directory (project root)
 cd /d "%~dp0"
 echo [OK] Working dir: %CD%
 
