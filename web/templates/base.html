@@ -75,18 +75,7 @@
 
       {# 顶部右侧：LLM 状态 + 用户头像 #}
       <div class="top-actions">
-        <div class="model-select">
-          <div class="status">
-            <span class="dot {% if llm_configured %}on{% else %}off{% endif %}"></span>
-            {% if llm_configured %}
-              LLM 已连接
-            {% else %}
-              LLM 未配置
-            {% endif %}
-          </div>
-          <span>{{ llm_model }}</span>
-          <span class="chev">⌄</span>
-        </div>
+        {% include 'partials/llm_pill.html' %}
         <div class="avatar">A</div>
       </div>
     </header>
@@ -106,6 +95,9 @@
   </main>
 
 </div>
+
+{# LLM 配置 modal 容器（点 pill → HTMX GET 把 partial 塞这里） #}
+<div id="settings-modal-slot"></div>
 
 </body>
 </html>

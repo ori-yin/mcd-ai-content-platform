@@ -1,0 +1,20 @@
+{# partials/llm_pill.html — 右上角 LLM 状态 pill（可点击 → 弹配置 modal）
+
+依赖：llm_configured（bool） + llm_model（str）
+#}
+<div id="llm-pill-slot" class="model-select"
+     hx-get="/api/settings/llm-modal"
+     hx-target="#settings-modal-slot"
+     hx-swap="innerHTML"
+     style="cursor:pointer;">
+  <div class="status">
+    <span class="dot {% if llm_configured %}on{% else %}off{% endif %}"></span>
+    {% if llm_configured %}
+      LLM 已连接
+    {% else %}
+      LLM 未配置
+    {% endif %}
+  </div>
+  <span>{{ llm_model }}</span>
+  <span class="chev">⌄</span>
+</div>

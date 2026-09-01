@@ -1,0 +1,68 @@
+{# partials/settings_llm_modal.html — LLM 配置 modal
+
+依赖：form（dict: provider/base_url/model/api_key）+ masked_key（str）
+      errors（list[str]）+ success（bool）
+#}
+<div class="modal-mask" onclick="if(event.target===this) document.getElementById('settings-modal-slot').innerHTML=''">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span>LLM 配置</span>
+      <span class="modal-close"
+            onclick="document.getElementById('settings-modal-slot').innerHTML=''">&times;</span>
+    </div>
+
+    {% if success %}
+    <div class="success-banner">
+      连接成功，配置已写入 config/llm_settings.yaml。可继续编辑或关闭。
+    </div>
+    {% endif %}
+
+    {% if errors %}
+    <div class="warning-banner">
+      {% for e in errors %}<div>{{ e }}</div>{% endfor %}
+    </div>
+    {% endif %}
+
+    <form hx-post="/api/settings/llm"
+          hx-target="#settings-modal-slot"
+          hx-swap="innerHTML">
+      <label>
+        <span>provider</span>
+        <input type="text" name="provider"
+               value="{{ form.provider or '' }}"
+               placeholder="openai / siliconflow / qianfan / internal-llm" />
+      </label>
+      <label>
+        <span>base_url</span>
+        <input type="text" name="base_url"
+               value="{{ form.base_url or '' }}"
+               placeholder="https://llm.internal.mcd.com/v1" />
+      </label>
+      <label>
+        <span>model</span>
+        <input type="text" name="model"
+               value="{{ form.model or '' }}"
+               placeholder="mcd-llm-v1 / gpt-4o-mini" />
+      </label>
+      <label>
+        <span>api_key</span>
+        <input type="text" name="api_key"
+               value="{{ form.api_key or '' }}"
+               placeholder="sk-..." />
+        {% if masked_key and not form.api_key %}
+        <span class="hint">当前: {{ masked_key }}</span>
+        {% endif %}
+      </label>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary"
+                onclick="document.getElementById('settings-modal-slot').innerHTML=''">取消</button>
+        <button type="submit" class="btn-primary">测试连接并保存</button>
+      </div>
+    </form>
+
+    <div class="modal-foot">
+      填 4 字段后保存会调一次 chat.completions 验证；失败会回显错。
+    </div>
+  </div>
+</div>

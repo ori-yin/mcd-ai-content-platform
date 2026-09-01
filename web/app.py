@@ -1145,6 +1145,123 @@ async def api_05_upload(
 
 
 # ============================================================
+# /api/settings/llm  配置 + 测试连接
+# ============================================================
+def _mask_api_key(api_key: str) -> str:
+    """api_key 脱敏：前 4 + **** + 后 4。短于 8 字符全 ****。"""
+    if not api_key:
+        return ""
+    if len(api_key) < 8:
+        return "****"
+    return api_key[:4] + "****" + api_key[-4:]
+
+
+def _write_llm_yaml(cfg: dict) -> None:
+    """写 4 字段到 llm_settings.yaml + 清 lru_cache。"""
+    from ui.llm_status import CONFIG_PATH, _load_yaml
+    body = (
+        "# LLM 配置（页面右上角 pill 在线配置后保存）\n"
+        "# 4 字段全部非空启用 LLM 模式，否则走 Demo 占位\n"
+        f'provider: "{cfg["provider"]}"\n'
+        f'base_url: "{cfg["base_url"]}"\n'
+        f'model: "{cfg["model"]}"\n'
+        f'api_key: "{cfg["api_key"]}"\n'
+    )
+    CONFIG_PATH.write_text(body, encoding="utf-8")
+    _load_yaml.cache_clear()
+
+
+@app.get("/api/settings/llm-modal", response_class=HTMLResponse)
+async def api_settings_llm_modal(request: Request):
+    """点右上角 pill → 弹 modal。"""
+    cfg = load_config() or {}
+    return templates.TemplateResponse(
+        request,
+        "partials/settings_llm_modal.html",
+        {"form": {"provider": cfg.get("provider", ""),
+                  "base_url": cfg.get("base_url", ""),
+                  "model": cfg.get("model", ""),
+                  "api_key": cfg.get("api_key", "")},
+         "masked_key": _mask_api_key(cfg.get("api_key", "")),
+         "errors": [],
+         "success": False},
+    )
+
+
+@app.post("/api/settings/llm", response_class=HTMLResponse)
+async def api_settings_llm_save(request: Request):
+    """保存 + 测试连接。返回 modal（含错）或更新后的 pill。"""
+    form = await request.form()
+    provider = (form.get("provider") or "").strip()
+    base_url = (form.get("base_url") or "").strip()
+    model = (form.get("model") or "").strip()
+    api_key = (form.get("api_key") or "").strip()
+    form_data = {"provider": provider, "base_url": base_url,
+                  "model": model, "api_key": api_key}
+
+    errors = []
+    if not provider: errors.append("provider 必填")
+    if not base_url: errors.append("base_url 必填")
+    if not model: errors.append("model 必填")
+    if not api_key: errors.append("api_key 必填")
+
+    if errors:
+        return templates.TemplateResponse(
+            request,
+            "partials/settings_llm_modal.html",
+            {"form": form_data,
+             "masked_key": _mask_api_key(api_key),
+             "errors": errors, "success": False},
+            status_code=422,
+        )
+
+    # 测试连接：openai SDK 直接调（绕过 ProviderRouter 白名单限制，
+    # 内网 LLM 通常是 openai 协议，base_url 自定义即可）
+    try:
+        import openai
+        client = openai.OpenAI(base_url=base_url, api_key=api_key, timeout=30)
+        client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": "ping"}],
+            max_tokens=10,
+        )
+    except Exception as e:
+        msg = str(e)[:200] or type(e).__name__
+        return templates.TemplateResponse(
+            request,
+            "partials/settings_llm_modal.html",
+            {"form": form_data,
+             "masked_key": _mask_api_key(api_key),
+             "errors": [f"连接失败: {msg}"], "success": False},
+            status_code=400,
+        )
+
+    # 写 yaml + 清缓存
+    _write_llm_yaml(form_data)
+    status = get_llm_status()
+
+    # 返回成功 modal（让用户手动关闭）+ 更新 pill 用 hx-swap-oob
+    modal_html = templates.TemplateResponse(
+        request,
+        "partials/settings_llm_modal.html",
+        {"form": form_data,
+         "masked_key": _mask_api_key(api_key),
+         "errors": [], "success": True},
+    ).body.decode("utf-8")
+    pill_html = templates.TemplateResponse(
+        request,
+        "partials/llm_pill.html",
+        {"llm_configured": status["configured"],
+         "llm_model": status["model"]},
+    ).body.decode("utf-8")
+    # 用 hx-swap-oob 让 pill 原地更新
+    return HTMLResponse(
+        f'<div id="settings-modal-slot">{modal_html}</div>'
+        f'<div id="llm-pill-slot" hx-swap-oob="outerHTML">{pill_html}</div>'
+    )
+
+
+# ============================================================
 # /health
 # ============================================================
 @app.get("/health")
