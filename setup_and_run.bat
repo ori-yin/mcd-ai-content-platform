@@ -1,8 +1,9 @@
 @echo off
 REM ============================================================
-REM MCD AI Content Platform - Setup and Run v5 (minimal)
-REM Default port: 8510
-REM Skip venv (system Python already has deps), use python -m streamlit
+REM MCD AI Content Platform - Setup and Run v6 (FastAPI)
+REM Framework: FastAPI + Jinja2 + HTMX
+REM Default port: 8530
+REM Phase 26 (2026-08-31)
 REM ============================================================
 
 setlocal enabledelayedexpansion
@@ -11,7 +12,8 @@ title MCD AI Content Platform - Setup and Run
 echo.
 echo ============================================================
 echo   MCD AI Content Platform - Setup and Run
-echo   Default port: 8510
+echo   Framework: FastAPI + Jinja2 + HTMX (Phase 26)
+echo   Default port: 8530
 echo ============================================================
 echo.
 
@@ -25,28 +27,28 @@ if errorlevel 1 (
 for /f "tokens=2" %%i in ('python --version') do set PYVER=%%i
 echo [OK] Python !PYVER!
 
-REM Change to script directory
+REM Change to script directory (项目根)
 cd /d "%~dp0"
 echo [OK] Working dir: %CD%
 
-REM Quick dep check (system Python already has deps from previous run)
-echo [INFO] Checking streamlit...
-python -c "import streamlit" >nul 2>&1
+REM Quick dep check (FastAPI + uvicorn + jinja2 + multipart)
+echo [INFO] Checking FastAPI deps...
+python -c "import fastapi, uvicorn, jinja2, multipart" >nul 2>&1
 if errorlevel 1 (
-    echo [WARN] streamlit not in system Python. Installing...
-    python -m pip install streamlit pandas openpyxl jieba openai plotly pydantic pyyaml -i https://mirrors.aliyun.com/pypi/simple/
+    echo [WARN] FastAPI deps missing. Installing from web\requirements.txt...
+    python -m pip install -r web\requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
     if errorlevel 1 (
         echo [ERROR] Install failed
         pause
         exit /b 1
     )
 ) else (
-    echo [OK] streamlit ready
+    echo [OK] FastAPI deps ready
 )
 
 REM Set port
-set PORT=8510
-if not "%STREAMLIT_PORT%"=="" set PORT=%STREAMLIT_PORT%
+set PORT=8530
+if not "%FASTAPI_PORT%"=="" set PORT=%FASTAPI_PORT%
 echo [INFO] Using port %PORT%
 
 REM Create .env if missing
@@ -62,8 +64,7 @@ if errorlevel 1 (
     echo [WARN] Port %PORT% in use. Will try anyway.
 )
 
-REM Start streamlit (use python -m to bypass PATH issues)
-REM Streamlit --server.headless=false 自动开浏览器，不要再用 explorer.exe 否则会双 tab
+REM Start FastAPI (cd web + uvicorn)
 echo.
 echo ============================================================
 echo   Starting on port %PORT%
@@ -71,11 +72,12 @@ echo   URL: http://localhost:%PORT%
 echo ============================================================
 echo.
 
-python -m streamlit run app.py --server.port=%PORT% --server.headless=false --browser.gatherUsageStats=false
+cd /d "%~dp0web"
+python -m uvicorn app:app --host 0.0.0.0 --port %PORT%
 
 echo.
 echo ============================================================
-echo   Streamlit exited.
+echo   FastAPI exited.
 echo ============================================================
 pause
 

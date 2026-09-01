@@ -18,6 +18,14 @@ import sys
 import os
 from pathlib import Path
 
+# Windows Git Bash / PowerShell 默认 GBK，print emoji 触发 UnicodeEncodeError
+# （memory feedback-powershell-encoding 教训）
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -1276,31 +1284,23 @@ def test_phase3_imports():
 # ============================================================
 # 30) Phase 3.2 pages import sanity
 # ============================================================
-_section("30) pages import sanity")
+_section("30) pages import sanity（Phase 26 改为 _deprecated 静态检查）")
 
 def test_pages_import():
-    import importlib
-
-    for page in ("pages.00 首页", "pages.01 内容工坊",
-                 "pages.02 文案诊断", "pages.03 批量评估",
-                 "pages.04 历史洞察"):
-        try:
-            importlib.import_module(page)
-            _check(f"{page} import 成功", True)
-        except Exception as e:
-            _check(f"{page} import 成功", False, str(e))
-
-    # app.py 是入口（无 st.navigation / st.Page，避免自引用递归；pages/ 自动发现）
-    app_path = ROOT / "app.py"
-    try:
-        content = app_path.read_text(encoding="utf-8")
-        # 必须含 set_page_config + inject_base_css；不能含自引用 st.Page("app.py")
-        _check("app.py 含 set_page_config", "set_page_config" in content)
-        _check("app.py 含 inject_base_css", "inject_base_css" in content)
-        _check("app.py 不含 st.Page('app.py', ...) 自引用",
-               'st.Page("app.py"' not in content and "st.Page('app.py'" not in content)
-    except Exception as e:
-        _check("app.py 入口检查", False, str(e))
+    """Phase 26 删了根 app.py + pages/*.py（→ pages/_deprecated/）。
+    这里改为静态检查 _deprecated 下的历史快照是否含 inject_base_css。
+    """
+    import os
+    pages_dir = ROOT / "pages" / "_deprecated"
+    for fname in ("00 首页.py", "01 内容工坊.py", "02 文案诊断.py",
+                  "03 批量评估.py", "04 历史洞察.py", "05 真实结果回流.py"):
+        path = pages_dir / fname
+        _check(f"pages/_deprecated/{fname} 存在", path.exists())
+        # 只 00 首页.py 调用 inject_base_css，其他页面共享 00 注入的 CSS
+        if path.exists() and fname == "00 首页.py":
+            content = path.read_text(encoding="utf-8")
+            _check(f"{fname} 含 inject_base_css",
+                   "inject_base_css" in content)
 
 
 # ============================================================
@@ -2132,7 +2132,7 @@ def test_phase_a1_product_benefit_split():
     _check("Demo 权益单空 body 含'赠品'", any("赠品" in c.body for c in cs_bt_only))
 
     # ── 5) pages/01_content_studio 源码静态检查 ──────────────
-    src_studio = open("pages/01 内容工坊.py", encoding="utf-8").read()
+    src_studio = open("pages/_deprecated/01 内容工坊.py", encoding="utf-8").read()
     _check("content_studio 引用 core.product_benefit 模块",
            "from core.product_benefit import" in src_studio)
     _check("content_studio 调用 get_product_categories",
@@ -2183,11 +2183,11 @@ def test_phase6_p1_nav_and_notice():
     _check(".home-section-advanced CSS 已加", ".home-section-advanced" in styles_src)
 
     # ── 3) 4 个进阶页：02/03 顶部仅 advanced, 04/05 顶部 advanced + ctr ─
-    src02 = open("pages/02 文案诊断.py", encoding="utf-8").read()
-    src03 = open("pages/03 批量评估.py", encoding="utf-8").read()
-    src04 = open("pages/04 历史洞察.py", encoding="utf-8").read()
-    src05 = open("pages/05 真实结果回流.py", encoding="utf-8").read()
-    home  = open("pages/00 首页.py", encoding="utf-8").read()
+    src02 = open("pages/_deprecated/02 文案诊断.py", encoding="utf-8").read()
+    src03 = open("pages/_deprecated/03 批量评估.py", encoding="utf-8").read()
+    src04 = open("pages/_deprecated/04 历史洞察.py", encoding="utf-8").read()
+    src05 = open("pages/_deprecated/05 真实结果回流.py", encoding="utf-8").read()
+    home  = open("pages/_deprecated/00 首页.py", encoding="utf-8").read()
 
     for name, src in [("02", src02), ("03", src03), ("04", src04), ("05", src05)]:
         _check(f"{name} import render_advanced_notice",
@@ -2213,7 +2213,7 @@ def test_phase6_p1_nav_and_notice():
            "01_content_studio" in home)
 
     # ── 5) 01_content_studio 推荐结论已有免责话术（保留原有）──
-    src01 = open("pages/01 内容工坊.py", encoding="utf-8").read()
+    src01 = open("pages/_deprecated/01 内容工坊.py", encoding="utf-8").read()
     _check("01 推荐结论含「不代表正式投放承诺」免责话术",
            "不代表正式投放承诺" in src01)
 
@@ -3311,7 +3311,7 @@ def test_phase17_quality_cleanup():
 
     # ── 7) 02 文案诊断.py 不再有 import core.config（注释里提到历史是 OK）──
     diag_src_path = os.path.join(
-        os.path.dirname(__file__), "..", "pages", "02 文案诊断.py")
+        os.path.dirname(__file__), "..", "pages", "_deprecated", "02 文案诊断.py")
     diag_src_path = os.path.normpath(diag_src_path)
     with open(diag_src_path, encoding="utf-8") as f:
         diag_src = f.read()
@@ -3327,13 +3327,7 @@ def test_phase17_quality_cleanup():
     _check("02 文案诊断.py 改用 load_config",
            "ui.llm_status import" in diag_src and "load_config" in diag_src)
 
-    # ── 8) app.py / core/schemas.py / pages/00 首页.py 注释对齐 Phase 16.5 ──
-    app_src = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
-                   encoding="utf-8").read()
-    _check("app.py 页面清单去 'Phase 4 占位'",
-           "Phase 4 占位" not in app_src)
-    _check("app.py 页面清单含 'Phase 16.5'",
-           "Phase 16.5" in app_src)
+    # ── 8) core/schemas.py 注释对齐 Phase 16.5（Phase 26 删了根 app.py / pages/）──
 
     schema_src = open(os.path.join(os.path.dirname(__file__), "..", "core",
                                    "schemas.py"), encoding="utf-8").read()
@@ -3379,7 +3373,7 @@ def test_phase17_weighted_ctr_utility():
     # 用 grep 统计还剩多少处 "click / reach * 100" 公式
     r1 = subprocess.run(
         ["grep", "-rn", "round(click / reach * 100",
-         "services/", "repositories/", "pages/04 历史洞察.py"],
+         "services/", "repositories/", "pages/_deprecated/04 历史洞察.py"],
         capture_output=True, text=True,
     )
     inline_remaining = len([l for l in r1.stdout.splitlines() if l.strip()])
@@ -3514,8 +3508,8 @@ def test_phase17_6_dead_code():
     import inspect
     import os
 
-    # ── 1) pages/04 历史洞察.py 不再有 __import__("io") ──
-    p04 = os.path.join(os.path.dirname(__file__), "..", "pages", "04 历史洞察.py")
+    # ── 1) pages/04 历史洞察.py 不再有 __import__("io")（Phase 26 改读 _deprecated）──
+    p04 = os.path.join(os.path.dirname(__file__), "..", "pages", "_deprecated", "04 历史洞察.py")
     src04 = open(p04, encoding="utf-8").read()
     _check("04 历史洞察.py 删 __import__('io')",
            "__import__(\"io\")" not in src04 and "__import__('io')" not in src04)
@@ -3525,7 +3519,7 @@ def test_phase17_6_dead_code():
            "_cached_parse_insights_file" in src04)
 
     # ── 2) pages/05 真实结果回流.py 含 _cached_recent_feedback / _cached_generation_records_list ──
-    p05 = os.path.join(os.path.dirname(__file__), "..", "pages", "05 真实结果回流.py")
+    p05 = os.path.join(os.path.dirname(__file__), "..", "pages", "_deprecated", "05 真实结果回流.py")
     src05 = open(p05, encoding="utf-8").read()
     _check("05 真实结果回流.py 含 _cached_recent_feedback",
            "_cached_recent_feedback" in src05)
@@ -3533,7 +3527,7 @@ def test_phase17_6_dead_code():
            "_cached_generation_records_list" in src05)
 
     # ── 3) pages/01 内容工坊.py 不再有 "saved_id": None 死 state ──
-    p01 = os.path.join(os.path.dirname(__file__), "..", "pages", "01 内容工坊.py")
+    p01 = os.path.join(os.path.dirname(__file__), "..", "pages", "_deprecated", "01 内容工坊.py")
     src01 = open(p01, encoding="utf-8").read()
     _check("01 内容工坊.py 删 'saved_id': None（Phase 13 残留）",
            "\"saved_id\"" not in src01 and "'saved_id'" not in src01)
@@ -3948,7 +3942,7 @@ def test_phase19_l1_predictor():
            "微信小程序订阅消息" not in L1_SUPPORTED_CHANNELS)
 
     # ── 6) UI 集成：sidebar checkbox + _render_ctr_card 接受 l1_ctr 参数 ──
-    studio_page = ROOT / "pages" / "01 内容工坊.py"
+    studio_page = ROOT / "pages" / "_deprecated" / "01 内容工坊.py"
     if studio_page.exists():
         src = studio_page.read_text(encoding="utf-8")
         _check("01 内容工坊.py 含 show_l1 checkbox",
@@ -4041,7 +4035,7 @@ def test_phase20_l1_main_and_drift():
             pass
 
     # ── 4) UI sidebar 模式选择器 ──
-    studio_page = ROOT / "pages" / "01 内容工坊.py"
+    studio_page = ROOT / "pages" / "_deprecated" / "01 内容工坊.py"
     src = studio_page.read_text(encoding="utf-8")
     _check("01 内容工坊.py sidebar 含 ctr_mode selectbox",
            "ctr_mode" in src and "selectbox" in src and "CTR 主流程模式" in src)
@@ -4073,12 +4067,16 @@ def test_phase20_l1_main_and_drift():
     # ── 6) 漂移监控空 DB 优雅降级（无需写入 records.db）──
     if monitor_script.exists():
         import subprocess
+        # Windows 子进程默认 GBK，stdout 可能变 None；强制 UTF-8
+        sub_env = os.environ.copy()
+        sub_env["PYTHONIOENCODING"] = "utf-8"
+        sub_env["PYTHONUTF8"] = "1"
         out = subprocess.run(
             ["python", str(monitor_script), "--no-log"],
             capture_output=True, text=True, encoding="utf-8",
-            cwd=str(ROOT),
+            cwd=str(ROOT), env=sub_env,
         )
-        out_text = out.stdout + out.stderr
+        out_text = (out.stdout or "") + (out.stderr or "")
         _check("monitor_l1_drift.py 空 DB 优雅降级（[skip]）",
                "[skip]" in out_text or "配对数" in out_text,
                f"got: {out_text[:200]}")
@@ -4364,12 +4362,16 @@ def test_phase22_c_auto_rollback():
     # 不走 ALERT/WARN/OK 三档，但确认 --no-active-mode 不影响行为
     import subprocess
     if monitor.exists():
+        # Windows 子进程默认 GBK，stdout 可能变 None；强制 UTF-8
+        sub_env = os.environ.copy()
+        sub_env["PYTHONIOENCODING"] = "utf-8"
+        sub_env["PYTHONUTF8"] = "1"
         out = subprocess.run(
             ["python", str(monitor), "--no-log"],
             capture_output=True, text=True, encoding="utf-8",
-            cwd=str(ROOT),
+            cwd=str(ROOT), env=sub_env,
         )
-        combined = out.stdout + out.stderr
+        combined = (out.stdout or "") + (out.stderr or "")
         _check("monitor_l1_drift.py 跑一次 exit 0（空 DB skip）",
                out.returncode == 0,
                f"got returncode={out.returncode}, stderr={out.stderr[:200]}")
@@ -4481,7 +4483,7 @@ def test_phase22_d_batch_save_records():
     _check("全部无 ctr_result_type 返回 0", n_no_ctr == 0)
 
     # ── 4) pages/03 批量评估.py 含 checkbox + save 入口 ──
-    page_03 = ROOT / "pages" / "03 批量评估.py"
+    page_03 = ROOT / "pages" / "_deprecated" / "03 批量评估.py"
     _check("pages/03 批量评估.py 存在", page_03.exists())
     if page_03.exists():
         p3 = page_03.read_text(encoding="utf-8")
