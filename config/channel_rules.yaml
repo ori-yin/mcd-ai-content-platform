@@ -30,3 +30,10 @@ channels:
     require_title: false
     emoji_max: 0              # 短信不支持 emoji
     notes: "70 字单条；超长分条"
+
+  微信小程序订阅消息:
+    title_max: 20             # 订阅消息标题上限（微信官方）
+    body_max: 45              # 订阅消息正文上限（行业）
+    require_title: true
+    emoji_max: 2
+    notes: "标题≤20字/正文≤45字；订阅消息用户主动授权才送达，利益点要前置"

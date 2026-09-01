@@ -18,6 +18,24 @@ from typing import Mapping, Optional, Sequence
 import pandas as pd
 
 
+# 链式 fallback：utf-8-sig 自动去 BOM（兼容 Notepad 导出）→ 常见 GBK 兼容中文
+_CSV_ENCODINGS: tuple[str, ...] = ("utf-8-sig", "utf-8", "gbk", "gb18030")
+
+
+def _read_csv_with_encoding_fallback(file_bytes: bytes) -> pd.DataFrame:
+    """链式尝试常见编码，直到一个能 decode 为止。"""
+    last_err: Exception | None = None
+    for enc in _CSV_ENCODINGS:
+        try:
+            return pd.read_csv(BytesIO(file_bytes), encoding=enc)
+        except (UnicodeDecodeError, UnicodeError) as e:
+            last_err = e
+            continue
+    raise ValueError(
+        f"CSV 编码无法识别（已尝试 {', '.join(_CSV_ENCODINGS)}），请另存为 UTF-8 后再上传"
+    ) from last_err
+
+
 def read_table(
     file_bytes: bytes,
     filename: str = "",
@@ -32,12 +50,12 @@ def read_table(
     """
     name = (filename or "").lower()
     if name.endswith(".csv"):
-        df = pd.read_csv(BytesIO(file_bytes))
+        df = _read_csv_with_encoding_fallback(file_bytes)
     elif name.endswith((".xlsx", ".xls")):
         df = pd.read_excel(BytesIO(file_bytes))
     else:
         try:
-            df = pd.read_csv(BytesIO(file_bytes))
+            df = _read_csv_with_encoding_fallback(file_bytes)
         except Exception:
             df = pd.read_excel(BytesIO(file_bytes))
 

@@ -30,11 +30,12 @@ from core.csv_utils import read_table
 
 # 列名别名（兼容多种命名）
 _COL_ALIASES = {
-    "title":  ["标题", "title", "标题文案", "headline"],
-    "body":   ["正文", "body", "文案内容", "content", "text"],
+    "title":  ["标题", "title", "标题文案", "headline", "subject"],
+    "body":   ["正文", "body", "文案内容", "content", "text", "内容"],
     "channel": ["渠道", "channel", "投放渠道"],
     "plan_type": ["计划类型", "plan_type", "plan类型", "plantype"],
     "coupon": ["是否用券", "coupon", "用券"],
+    "workday_type": ["工作日类型", "workday_type", "workday"],
 }
 
 
@@ -96,6 +97,7 @@ def evaluate_batch(
         channel = str(r.get("channel", "") or "")
         plan_type = str(r.get("plan_type", "") or "") or None
         coupon = str(r.get("coupon", "") or "") or None
+        workday = str(r.get("workday_type", "") or "") or None
 
         out: Dict[str, Any] = {
             "row_index": i,
@@ -138,7 +140,7 @@ def evaluate_batch(
 
         try:
             ctr = predict_one(title=title, body=body, channel=channel,
-                              plan_type=plan_type, coupon=coupon, mode=ctr_mode)
+                              plan_type=plan_type, coupon=coupon, workday=workday, mode=ctr_mode)
             out["ctr_result_type"] = ctr.result_type
             out["ctr_pred"] = ctr.pred_ctr
             out["ctr_baseline"] = ctr.baseline_ctr

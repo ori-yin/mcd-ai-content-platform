@@ -113,6 +113,7 @@ def predict_one(
     channel: str,
     plan_type: Optional[str] = None,
     coupon: Optional[str] = None,
+    workday: Optional[str] = None,
     mode: str = "demo",
 ) -> PredictionResult:
     """单条文案 CTR 预测（PRD §4.0 入口 B 用）。
@@ -139,7 +140,7 @@ def predict_one(
         channel=channel,
         plan_v=plan_type if plan_type and plan_type != "未知" else None,
         coupon_v=coupon if coupon and coupon != "未知" else None,
-        workday_v=None,
+        workday_v=workday if workday in ("工作日", "非工作日") else None,
         task=tmp_task,
         candidate=tmp_cand,
     )
