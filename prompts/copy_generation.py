@@ -20,7 +20,7 @@ from __future__ import annotations
 from core.schemas import TaskInput
 
 
-VERSION = "v1.1"
+VERSION = "v1.2"
 
 
 SYSTEM_PROMPT = """你是麦当劳企微 1v1 / Push 文案顾问。基于输入的"经营任务"生成 3 条候选内容。
@@ -58,7 +58,19 @@ def build_user_prompt(task: TaskInput, channel_rules: dict) -> str:
       - 原 product_benefit 字段拆为 product_category + benefit_type 两行
       - 任一为空时该行不拼（避免 prompt 里出现"产品类别："空值）
       - 都不为空时拼 2 行（产品类别 / 权益类型）
+
+    Phase 28 · 2026-09-01：
+      - 必填 3 项（audience / channel / tone）硬拼
+      - 其余字段：值为空 或 等于 "通用" 时整行不拼（让 AI 自由发挥）
     """
+
+    def _opt(v: str) -> str:
+        """可选字段：空 或 「通用」 → ''；否则原样。"""
+        v = (v or "").strip()
+        if not v or v == "通用":
+            return ""
+        return v
+
     rules = channel_rules.get(task.channel, {})
     title_max = rules.get("title_max", 15)
     body_max = rules.get("body_max", 60)
@@ -66,27 +78,31 @@ def build_user_prompt(task: TaskInput, channel_rules: dict) -> str:
 
     parts = [
         "【经营任务】",
-        # Demo 阶段·灰态字段：空时整行不拼（避免 prompt 里出现空值行）
+        # 必填 3 项：始终硬拼（pipeline 依赖）
         f"目标人群：{task.audience}",
         f"投放渠道：{task.channel}",
-        f"活动阶段：{task.stage}",
-        f"消费场景：{task.scene}",
         f"内容语气：{task.tone}",
     ]
-    # Phase A.1：产品类别 + 权益类型（拆 2 行，便于 LLM 看清两个独立维度）
-    if task.product_category:
+    # 可选项：空或「通用」时整行不拼（让 AI 自由发挥）
+    if _opt(task.stage):
+        parts.append(f"活动阶段：{task.stage}")
+    if _opt(task.scene):
+        parts.append(f"消费场景：{task.scene}")
+    if _opt(task.product_category):
         parts.append(f"产品类别：{task.product_category}")
-    if task.benefit_type:
+    if _opt(task.benefit_type):
         parts.append(f"权益类型：{task.benefit_type}")
-    if task.objective:
+    if _opt(task.objective):
         parts.append(f"投放目标：{task.objective}")
-    if task.expected_action:
+    if _opt(task.expected_action):
         parts.append(f"期望动作：{task.expected_action}")
-    if task.plan_type and task.plan_type != "未知":
+    if _opt(task.plan_type):
         parts.append(f"Plan 类型：{task.plan_type}")
-    if task.coupon and task.coupon != "未知":
+    if _opt(task.coupon):
         parts.append(f"是否用券：{task.coupon}")
-    if task.planned_send_date:
+    if _opt(task.text_has_coupon):
+        parts.append(f"文案含券词：{task.text_has_coupon}")
+    if _opt(task.planned_send_date):
         parts.append(f"计划投放日期：{task.planned_send_date}")
     if task.extra_requirements:
         parts.append(f"额外要求：{task.extra_requirements}")

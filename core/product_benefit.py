@@ -81,5 +81,5 @@ def get_custom_label() -> str:
 
 
 def options_with_custom(values: Tuple[str, ...]) -> Tuple[str, ...]:
-    """返回 selectbox 选项元组：枚举 + 「自定义」（"自定义" 在最末）。"""
-    return tuple(values) + (CUSTOM_LABEL,)
+    """返回 selectbox 选项元组：「通用」首位 + 枚举 + 「自定义」末位（Phase 30）。"""
+    return ("通用",) + tuple(values) + (CUSTOM_LABEL,)

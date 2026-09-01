@@ -40,8 +40,8 @@
 
 <div class="subsection">
   <div class="subsection-label">AI 改写候选</div>
-  <form method="post" action="/api/02/rewrite" style="margin-bottom:12px">
-    <button type="submit" class="btn btn-primary">生成改写（{{ action }}）</button>
+  <form method="post" action="/api/diagnosis/rewrite" style="margin-bottom:12px">
+    <button type="submit" class="btn btn-dark">生成改写（{{ action }}）</button>
   </form>
 
   {% if rewrite_error %}
@@ -57,7 +57,7 @@
       <div class="cand-title">{{ rw.title or '（无标题）' }}</div>
       <div class="cand-body">{{ rw.body }}</div>
       {% if rw.reason %}
-      <div class="cand-body" style="margin-top:6px;font-size:12px;color:#888">理由：{{ rw.reason }}</div>
+      <div class="cand-meta">理由：{{ rw.reason }}</div>
       {% endif %}
     </div>
     {% endfor %}

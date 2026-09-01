@@ -227,6 +227,45 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ---
 
+### 2026-09-01 · Phase 28 必填口径改 3 项 + 「通用（不指定）」
+
+- **表单必填从 5 项砍到 3 项**（投放渠道 / 目标人群 / 内容语气），其余 9 项全部可选
+- **可选字段第一项加「通用（不指定）」默认选中**，后端 prompt 拼装 + Demo 占位候选遇此值整行跳过（让 AI 自由发挥）
+- **改 6 文件**：core/schemas.py（5 enum + REQUIRED_FIELDS 改 3 项）+ tests/verify.py（必填测试同步）+ web/templates/pages/01_内容工坊.html（重排字段顺序 + selectbox 选项）+ prompts/copy_generation.py（v1.1→v1.2 通用跳过）+ services/generation_service.py（_demo_candidates 通用跳过）+ PRD.md §6.2 字段表
+- **why**：硬必填的判定标准 =「下游 pipeline 不填跑不通」；阶段/场景/投放目标等是 LLM 文案素材，可走默认让 AI 自由发挥
+
+### 2026-09-01 · Phase 29 候选展示翻牌（推翻 #6）
+
+- **#6 反哺影响生成排序** Phase 7.2 拍板作废 —— 候选展示**不再**按 CTR 重排，固定 A→B→C 顺序
+- **默认选中** 改硬编码 "A"，不再是 CTR 最高那条
+- **CTR 反哺**：仍展示在右侧"参考结果"（CTR 数字 + 相对基准百分点），影响「可信程度」标注，但不参与卡片排序
+- **why**：用户复盘"竖着文案很奇怪"时同步反馈——ABC 顺序乱 + 默认选 B/C 让"选 A"操作不直觉；CTR 反哺作为参考信息已足够，不该把"参考"上升为"推荐排序"
+- **改 3 文件**：web/app.py（删 `rank_candidates_by_ctr` 调用 + `selected_id` 写死 "A"）+ web/static/css/style.css（candidate-card 加 min-height:210px 让 3 卡等高；cand-body line-clamp 5 行 + cand-title line-clamp 2 行避免长 body 折成多行挤压竖排感）+ Handoff-decisions.md（本段）
+- **保留**：services/generation_service.rank_candidates_by_ctr 函数本身不删（tests/verify.py §42 测试照常 PASS），只是 web 层不再调用
+
+### 2026-09-01 · Phase 31A L1 混合校准（不重训接 baseline 6 维）
+
+- **痛点**：L1 LightGBM 训练 R²=0.08（区分能力差），但 absolute MAE=0.34% 尚可；baseline_lookup 6 维回退查表有数据基础但稀疏维度兜底到渠道整体；两边互补
+- **方案 A 拍板**（用户选择"不重训 + 混合校准"）：L1 推理后叠加 baseline_lookup × tm
+  - `final = 0.5 × l1_pred + 0.5 × (baseline × tm)`（baseline 有值时，50/50 平权）
+  - `final = l1_pred × tm`（baseline 缺失时，仅 L1 相对量级 + 时段修正）
+- **为什么不选 B/C**：
+  - B 重训加 text_has_coupon + char_range + hour + baseline 6 维数值特征：2-3 天工作量，且 text_has_coupon 短信 62 Plan / 企微 189 Plan 数据稀疏，重训 R² 改善不确定
+  - C 主路径换 baseline_only：L1 模型白训、Handoff §6.3 L2 重训任务推后
+- **改 2 文件**：adapters/ctr_predictor_adapter/__init__.py（`_l1_model_pred` 加 L1_BLEND_ALPHA=0.5 + 双分支混合公式 + suggestion 文案带 50/50 字样 + source 改 `ctr_predictor_adapter/l1_blended`）+ tests/verify.py（§57 l1_model source 断言从 `l1_lightgbm` 改成 `l1` 兼容 l1_blended / l1_lightgbm）
+- **不动**：L1 booster 模型、meta、baseline_lookup、train_lgbm.py；UI 顶部 mode 选项仍 l1_model（路径不变）
+
+### 2026-09-01 · Phase 32 算法模型显示名纠正
+
+- **痛点**：Phase 27 把 CTR 模式 UI 标签改成产品话术时，`XGBoost` 是误称（底层实际是 LightGBM），会让运营同事去查 XGBoost 文档发现对不上；`渠道基线` 只覆盖 6 维回退第一维，命名不准
+- **改 3 行**（web/templates/pages/01_内容工坊.html 顶部 selectbox）：
+  - `演示规则` 保留（无歧义）
+  - `渠道基线` → `历史基准`（覆盖 6 维回退全维度）
+  - `XGBoost` → `LightGBM`（底层真实模型名）
+- **不动**：`value` 属性（demo / baseline_only / l1_model 后端 mode 值不变）；`selected` 判断不变；CSS class 不变；后端逻辑完全无影响
+
+---
+
 ## 已压缩删节（细节查 git log）
 
 - `setup_and_run.bat` 闪退 5 次迭代详细历史（v1-v5 各版）

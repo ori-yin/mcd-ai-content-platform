@@ -6,7 +6,7 @@
   <title>{% block title %}McD AI 内容平台{% endblock %}</title>
 
   <!-- 全局样式（从 v2.html 抽出来的 CSS） -->
-  <link rel="stylesheet" href="/static/css/style.css?v=1788235131" />
+  <link rel="stylesheet" href="/static/css/style.css?v=20260901btn" />
 
   <!--
     HTMX：通过 CDN 引入，体积 ~14KB，无构建工具链。
@@ -14,6 +14,49 @@
     完整文档：https://htmx.org/docs/
   -->
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+
+  {# 滚动位置恢复（Phase 36 · 2026-09-01）— head 内联执行，保证新页面首屏绘制前 scrollTo 完成
+     - history.scrollRestoration='manual' 关闭浏览器 303 导航后自动滚顶（这是页面"跳一下"的根因）
+     - submit/beforeunload 双保险保存 scrollY
+     - pageshow + DOMContentLoaded + rAF 多触发恢复，覆盖布局异步加载导致的位置回弹
+     - 修复历史：Phase 31B 写在 body 末尾，恢复时机晚于首屏绘制，视觉上仍能看到"先跳顶再滚回" #}
+  <script>
+  (function () {
+    // 1) 关闭浏览器默认滚动恢复行为，由 JS 完全接管
+    if ('scrollRestoration' in history) {
+      try { history.scrollRestoration = 'manual'; } catch (_) {}
+    }
+
+    // 2) 保存 scrollY（form submit + 页面卸载 兜底）
+    function saveScroll() {
+      try { sessionStorage.setItem('__scrollY', String(window.scrollY)); } catch (_) {}
+    }
+    document.addEventListener('submit', saveScroll, true);
+    window.addEventListener('beforeunload', saveScroll);
+
+    // 3) 恢复 scrollY（多时机多尝试）
+    function restoreScroll() {
+      try {
+        var y = sessionStorage.getItem('__scrollY');
+        if (y === null) return;
+        var target = parseInt(y, 10);
+        if (!isFinite(target) || target < 0) { sessionStorage.removeItem('__scrollY'); return; }
+        function attempt() { try { window.scrollTo(0, target); } catch (_) {} }
+        // 立刻 + 下一帧 + 再下一帧 + 100ms + 300ms，覆盖字体/图片异步加载引起的位置回弹
+        attempt();
+        requestAnimationFrame(function () {
+          attempt();
+          requestAnimationFrame(attempt);
+        });
+        setTimeout(attempt, 100);
+        setTimeout(attempt, 300);
+        sessionStorage.removeItem('__scrollY');
+      } catch (_) {}
+    }
+    window.addEventListener('pageshow', restoreScroll);
+    document.addEventListener('DOMContentLoaded', restoreScroll);
+  })();
+  </script>
 </head>
 <body>
 
@@ -24,7 +67,6 @@
      ============================================================ #}
   <aside class="sidebar">
     <div class="brand">
-      <span class="menu-icon">☰</span>
       <img class="m-arches" src="/static/img/mcdonalds.svg" alt="M" />
       <span class="brand-text">McD AI 内容平台</span>
     </div>

@@ -31,7 +31,7 @@ S_01: dict[str, Any] = {
     "similar_summary": {},
     "last_generated_signature": "",
     "show_l1": False,
-    "ctr_mode": "demo",
+    "ctr_mode": "baseline_only",
     "last_error": None,
     "ctr_mode_options": ("demo", "baseline_only", "l1_model"),
 }
@@ -147,7 +147,7 @@ def reset_01() -> None:
             continue
         S_01[k] = type(S_01[k])() if isinstance(S_01[k], (list, dict, str)) else None
     S_01["selected_id"] = "A"
-    S_01["ctr_mode"] = "demo"
+    S_01["ctr_mode"] = "baseline_only"
     S_01["last_error"] = None
 
 

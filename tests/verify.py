@@ -3681,12 +3681,14 @@ def test_phase12_schema():
     _check("PLAN_TYPES 不含'AARR Plan'（旧命名）",
            "AARR Plan" not in PLAN_TYPES)
 
-    # ── 3) TaskInput scene 改选填（Phase 12 #10）──
-    _check("TaskInput.REQUIRED_FIELDS 4 项",
-           len(TaskInput.REQUIRED_FIELDS) == 4)
-    _check("REQUIRED_FIELDS 不含 scene", "scene" not in TaskInput.REQUIRED_FIELDS)
-    _check("REQUIRED_FIELDS 含 audience/channel/stage/tone",
-           set(TaskInput.REQUIRED_FIELDS) == {"audience", "channel", "stage", "tone"})
+    # ── 3) TaskInput scene 改选填（Phase 12 #10）；Phase 28 stage 也改选填（4 → 3 必填）──
+    _check("TaskInput.REQUIRED_FIELDS 3 项（Phase 28）",
+           len(TaskInput.REQUIRED_FIELDS) == 3)
+    _check("REQUIRED_FIELDS 不含 scene/stage",
+           "scene" not in TaskInput.REQUIRED_FIELDS
+           and "stage" not in TaskInput.REQUIRED_FIELDS)
+    _check("REQUIRED_FIELDS 含 audience/channel/tone",
+           set(TaskInput.REQUIRED_FIELDS) == {"audience", "channel", "tone"})
 
     # ── 4) TaskInput.scene 默认空串 ──
     t1 = TaskInput.from_form({"audience": "x", "channel": "APP Push",
@@ -3992,8 +3994,8 @@ def test_phase20_l1_main_and_drift():
     _check("l1_model APP Push → model_prediction",
            r.result_type == "model_prediction" and r.pred_ctr and 0 < r.pred_ctr < 1,
            f"got result_type={r.result_type} pred_ctr={r.pred_ctr}")
-    _check("l1_model source 含 l1_lightgbm",
-           "l1_lightgbm" in (r.source or ""),
+    _check("l1_model source 含 l1（l1_blended / l1_lightgbm 兼容）",
+           "l1" in (r.source or ""),
            f"got source={r.source}")
 
     # 小程序 → unavailable（渠道不在训练范围）

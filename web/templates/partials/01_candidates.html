@@ -18,42 +18,25 @@
 <div class="candidate-grid">
   {% for c in candidates %}
   <div class="candidate-card {% if c.id == selected_id %}selected{% endif %}">
-    <div class="cand-header">
-      <b>{{ c.id }}</b> · {{ c.strategy.split('_', 1)[1] if '_' in (c.strategy or '') else (c.strategy or '') }}
+    <div class="cand-row">
+      <div class="cand-header">
+        <b>{{ c.id }}</b> · {{ c.strategy.split('_', 1)[1] if '_' in (c.strategy or '') else (c.strategy or '') }}
+      </div>
+      <div class="cand-title">{{ c.title or '（无标题）' }}</div>
+      <form method="post" action="/api/studio/select">
+        <input type="hidden" name="selected_id" value="{{ c.id }}">
+        <button type="submit"
+                class="btn-select {% if c.id == selected_id %}active{% endif %}"
+                {% if c.id == selected_id %}disabled{% endif %}>
+          {{ '✓ 已选' if c.id == selected_id else '选 ' ~ c.id }}
+        </button>
+      </form>
     </div>
-    <div class="cand-title">{{ c.title or '（无标题）' }}</div>
     <div class="cand-body">{{ c.body }}</div>
-    <form method="post" action="/api/01/select" style="margin-top:12px;">
-      <input type="hidden" name="selected_id" value="{{ c.id }}">
-      <button type="submit"
-              class="btn-select {% if c.id == selected_id %}active{% endif %}"
-              {% if c.id == selected_id %}disabled{% endif %}>
-        {{ '✓ 已选 ' if c.id == selected_id else '选 ' }}{{ c.id }}
-      </button>
-    </form>
   </div>
   {% endfor %}
 </div>
 
-{# 选中候选的规则诊断（保留 PRD §8.4 规则检查） #}
-{% if selected_rule and selected_rule.items %}
-<div class="subsection">
-  <div class="subsection-label">候选 {{ selected_id }} · 规则诊断</div>
-  {% for it in selected_rule['items'] %}
-    {% set severity = it.severity %}
-    <div class="rule-item rule-{{ severity }}">
-      <span class="rule-icon">
-        {% if severity == 'pass' %}✓
-        {% elif severity == 'warn' %}!
-        {% else %}✗{% endif %}
-      </span>
-      <span class="rule-content">
-        <b>{{ it.category }}</b> · {{ it.message }}
-        {% if it.suggestion %}<br><span class="rule-suggestion">建议：{{ it.suggestion }}</span>{% endif %}
-      </span>
-    </div>
-  {% endfor %}
-</div>
-{% endif %}
+{# 规则诊断完整版见右侧第 5 块（partials/01_right_column.html），此处不再重复渲染 #}
 
 {% endif %}

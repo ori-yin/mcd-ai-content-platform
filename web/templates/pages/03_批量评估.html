@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}03 批量评估 · McD AI 内容平台{% endblock %}
+{% block title %}03 批量预测 · McD AI 内容平台{% endblock %}
 
 {% block content %}
 
@@ -22,27 +22,33 @@
   {% endif %}
 
   {% if success_msg %}
-  <div class="advanced-notice" style="background:#eef9f0;border-color:#aedcc1;color:#1f6f3e">
-    <b>{{ success_msg }}</b>
+  <div class="success-banner">
+    {{ success_msg }}
   </div>
   {% endif %}
 
-  <form method="post" action="/api/03/upload" enctype="multipart/form-data" class="form-grid">
+  <form method="post" action="/api/batch/upload" enctype="multipart/form-data" class="form-grid">
     <div class="form-row form-row-wide">
       <label>选择文件（CSV / xlsx / xls）</label>
-      <input type="file" name="file" accept=".csv,.xlsx,.xls" required
-             style="height:auto;padding:8px;border:1px solid var(--line-strong);border-radius:7px;background:#fff">
+      <input type="file" name="file" accept=".csv,.xlsx,.xls" required class="file-input">
     </div>
     <div class="form-row form-row-wide">
-      <button type="submit" class="btn btn-primary" style="height:40px;width:200px;justify-content:center">
-        上传并解析 →
+      <button type="submit" class="btn btn-dark btn-submit">
+        上传并解析
       </button>
     </div>
   </form>
+  <div class="card-desc" style="margin-top:14px;margin-bottom:0">
+    不知道格式？
+    <a href="/api/batch/template" download style="color:var(--black);text-decoration:underline;font-weight:600">
+      下载 Excel 模板
+    </a>
+    （含示例数据 + 列说明）
+  </div>
 </div>
 
 {% if batch.filename %}
-<div class="panel-card" style="margin-top:14px">
+<div class="panel-card">
   <div class="panel-heading">2 解析预览</div>
 
   <div class="metric-row">
@@ -52,7 +58,7 @@
     </div>
     <div class="metric-box">
       <div class="ml">必备列</div>
-      <div class="mv" style="font-size:13.5px;line-height:1.6">
+      <div class="mv-md">
         title {{ '✓' if batch.has_title else '✗' }} ·
         body {{ '✓' if batch.has_body else '✗' }} ·
         channel {{ '✓' if batch.has_channel else '✗' }}
@@ -64,16 +70,16 @@
     </div>
     <div class="metric-box">
       <div class="ml">文件</div>
-      <div class="mv" style="font-size:13px">{{ batch.filename }}</div>
+      <div class="mv-sm">{{ batch.filename }}</div>
     </div>
     <div class="metric-box">
       <div class="ml">说明</div>
-      <div class="md">下一步：启动批量评估</div>
+      <div class="md">下一步：启动批量预测</div>
     </div>
   </div>
 
   {% if batch.preview_rows %}
-  <div class="batch-wrap" style="margin-bottom:14px">
+  <div class="batch-wrap">
   <table class="batch-table">
     <thead><tr>
       <th>标题</th><th>正文</th><th>渠道</th><th>Plan 类型</th><th>用券</th>
@@ -94,11 +100,11 @@
   {% endif %}
 
   {% if not batch.can_eval %}
-  <div class="warning-banner">缺 body 或 channel 列，无法启动评估</div>
+  <div class="warning-banner">缺 body 或 channel 列，无法启动预测</div>
   {% else %}
-  <form method="post" action="/api/03/evaluate" style="display:flex;align-items:center;gap:18px">
-    <button type="submit" class="btn btn-primary" style="height:40px">开始批量评估 →</button>
-    <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:#3a4049">
+  <form method="post" action="/api/batch/evaluate" class="form-row-inline">
+    <button type="submit" class="btn btn-dark">开始批量预测</button>
+    <label class="checkbox-label">
       <input type="checkbox" name="save_to_records" value="1" {% if batch.save_to_records %}checked{% endif %}>
       保存预测到 records.db（用于漂移监控 + 后续校准）
     </label>
@@ -111,8 +117,8 @@
 {% endif %}
 
 {% if batch.eval_done %}
-<div class="panel-card" style="margin-top:14px">
-  <div class="panel-heading">3 评估结果</div>
+<div class="panel-card">
+  <div class="panel-heading">3 预测结果</div>
 
   <div class="metric-row">
     <div class="metric-box"><div class="ml">总行数</div><div class="mv">{{ result.n }}</div></div>
@@ -130,7 +136,7 @@
   <div class="card-desc">渠道分布：{{ result.channel_chips | safe }}</div>
   {% endif %}
 
-  <div class="batch-wrap" style="margin-top:12px">
+  <div class="batch-wrap">
   <table class="batch-table">
     <thead><tr>
       <th>行号</th><th>标题</th><th>正文</th><th>渠道</th><th>规则</th>
@@ -158,9 +164,7 @@
   </table>
   </div>
 
-  <div style="margin-top:14px">
-    <a href="/api/03/download" class="btn btn-primary">下载结果 CSV（UTF-8 BOM）</a>
-  </div>
+  <a href="/api/batch/download" class="btn btn-dark">下载结果 CSV（UTF-8 BOM）</a>
 </div>
 {% endif %}
 

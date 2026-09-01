@@ -11,7 +11,7 @@
 </div>
 {% endif %}
 
-<div class="panel-card" style="margin-bottom:16px">
+<div class="panel-card">
   <div class="panel-heading">1 输入文案</div>
   <div class="card-desc">选渠道，填标题和正文。本页不依赖 AI 生成，可直接调 CTR Adapter。</div>
 
@@ -19,7 +19,7 @@
   <div class="warning-banner">{{ error_msg }}</div>
   {% endif %}
 
-  <form method="post" action="/api/02/diagnose" class="form-grid">
+  <form method="post" action="/api/diagnosis/diagnose" class="form-grid">
     <div class="form-row">
       <label>投放渠道 *</label>
       <select name="channel">
@@ -51,8 +51,8 @@
     </div>
 
     <div class="form-row form-row-wide">
-      <button type="submit" class="btn btn-primary" style="height:40px;width:200px;justify-content:center">
-        开始诊断 →
+      <button type="submit" class="btn btn-dark btn-submit">
+        开始诊断
       </button>
     </div>
   </form>

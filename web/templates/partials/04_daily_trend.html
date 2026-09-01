@@ -11,16 +11,16 @@
 </div>
 
 {% if summary.get('峰值日') %}
-<div class="card-desc" style="margin-top:10px">
+<div class="card-desc" style="margin-top:10px;margin-bottom:0">
   峰值日：{{ summary['峰值日'] }}（{{ "%.2f"|format(summary['峰值CTR%']) }}%）
    · 谷值日：{{ summary['谷值日'] }}（{{ "%.2f"|format(summary['谷值CTR%']) }}%）
    · 日均 CTR {{ "%.2f"|format(summary['日均CTR%']) }}%
 </div>
 {% endif %}
 
-<form method="get" action="/04" style="margin-top:14px;margin-bottom:10px">
+<form method="get" action="/insights" style="margin-top:14px;margin-bottom:10px">
   <input type="hidden" name="tab" value="daily">
-  <label style="display:inline-flex;align-items:center;gap:7px;font-size:12.5px">
+  <label class="checkbox-label">
     <input type="checkbox" name="by_channel" value="1" {% if params.by_channel %}checked{% endif %}
            onchange="this.form.submit()">
     按渠道拆分

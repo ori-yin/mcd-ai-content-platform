@@ -48,13 +48,13 @@
     {% set d = (diagnose.diag) or {} %}
     {% set hit = (d.hit_words) or [] %}
     {% set miss = ((d.miss_top) or [])[:8] %}
-    {% if hit %}<div style="font-size:12.5px;margin-bottom:4px;color:#3a4049">命中高效词：{{ hit | join('、') }}</div>{% endif %}
-    {% if miss %}<div style="font-size:12.5px;margin-bottom:4px;color:#3a4049">未出现的高频高 CTR 词：{{ miss | join('、') }}</div>{% endif %}
-    {% if not hit and not miss %}<div style="font-size:12.5px;color:var(--muted)">无历史高频词数据（需上传历史计划）</div>{% endif %}
+    {% if hit %}<div class="stat-line">命中高效词：{{ hit | join('、') }}</div>{% endif %}
+    {% if miss %}<div class="stat-line">未出现的高频高 CTR 词：{{ miss | join('、') }}</div>{% endif %}
+    {% if not hit and not miss %}<div class="stat-line" style="color:var(--muted)">无历史高频词数据（需上传历史计划）</div>{% endif %}
 
     {% set problems = (diagnose.problems) or [] %}
     {% if problems %}
-    <div style="margin-top:10px">
+    <div class="subsection" style="margin-top:14px">
       {% for p in problems[:5] %}
         {% set msg = p.label or '' %}
         {% set so_what = p.so_what or '' %}

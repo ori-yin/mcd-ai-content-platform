@@ -74,13 +74,22 @@ def _demo_candidates(task: TaskInput) -> list:
     Phase A.1 · 2026-08-28：
       - 原 product_benefit 拆为 product_category + benefit_type
       - 演示文本拼接：直接空格连接非空 token；都不空时用稳定兜底短语
+
+    Phase 28 · 2026-09-01：
+      - 可选字段值 == "通用" 时，跳过拼接（走通用兜底）
     """
+
+    def _opt(v: str) -> str:
+        v = (v or "").strip()
+        if not v or v == "通用":
+            return ""
+        return v
+
     # A.1：组合成一段"产品-权益"短语，无值时给稳定兜底
-    # 只拼接用户实际输入的 token，不补' 优惠'等凑字（避免'汉堡 优惠'这种生硬拼接）
-    tokens = [t for t in (task.product_category, task.benefit_type) if t]
+    tokens = [t for t in (task.product_category, task.benefit_type) if _opt(t)]
     benefit = " ".join(tokens) if tokens else "新品限时优惠"
-    scene = task.scene or "日常"
-    action = task.expected_action or "查看"
+    scene = _opt(task.scene) or "日常"
+    action = _opt(task.expected_action) or "查看"
 
     if task.channel == "短信":
         # 短信无标题，标题留空（rule_engine 会按渠道处理）

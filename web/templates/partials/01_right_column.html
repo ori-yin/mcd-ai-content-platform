@@ -140,38 +140,17 @@
   </div>
 </div>
 
-{# ── 5. 规则诊断（完整版） ───────────────────────────── #}
-{% if selected_rule and selected_rule.items %}
-<div class="subsection">
-  <div class="subsection-label">规则诊断</div>
-  {% for it in selected_rule['items'] %}
-  <div class="rule-item rule-{{ it.severity }}">
-    <span class="rule-icon">
-      {% if it.severity == 'pass' %}✓
-      {% elif it.severity == 'warn' %}!
-      {% else %}✗{% endif %}
-    </span>
-    <span class="rule-content">
-      <b>[{{ it.severity.upper() }}]</b> <b>{{ it.category }}</b>：{{ it.message }}
-      {% if it.suggestion %}<br><span class="rule-suggestion">建议：{{ it.suggestion }}</span>{% endif %}
-    </span>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
+{# 规则诊断已删除（Phase 34 · 2026-09-01 用户拍板："生成内容就是给用户可投放的，无需再诊断"） #}
 
 {# ── 6. 推荐结论 ───────────────────────────── #}
 <div class="subsection">
   <div class="subsection-label">推荐结论</div>
-  {% if selected_rule and selected_rule.has_blocking %}
-  <div class="warning-banner"><b>存在阻断项，不推荐正式使用。</b>请先修改后再次评估。</div>
-  {% else %}
   {% set obj_part = ' + ' ~ task.objective if task.objective else '' %}
   <div class="decision-card">
     参考结论：当前版本符合 {{ task.channel }} 基础规则，与「{{ task.stage }}{{ obj_part }}」目标匹配。
-    三条候选已按 CTR 预测降序展示（演示口径），不代表正式投放承诺，建议结合业务判断后使用。
+    三条候选均为 A/B/C 策略不同版本（Phase 29 固定 ABC 顺序，不再按 CTR 重排），
+    请人工选择最适合的一条投放。建议结合业务判断后使用。
   </div>
-  {% endif %}
 </div>
 
 {% endif %}

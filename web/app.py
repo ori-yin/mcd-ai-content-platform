@@ -16,22 +16,22 @@ web/app.py — FastAPI 入口（MCD AI 内容平台 · v2 全量迁移版）
     /                00 首页
     /01              01 内容工坊
     /02              02 文案诊断
-    /03              03 批量评估
+    /03              03 批量预测
     /04              04 历史洞察
     /05              05 真实结果回流
 
   API POST（HTMX 表单提交）：
-    /api/01/generate     生成 3 条候选
-    /api/01/select       选择候选（A/B/C）
-    /api/01/ctr-mode     切换 CTR 主流程模式
-    /api/01/l1-toggle    显示/隐藏 L1 实验对比
-    /api/02/diagnose     开始诊断
-    /api/02/rewrite      生成 AI 改写候选
-    /api/03/upload       上传 CSV/Excel
-    /api/03/evaluate     启动批量评估
-    /api/03/download     下载 CSV 结果
-    /api/04/upload       上传历史数据
-    /api/05/upload       导入回流数据
+    /api/studio/generate     生成 3 条候选
+    /api/studio/select       选择候选（A/B/C）
+    /api/studio/ctr-mode     切换 CTR 主流程模式
+    /api/studio/l1-toggle    显示/隐藏 L1 实验对比
+    /api/diagnosis/diagnose     开始诊断
+    /api/diagnosis/rewrite      生成 AI 改写候选
+    /api/batch/upload       上传 CSV/Excel
+    /api/batch/evaluate     启动批量评估
+    /api/batch/download     下载 CSV 结果
+    /api/insights/upload       上传历史数据
+    /api/feedback/upload       导入回流数据
 
   GET /health             健康检查
 
@@ -157,6 +157,29 @@ def get_llm_status() -> dict:
     }
 
 
+def _build_llm_router():
+    """从 ui/llm_status.yaml 构造 ProviderRouter；失败返回 None（走 Demo）。
+
+    容错：
+    - yaml 缺失 / api_key 空 → None
+    - provider 大小写不匹配（UI 用 "MiniMax"，ProviderRouter 只认 "minimax"）→ 自动 .lower()
+    - SDK 未装 / API 异常 → None（不抛错让请求挂掉）
+    """
+    if ProviderRouter is None:
+        return None
+    try:
+        cfg = load_config() or {}
+        if not cfg.get("api_key") or not cfg.get("provider"):
+            return None
+        return ProviderRouter(
+            provider=str(cfg["provider"]).strip().lower(),
+            api_key=cfg["api_key"],
+            model=cfg.get("model", ""),
+        )
+    except Exception:
+        return None
+
+
 # ============================================================
 # Jinja filters
 # ============================================================
@@ -194,18 +217,18 @@ templates.env.filters["safe_cell"] = _jinja_safe
 # 导航配置（单一来源）
 # ============================================================
 NAV_PAGES = [
-    {"id": "00", "route": "/", "name": "00 首页",
+    {"id": "home", "route": "/", "name": "首页",
      "subtitle": "AI 驱动的内容生产与效果评估平台", "icon": "home"},
-    {"id": "01", "route": "/01", "name": "01 内容工坊",
-     "subtitle": "AI 文案生成 · CTR 预测 · 渠道预览 · 人工选择", "icon": "edit"},
-    {"id": "02", "route": "/02", "name": "02 文案诊断",
+    {"id": "studio", "route": "/studio", "name": "内容工坊",
+     "subtitle": "", "icon": "edit"},
+    {"id": "diagnosis", "route": "/diagnosis", "name": "文案诊断",
      "subtitle": "单条文案规则诊断 + 词语分析 + CTR 参考 + AI 改写", "icon": "stethoscope"},
-    {"id": "03", "route": "/03", "name": "03 批量评估",
+    {"id": "batch", "route": "/batch", "name": "批量预测",
      "subtitle": "CSV / Excel 上传 + 批量规则评估 + CTR 预测 + 结果导出", "icon": "clipboard"},
-    {"id": "04", "route": "/04", "name": "04 历史洞察",
+    {"id": "insights", "route": "/insights", "name": "历史洞察",
      "subtitle": "七 Tab 排名 / 词频 / Emoji / 趋势 / Owner 维度分析", "icon": "chart"},
-    {"id": "05", "route": "/05", "name": "05 真实结果回流",
-     "subtitle": "真实投放数据回流 · 校验入库 · CTR 反哺闭环", "icon": "refresh"},
+    {"id": "feedback", "route": "/feedback", "name": "结果反哺",
+     "subtitle": "回流投放数据 · 校验入库 · CTR 反哺闭环", "icon": "refresh"},
 ]
 
 
@@ -227,7 +250,7 @@ def base_context(active_id: str) -> dict:
 # ============================================================
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(request, "home.html", base_context("00"))
+    return templates.TemplateResponse(request, "home.html", base_context("home"))
 
 
 # ============================================================
@@ -235,7 +258,7 @@ async def home(request: Request) -> HTMLResponse:
 # ============================================================
 def _01_context() -> dict:
     """构造 01 页面的完整上下文。"""
-    ctx = base_context("01")
+    ctx = base_context("studio")
 
     # options
     product_cats = get_product_categories()
@@ -312,14 +335,14 @@ def _01_context() -> dict:
     return ctx
 
 
-@app.get("/01", response_class=HTMLResponse)
+@app.get("/studio", response_class=HTMLResponse)
 async def page_01(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request, "pages/01_内容工坊.html", _01_context()
     )
 
 
-@app.post("/api/01/generate", response_class=HTMLResponse)
+@app.post("/api/studio/generate", response_class=HTMLResponse)
 async def api_01_generate(request: Request) -> Response:
     """接收 form，调 generate + check_candidates + predict_for_candidates，返回 /01 页面。"""
     form = await request.form()
@@ -337,15 +360,16 @@ async def api_01_generate(request: Request) -> Response:
         task = TaskInput.from_form(form_dict)
     except ValueError as e:
         S_01["last_error"] = f"必填字段缺失：{e}"
-        return RedirectResponse(url="/01", status_code=303)
+        return RedirectResponse(url="/studio", status_code=303)
 
     channel_rules, brand_rules = load_rules()
+    router = _build_llm_router()
     try:
-        candidates = generate(task, channel_rules=channel_rules)
+        candidates = generate(task, router=router, channel_rules=channel_rules)
     except GenerationError as e:
         S_01["last_error"] = f"生成失败：{e}"
         S_01["task_input"] = task.to_dict()
-        return RedirectResponse(url="/01", status_code=303)
+        return RedirectResponse(url="/studio", status_code=303)
 
     S_01["last_error"] = None
     S_01["task_input"] = task.to_dict()
@@ -356,30 +380,32 @@ async def api_01_generate(request: Request) -> Response:
     ctr_mode = S_01["ctr_mode"]
     if ctr_mode == "l1_model" and predict_l1_status() != "model":
         ctr_mode = "demo"
+    # Phase 29 · 2026-09-01 用户翻牌：候选展示固定 A→B→C（不再按 CTR 重排）
+    # 反哺影响排序的拍板 #6 改为：CTR 仍展示在右侧"参考结果"，但卡片顺序保持 ABC 固定
     ctr_results = predict_for_candidates(candidates, task, mode=ctr_mode)
-    candidates, ctr_results = rank_candidates_by_ctr(candidates, ctr_results)
     S_01["candidates"] = [c.to_dict() for c in candidates]
     S_01["ctr_results"] = [c.to_dict() if hasattr(c, "to_dict") else c for c in ctr_results]
-    S_01["selected_id"] = candidates[0].id
+    # 默认选中 A（Phase 29 用户拍板）
+    S_01["selected_id"] = "A"
 
     first = candidates[0]
     sim_df = find_similar(first.title, first.body, task.channel)
     S_01["similar_summary"] = summarize_similar(sim_df)
     S_01["last_generated_signature"] = form_change_signature(task.to_dict())
 
-    return RedirectResponse(url="/01", status_code=303)
+    return RedirectResponse(url="/studio", status_code=303)
 
 
-@app.post("/api/01/select", response_class=HTMLResponse)
+@app.post("/api/studio/select", response_class=HTMLResponse)
 async def api_01_select(request: Request) -> Response:
     form = await request.form()
     sel = form.get("selected_id", "A")
     if sel in ("A", "B", "C"):
         S_01["selected_id"] = sel
-    return RedirectResponse(url="/01", status_code=303)
+    return RedirectResponse(url="/studio", status_code=303)
 
 
-@app.post("/api/01/ctr-mode", response_class=HTMLResponse)
+@app.post("/api/studio/ctr-mode", response_class=HTMLResponse)
 async def api_01_ctr_mode(request: Request) -> Response:
     form = await request.form()
     mode = form.get("ctr_mode", "demo")
@@ -387,21 +413,21 @@ async def api_01_ctr_mode(request: Request) -> Response:
         if mode == "l1_model" and predict_l1_status() != "model":
             mode = "demo"
         S_01["ctr_mode"] = mode
-    return RedirectResponse(url="/01", status_code=303)
+    return RedirectResponse(url="/studio", status_code=303)
 
 
-@app.post("/api/01/l1-toggle", response_class=HTMLResponse)
+@app.post("/api/studio/l1-toggle", response_class=HTMLResponse)
 async def api_01_l1_toggle(request: Request) -> Response:
     form = await request.form()
     S_01["show_l1"] = form.get("show_l1") == "1"
-    return RedirectResponse(url="/01", status_code=303)
+    return RedirectResponse(url="/studio", status_code=303)
 
 
 # ============================================================
 # 02 文案诊断
 # ============================================================
 def _02_context() -> dict:
-    ctx = base_context("02")
+    ctx = base_context("diagnosis")
     ctx.update({
         "task": {
             "title": S_02["title"],
@@ -424,7 +450,7 @@ def _02_context() -> dict:
     return ctx
 
 
-@app.get("/02", response_class=HTMLResponse)
+@app.get("/diagnosis", response_class=HTMLResponse)
 async def page_02(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request, "pages/02_文案诊断.html", _02_context()
@@ -448,12 +474,20 @@ def _run_diagnosis():
     try:
         sim_rows = []
         if sim_df is not None and not sim_df.empty:
-            display_cols = [
-                c for c in ("title", "body", "ctr", "similarity")
-                if c in sim_df.columns
-            ]
-            for _, row in sim_df[display_cols].head(5).iterrows():
-                sim_rows.append({c: (None if pd_is_nan(row[c]) else row[c]) for c in display_cols})
+            # find_similar_plans 实际列：[plan_id, plan_name, channel, owner, similarity,
+            #   n_records, 触达成功, 点击, 加权CTR%]
+            # 模板期望 title / body / ctr / similarity，按别名映射 + 容错
+            def _cell(row, key):
+                if key not in row or pd_is_nan(row[key]):
+                    return None
+                return row[key]
+            for _, row in sim_df.head(5).iterrows():
+                sim_rows.append({
+                    "title": _cell(row, "plan_name"),
+                    "body": None,  # 历史相似未返回正文
+                    "ctr": _cell(row, "加权CTR%"),
+                    "similarity": _cell(row, "similarity"),
+                })
         S_02["similar_rows"] = sim_rows
     except Exception:
         S_02["similar_rows"] = []
@@ -476,7 +510,7 @@ def pd_is_nan(v) -> bool:
     return False
 
 
-@app.post("/api/02/diagnose", response_class=HTMLResponse)
+@app.post("/api/diagnosis/diagnose", response_class=HTMLResponse)
 async def api_02_diagnose(request: Request) -> Response:
     form = await request.form()
     S_02["title"] = (form.get("title") or "").strip()
@@ -486,12 +520,12 @@ async def api_02_diagnose(request: Request) -> Response:
     S_02["error_msg"] = ""
     if not S_02["body"]:
         S_02["error_msg"] = "正文不能为空"
-        return RedirectResponse(url="/02", status_code=303)
+        return RedirectResponse(url="/diagnosis", status_code=303)
     try:
         _run_diagnosis()
     except Exception as e:  # noqa: BLE001
         S_02["error_msg"] = f"诊断失败：{e}"
-    return RedirectResponse(url="/02", status_code=303)
+    return RedirectResponse(url="/diagnosis", status_code=303)
 
 
 def _do_rewrite():
@@ -507,16 +541,7 @@ def _do_rewrite():
     local.setdefault("emoji_count", 0)
 
     router = None
-    try:
-        cfg = load_config()
-        if cfg.get("api_key") and ProviderRouter is not None:
-            router = ProviderRouter(
-                provider=cfg["provider"],
-                api_key=cfg["api_key"],
-                model=cfg["model"],
-            )
-    except Exception:
-        router = None
+    router = _build_llm_router()
 
     if router is None or not getattr(router, "api_key", None):
         # Demo 占位（与 Streamlit 版一致：2 条差异化改写）
@@ -552,23 +577,23 @@ def _do_rewrite():
         S_02["rewrites"] = []
 
 
-@app.post("/api/02/rewrite", response_class=HTMLResponse)
+@app.post("/api/diagnosis/rewrite", response_class=HTMLResponse)
 async def api_02_rewrite(request: Request) -> Response:
     if not S_02.get("body"):
         S_02["rewrite_error"] = "请先完成诊断"
-        return RedirectResponse(url="/02", status_code=303)
+        return RedirectResponse(url="/diagnosis", status_code=303)
     try:
         _do_rewrite()
     except Exception as e:  # noqa: BLE001
         S_02["rewrite_error"] = str(e)
-    return RedirectResponse(url="/02", status_code=303)
+    return RedirectResponse(url="/diagnosis", status_code=303)
 
 
 # ============================================================
-# 03 批量评估
+# 03 批量预测
 # ============================================================
 def _03_context() -> dict:
-    ctx = base_context("03")
+    ctx = base_context("batch")
     rows = []
     for r in S_03["result_rows"]:
         d = dict(r)
@@ -618,14 +643,14 @@ def _03_context() -> dict:
     return ctx
 
 
-@app.get("/03", response_class=HTMLResponse)
+@app.get("/batch", response_class=HTMLResponse)
 async def page_03(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request, "pages/03_批量评估.html", _03_context()
     )
 
 
-@app.post("/api/03/upload", response_class=HTMLResponse)
+@app.post("/api/batch/upload", response_class=HTMLResponse)
 async def api_03_upload(request: Request, file: UploadFile = File(...)) -> Response:
     S_03["error_msg"] = ""
     S_03["success_msg"] = ""
@@ -634,7 +659,7 @@ async def api_03_upload(request: Request, file: UploadFile = File(...)) -> Respo
         df = parse_batch_file(file_bytes, file.filename or "")
     except Exception as e:  # noqa: BLE001
         S_03["error_msg"] = f"解析失败：{e}"
-        return RedirectResponse(url="/03", status_code=303)
+        return RedirectResponse(url="/batch", status_code=303)
 
     S_03["filename"] = file.filename or ""
     # 释放旧 df
@@ -667,25 +692,26 @@ async def api_03_upload(request: Request, file: UploadFile = File(...)) -> Respo
     S_03["eval_done"] = False
     S_03["result_rows"] = []
     S_03["success_msg"] = f"已读取 {len(df)} 行（{file.filename}）"
-    return RedirectResponse(url="/03", status_code=303)
+    return RedirectResponse(url="/batch", status_code=303)
 
 
-@app.post("/api/03/evaluate", response_class=HTMLResponse)
+@app.post("/api/batch/evaluate", response_class=HTMLResponse)
 async def api_03_evaluate(request: Request) -> Response:
     df = get_df(S_03["df_ref"])
     if df is None:
         S_03["error_msg"] = "请先上传文件"
-        return RedirectResponse(url="/03", status_code=303)
+        return RedirectResponse(url="/batch", status_code=303)
 
     form = await request.form()
     save_to_records = form.get("save_to_records") == "1"
     S_03["save_to_records"] = save_to_records
 
     try:
-        rows = evaluate_batch(df, ctr_mode="demo", progress_cb=None)
+        ctr_mode = "l1_model" if predict_l1_status() == "model" else "demo"
+        rows = evaluate_batch(df, ctr_mode=ctr_mode, progress_cb=None)
     except Exception as e:  # noqa: BLE001
         S_03["error_msg"] = f"评估失败：{e}"
-        return RedirectResponse(url="/03", status_code=303)
+        return RedirectResponse(url="/batch", status_code=303)
 
     S_03["eval_done"] = True
     S_03["result_rows"] = rows
@@ -697,7 +723,7 @@ async def api_03_evaluate(request: Request) -> Response:
         n = len(df_result)
         n_blocked = int((df_result["rule_fail_count"] > 0).sum())
         n_warn = int(((df_result["rule_fail_count"] == 0) & (df_result["rule_warn_count"] > 0)).sum())
-        n_pass = int((df_result["rule_fail_count"] == 0) & (df_result["rule_warn_count"] == 0)).sum()
+        n_pass = int(((df_result["rule_fail_count"] == 0) & (df_result["rule_warn_count"] == 0)).sum())
         n_err = int((df_result["error"] != "").sum())
         n_ctr_ok = int(df_result["ctr_pred"].notna().sum())
         S_03["n_pass"] = n_pass
@@ -721,10 +747,10 @@ async def api_03_evaluate(request: Request) -> Response:
         except Exception as e:  # noqa: BLE001
             S_03["error_msg"] = f"保存到 records.db 失败：{e}"
 
-    return RedirectResponse(url="/03", status_code=303)
+    return RedirectResponse(url="/batch", status_code=303)
 
 
-@app.get("/api/03/download")
+@app.get("/api/batch/download")
 async def api_03_download() -> Response:
     if not S_03.get("result_csv_bytes"):
         raise HTTPException(status_code=404, detail="尚无评估结果")
@@ -733,6 +759,73 @@ async def api_03_download() -> Response:
         media_type="text/csv",
         headers={
             "Content-Disposition": 'attachment; filename="batch_evaluation_result.csv"',
+        },
+    )
+
+
+@app.get("/api/batch/template")
+async def api_03_template() -> Response:
+    """Phase 35 · 2026-09-01 批量预测 Excel 模板下载（含示例行 + 渠道枚举）。"""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError:
+        raise HTTPException(status_code=500, detail="openpyxl 未安装，请 pip install openpyxl")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "批量预测模板"
+
+    # ── 表头（Phase 12 渠道枚举 + parse_batch_file 兼容别名）──
+    headers = ["title", "body", "channel", "plan_type", "coupon", "workday_type"]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="24292F")
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # ── 示例行（覆盖 3 渠道 + 用券/无券 + 工作日/非工作日）──
+    sample_rows = [
+        ["夏日新品限时尝鲜，9.9 元起点击立享", "新品上市：板烧鸡腿堡 9.9 元，点击立享优惠。", "APP Push", "常规Plan", "是", "工作日"],
+        ["麦当劳会员专属福利", "早安～今日早餐 5 折，点击查看附近门店。", "企微1v1", "AARRPlan", "否", "非工作日"],
+        ["106xxxxxxxx", "【麦当劳】新品到店立减 3 元，回复TD退订。", "短信", "常规Plan", "是", "工作日"],
+    ]
+    for row in sample_rows:
+        ws.append(row)
+
+    # ── 列宽自适应 ──
+    widths = {"A": 32, "B": 50, "D": 14, "E": 8, "F": 14}
+    for col, w in widths.items():
+        ws.column_dimensions[col].width = w
+    ws.column_dimensions["C"].width = 22
+
+    # ── 第二 sheet：列说明 ──
+    ws_doc = wb.create_sheet("列说明")
+    doc_rows = [
+        ["列名", "必填", "说明"],
+        ["title", "是", "标题文案。兼容别名：标题 / headline / subject"],
+        ["body", "是", "正文文案。兼容别名：内容 / content / text"],
+        ["channel", "是", f"渠道枚举：{CHANNELS}"],
+        ["plan_type", "否", "Plan 类型：AARRPlan / 常规Plan / 未知（缺省走 baseline 兜底）"],
+        ["coupon", "否", "实际是否用券：是 / 否 / 未知（未知走兜底）"],
+        ["workday_type", "否", "工作日类型：工作日 / 非工作日（缺省按 baseline 兜底）"],
+    ]
+    for row in doc_rows:
+        ws_doc.append(row)
+    ws_doc.column_dimensions["A"].width = 16
+    ws_doc.column_dimensions["B"].width = 8
+    ws_doc.column_dimensions["C"].width = 80
+    for cell in ws_doc[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="24292F")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": 'attachment; filename="batch_prediction_template.xlsx"',
         },
     )
 
@@ -785,9 +878,9 @@ def _df_to_rows(df, columns: Optional[list] = None, limit: int = 5000) -> list[d
     return rows
 
 
-@app.get("/04", response_class=HTMLResponse)
+@app.get("/insights", response_class=HTMLResponse)
 async def page_04(request: Request) -> HTMLResponse:
-    ctx = base_context("04")
+    ctx = base_context("insights")
     df = get_df(S_04["df_ref"])
 
     # 顶部数据概览（即使没数据也要渲染页面）
@@ -871,15 +964,19 @@ async def page_04(request: Request) -> HTMLResponse:
         if sel:
             cmp = compare_token(df, sel)
             if cmp:
+                in_block = cmp.get("含", {}) or {}
+                out_block = cmp.get("不含", {}) or {}
+                ctr_in = float(in_block.get("ctr", 0.0))
+                ctr_out = float(out_block.get("ctr", 0.0))
                 ctx["compare"] = {
                     "sel_word": sel,
-                    "reach_with": cmp.get("reach_with", 0),
-                    "reach_without": cmp.get("reach_without", 0),
-                    "delta_pp": round(cmp.get("delta_pp", 0), 2),
-                    "ctr_with": round(cmp.get("ctr_with", 0), 2),
-                    "ctr_without": round(cmp.get("ctr_without", 0), 2),
-                    "n_plans_with": cmp.get("n_plans_with", 0),
-                    "n_plans_without": cmp.get("n_plans_without", 0),
+                    "reach_with": int(in_block.get("reach", 0)),
+                    "reach_without": int(out_block.get("reach", 0)),
+                    "ctr_with": round(ctr_in, 2),
+                    "ctr_without": round(ctr_out, 2),
+                    "delta_pp": round(ctr_in - ctr_out, 2),
+                    "n_plans_with": int(in_block.get("n_plans", 0)),
+                    "n_plans_without": int(out_block.get("n_plans", 0)),
                 }
 
     elif active_tab == "ef":
@@ -981,7 +1078,7 @@ def pd_cut(series, bins, labels):
     return _pd.cut(series, bins=bins, labels=labels)
 
 
-@app.post("/api/04/upload", response_class=HTMLResponse)
+@app.post("/api/insights/upload", response_class=HTMLResponse)
 async def api_04_upload(request: Request, file: UploadFile = File(...)) -> Response:
     S_04["error_msg"] = ""
     try:
@@ -995,7 +1092,7 @@ async def api_04_upload(request: Request, file: UploadFile = File(...)) -> Respo
             df, meta = data_loader_build(file_bytes)
     except Exception as e:  # noqa: BLE001
         S_04["error_msg"] = f"解析失败：{e}"
-        return RedirectResponse(url="/04", status_code=303)
+        return RedirectResponse(url="/insights", status_code=303)
 
     # 释放旧 df
     if S_04["df_ref"] is not None:
@@ -1017,7 +1114,7 @@ async def api_04_upload(request: Request, file: UploadFile = File(...)) -> Respo
     else:
         S_04["date_range"] = "—"
 
-    return RedirectResponse(url="/04", status_code=303)
+    return RedirectResponse(url="/insights", status_code=303)
 
 
 def _parse_xlsx(file_bytes: bytes):
@@ -1029,7 +1126,7 @@ def _parse_xlsx(file_bytes: bytes):
 # 05 真实结果回流
 # ============================================================
 def _05_context() -> dict:
-    ctx = base_context("05")
+    ctx = base_context("feedback")
     ctx.update({
         "error_msg": S_05["error_msg"],
         "success_msg": S_05["success_msg"],
@@ -1107,14 +1204,14 @@ def pd_DataFrame(rows):
     return _pd.DataFrame(rows)
 
 
-@app.get("/05", response_class=HTMLResponse)
+@app.get("/feedback", response_class=HTMLResponse)
 async def page_05(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request, "pages/05_真实结果回流.html", _05_context()
     )
 
 
-@app.post("/api/05/upload", response_class=HTMLResponse)
+@app.post("/api/feedback/upload", response_class=HTMLResponse)
 async def api_05_upload(
     request: Request,
     file: UploadFile = File(...),
@@ -1131,7 +1228,7 @@ async def api_05_upload(
         )
     except Exception as e:  # noqa: BLE001
         S_05["error_msg"] = f"导入失败：{e}"
-        return RedirectResponse(url="/05", status_code=303)
+        return RedirectResponse(url="/feedback", status_code=303)
 
     errs = result.get("errors") or []
     n = result.get("n", 0)
@@ -1141,7 +1238,7 @@ async def api_05_upload(
     else:
         S_05["success_msg"] = f"已导入 {n} 条回流数据"
 
-    return RedirectResponse(url="/05", status_code=303)
+    return RedirectResponse(url="/feedback", status_code=303)
 
 
 # ============================================================

@@ -67,6 +67,19 @@ cmd 严格要 CRLF；Write 工具默认 LF。
 
 **铁律**：跑完不写 Handoff = 没跑。落档路径必须有规律（`data/findings/` 不是 `tmp/`）。
 
+### 10. UI 标签 vs selectbox value 分离（2026-09-01 · Phase 27 漏改）
+
+**坑**：Phase 27 把 CTR 模式 UI 标签改成产品话术（`演示规则/渠道基线/XGBoost`）时，**selectbox 的 `value` 也跟着写成 `xgboost`**，但 `CTRPredictionAdapter.VALID_MODES = ('existing_predictor', 'baseline_only', 'demo', 'l1_model', 'unavailable')` 只认 `l1_model`。前端能选、后端拒收、用户看 500 Internal Server Error。
+
+**表现**：`POST /api/studio/generate` 走 `api_01_generate` → `predict_for_candidates(..., mode=ctr_mode)` → `CTRPredictionAdapter(mode=ctr_mode)` 抛 `ValueError: mode must be one of ...`，冒到 FastAPI 默认 handler 返回 500。
+
+**铁律**：
+- UI 改标签（display text）时，**selectbox 的 `value=` 必须保持后端能识别的常量**（display 和 value 解耦）
+- 改 UI 文案前后，**grep VALID_MODES / VALID_* 等后端枚举常量**，确认 selectbox value 没漏
+- 涉及 `CTRPredictionAdapter` / `LLM_PROVIDERS` / `CHANNELS` / `PLAN_TYPES` 等枚举常量的 UI 修改，**改完必须 curl 跑一遍主路径**（不能只肉眼看 UI 标签对不对）
+
+**副坑**：uvicorn `--reload` 在 Windows 上常失效，**改完代码必须手动重启 server** 才生效（setup_and_run.bat 默认不带 `--reload`，所以双击 bat 是最稳的方式）。
+
 ---
 
 ## 已删（详见 git log 早期 commit / memory）

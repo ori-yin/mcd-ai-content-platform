@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}05 真实结果回流 · McD AI 内容平台{% endblock %}
+{% block title %}05 结果反哺 · McD AI 内容平台{% endblock %}
 
 {% block content %}
 
@@ -16,24 +16,23 @@
   {% endif %}
 
   {% if success_msg %}
-  <div class="advanced-notice" style="background:#eef9f0;border-color:#aedcc1;color:#1f6f3e">
-    <b>{{ success_msg }}</b>
+  <div class="success-banner">
+    {{ success_msg }}
   </div>
   {% endif %}
 
-  <form method="post" action="/api/05/upload" enctype="multipart/form-data" class="form-grid">
+  <form method="post" action="/api/feedback/upload" enctype="multipart/form-data" class="form-grid">
     <div class="form-row form-row-wide">
       <label>选择文件（CSV / xlsx / xls）</label>
-      <input type="file" name="file" accept=".csv,.xlsx,.xls" required
-             style="height:auto;padding:8px;border:1px solid var(--line-strong);border-radius:7px;background:#fff">
+      <input type="file" name="file" accept=".csv,.xlsx,.xls" required class="file-input">
     </div>
     <div class="form-row form-row-wide">
       <label>来源标签（可选）</label>
       <input type="text" name="source_label" placeholder="例：Chiikawa松饼堡活动 8 月回流">
     </div>
     <div class="form-row form-row-wide">
-      <button type="submit" class="btn btn-primary" style="height:40px;width:200px;justify-content:center">
-        导入并校验 →
+      <button type="submit" class="btn btn-dark btn-submit">
+        导入并校验
       </button>
     </div>
   </form>
@@ -117,7 +116,7 @@
     <div class="metric-box"><div class="ml">生成侧未回流</div><div class="mv">{{ join.n_only_gen }}</div></div>
   </div>
   {% if join.n_only_feedback %}
-  <div class="card-desc" style="margin-top:8px">
+  <div class="card-desc" style="margin-top:8px;margin-bottom:0">
     {{ join.n_only_feedback }} 个 signature 没有对应生成记录（可能手填或人工发放）
   </div>
   {% endif %}

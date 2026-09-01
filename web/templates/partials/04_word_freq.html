@@ -5,12 +5,12 @@
   - compare（dict，含 reach_with/reach_without/delta_pp/ctr_with/ctr_without/n_plans_with/n_plans_without/sel_word）
 #}
 
-<form method="get" action="/04" class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;align-items:end">
+<form method="get" action="/insights" class="form-grid" style="grid-template-columns:1fr 1fr 1fr 1fr;align-items:end">
   <div class="form-row">
     <label>最少 plan 数</label>
     <select name="wf_min_plans">
       {% for v in [1,2,3,5,10,20,50] %}
-      <option value="{{ v }}" {% if params.wf_min_plans == v %}selected{% endif %}>{{ v }}</option>
+      <option value="{{ v }}" {% if params.wf_min_plans|string == v|string %}selected{% endif %}>{{ v }}</option>
       {% endfor %}
     </select>
   </div>
@@ -18,7 +18,7 @@
     <label>前 N 个词</label>
     <select name="wf_top_n">
       {% for v in [10,20,30,50,100,200] %}
-      <option value="{{ v }}" {% if params.wf_top_n == v %}selected{% endif %}>{{ v }}</option>
+      <option value="{{ v }}" {% if params.wf_top_n|string == v|string %}selected{% endif %}>{{ v }}</option>
       {% endfor %}
     </select>
   </div>
@@ -31,7 +31,7 @@
     </select>
   </div>
   <div class="form-row">
-    <button type="submit" class="btn btn-primary" style="height:36px">查询</button>
+    <button type="submit" class="btn btn-dark btn-sm">查询</button>
   </div>
 </form>
 
@@ -67,7 +67,7 @@
     <div class="metric-box"><div class="ml">含 CTR</div><div class="mv">{{ "%.2f"|format(compare.ctr_with) }}%</div></div>
     <div class="metric-box"><div class="ml">不含 CTR</div><div class="mv">{{ "%.2f"|format(compare.ctr_without) }}%</div></div>
   </div>
-  <div class="card-desc" style="margin-top:8px">
+  <div class="card-desc" style="margin-top:8px;margin-bottom:0">
     含该词 plan {{ compare.n_plans_with }} 个 / 不含 plan {{ compare.n_plans_without }} 个
   </div>
 </div>

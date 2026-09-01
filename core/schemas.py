@@ -152,14 +152,14 @@ class PredictionResult:
 
 # ── 任务输入（PRD §6.2 左栏 11 字段）─────────────────────────────────
 TARGET_AUDIENCE = ("常规大盘", "新品兴趣人群", "近期活跃用户", "沉默召回人群", "高价值会员")
-OBJECTIVES      = ("建立认知", "提升点击", "促进领券", "促进下单", "用户召回", "新品种草")
+OBJECTIVES      = ("通用", "建立认知", "提升点击", "促进领券", "促进下单", "用户召回", "新品种草")  # Phase 28：可选字段加"通用"首位，prompt 拼装时跳过
 CHANNELS        = ("APP Push", "企微1v1", "短信", "微信小程序订阅消息")  # Phase 12 #8/#9 用户拍板：删"站内信" + 加"微信小程序订阅消息" + "企微 1v1" → "企微1v1"（跟数据源连写）
-STAGES          = ("活动预热", "活动上线", "活动爆发", "活动收尾")
-SCENES          = ("早餐", "午餐", "下午茶", "晚餐", "夜宵", "周末聚会", "其他")
-TONES           = ("直接利益型", "场景种草型", "品牌互动型", "行动号召型")
-ACTIONS         = ("点击", "领券", "下单", "回流", "到店", "查看详情")
-PLAN_TYPES      = ("AARRPlan", "常规Plan", "未知")  # Phase 12 #9 用户拍板 2026-08-27：按数据源连写命名
-COUPON_FLAGS    = ("是", "否", "未知")
+STAGES          = ("通用", "活动预热", "活动上线", "活动爆发", "活动收尾")  # Phase 28：stage 改可选
+SCENES          = ("通用", "早餐", "午餐", "下午茶", "晚餐", "夜宵", "周末聚会", "其他")  # Phase 28
+TONES           = ("直接利益型", "场景种草型", "品牌互动型", "行动号召型")  # tone 仍必填，不加"通用"
+ACTIONS         = ("通用", "点击", "领券", "下单", "回流", "到店", "查看详情")  # Phase 28
+PLAN_TYPES      = ("通用", "AARRPlan", "常规Plan", "未知")  # Phase 28
+COUPON_FLAGS    = ("通用", "是", "否", "未知")  # Phase 28
 
 
 @dataclass
@@ -209,7 +209,7 @@ class TaskInput:
     text_has_coupon: str = ""     # Phase 12 #11 用户拍板："标题正文是否带券"（文案推断）
 
     REQUIRED_FIELDS: tuple = (
-        "audience", "channel", "stage", "tone",
+        "audience", "channel", "tone",  # Phase 28：stage 改可选，仅 3 项必填（人群/渠道/语气）
     )
 
     def __post_init__(self):
@@ -345,6 +345,10 @@ class RuleResult:
         return {
             "status": self.status,
             "items": [asdict(it) for it in self.items],
+            "passes": [asdict(it) for it in self.passes],
+            "warns": [asdict(it) for it in self.warns],
+            "fails": [asdict(it) for it in self.fails],
+            "has_blocking": self.has_blocking,
         }
 
 

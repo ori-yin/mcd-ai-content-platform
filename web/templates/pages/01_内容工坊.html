@@ -1,33 +1,19 @@
 {% extends "base.html" %}
 
-{% block title %}01 内容工坊 · McD AI 内容平台{% endblock %}
+{% block title %}内容工坊 · McD AI 内容平台{% endblock %}
 
 {% block content %}
 
-{# ─── 顶部设置条：CTR 模式 + L1 开关 ───────────────────── #}
+{# ─── 顶部设置条：算法模型 ───────────────────── #}
 <div class="settings-bar">
-  <form method="post" action="/api/01/ctr-mode" class="settings-form">
-    <label class="settings-label">CTR 模式</label>
+  <form method="post" action="/api/studio/ctr-mode" class="settings-form">
+    <label class="settings-label">算法模型</label>
     <select name="ctr_mode" onchange="this.form.submit()">
-      {% for opt in ctr_mode_options %}
-      <option value="{{ opt }}" {% if opt == ctr_mode %}selected{% endif %}>{{ opt }}</option>
-      {% endfor %}
+      <option value="demo" {% if ctr_mode == 'demo' %}selected{% endif %}>演示规则</option>
+      <option value="baseline_only" {% if ctr_mode == 'baseline_only' %}selected{% endif %}>历史基准</option>
+      <option value="l1_model" {% if ctr_mode == 'l1_model' %}selected{% endif %}>LightGBM</option>
     </select>
   </form>
-
-  <form method="post" action="/api/01/l1-toggle" class="settings-form">
-    <label class="settings-label">
-      <input type="hidden" name="show_l1" value="0">
-      <input type="checkbox" name="show_l1" value="1"
-             {% if show_l1 %}checked{% endif %}
-             onchange="this.form.submit()">
-      显示 L1 实验对比（仅管理员）
-    </label>
-  </form>
-
-  {% if l1_status_msg %}
-  <span class="settings-hint">{{ l1_status_msg }}</span>
-  {% endif %}
 </div>
 
 {# ─── 错误提示（如生成失败） ───────────────────── #}
@@ -41,58 +27,11 @@
   {# 左：定义经营任务 #}
   <section class="panel-card studio-left">
     <div class="panel-heading">1 定义经营任务</div>
-    <div class="card-desc">
-      必填 5 项（人群 / 渠道 / 阶段 / 场景 / 语气）。AI 结果仅作为候选，投放前人工确认。
-    </div>
 
-    <form method="post" action="/api/01/generate" class="form-grid">
+    <form method="post" action="/api/studio/generate" class="form-grid">
+      {# ── 必填 3 项 ───────────────────── #}
       <div class="form-row">
-        <label>产品类别</label>
-        <select name="product_category">
-          {% for opt in product_categories %}
-          <option value="{{ opt }}" {% if (task_input.product_category or '') == opt %}selected{% endif %}>{{ opt }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="form-row">
-        <label>权益类型</label>
-        <select name="benefit_type">
-          {% for opt in benefit_types %}
-          <option value="{{ opt }}" {% if (task_input.benefit_type or '') == opt %}selected{% endif %}>{{ opt }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="form-row">
-        <label>目标人群 *</label>
-        <select name="audience">
-          {% for opt in audience_opts %}
-          <option value="{{ opt }}" {% if (task_input.audience or '常规大盘') == opt %}selected{% endif %}>{{ opt }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="form-row">
-        <label>活动阶段 *</label>
-        <select name="stage">
-          {% for opt in stage_opts %}
-          <option value="{{ opt }}" {% if (task_input.stage or '活动预热') == opt %}selected{% endif %}>{{ opt }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="form-row">
-        <label>内容语气 *</label>
-        <select name="tone">
-          {% for opt in tone_opts %}
-          <option value="{{ opt }}" {% if (task_input.tone or '直接利益型') == opt %}selected{% endif %}>{{ opt }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="form-row">
-        <label>投放渠道 *</label>
+        <label>投放渠道 <span class="req-mark">*</span></label>
         <select name="channel">
           {% for opt in channel_opts %}
           <option value="{{ opt }}" {% if (task_input.channel or 'APP Push') == opt %}selected{% endif %}>{{ opt }}</option>
@@ -101,10 +40,38 @@
       </div>
 
       <div class="form-row">
-        <label>消费场景 *</label>
+        <label>目标人群 <span class="req-mark">*</span></label>
+        <select name="audience">
+          {% for opt in audience_opts %}
+          <option value="{{ opt }}" {% if (task_input.audience or '常规大盘') == opt %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>内容语气 <span class="req-mark">*</span></label>
+        <select name="tone">
+          {% for opt in tone_opts %}
+          <option value="{{ opt }}" {% if (task_input.tone or '直接利益型') == opt %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      {# ── 可选 9 项（首项「通用」，让 AI 自由发挥） ───────────────────── #}
+      <div class="form-row">
+        <label>活动阶段</label>
+        <select name="stage">
+          {% for opt in stage_opts %}
+          <option value="{{ opt }}" {% if (task_input.stage or '通用') == opt %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>消费场景</label>
         <select name="scene">
           {% for opt in scene_opts %}
-          <option value="{{ opt }}" {% if (task_input.scene or '早餐') == opt %}selected{% endif %}>{{ opt }}</option>
+          <option value="{{ opt }}" {% if (task_input.scene or '通用') == opt %}selected{% endif %}>{{ opt }}</option>
           {% endfor %}
         </select>
       </div>
@@ -113,7 +80,25 @@
         <label>期望动作</label>
         <select name="expected_action">
           {% for opt in action_opts %}
-          <option value="{{ opt }}" {% if (task_input.expected_action or '点击') == opt %}selected{% endif %}>{{ opt }}</option>
+          <option value="{{ opt }}" {% if (task_input.expected_action or '通用') == opt %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>产品类别</label>
+        <select name="product_category">
+          {% for opt in product_categories %}
+          <option value="{{ opt }}" {% if (task_input.product_category or '通用') == opt %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>权益类型</label>
+        <select name="benefit_type">
+          {% for opt in benefit_types %}
+          <option value="{{ opt }}" {% if (task_input.benefit_type or '通用') == opt %}selected{% endif %}>{{ opt }}</option>
           {% endfor %}
         </select>
       </div>
@@ -122,7 +107,7 @@
         <label>Plan 类型</label>
         <select name="plan_type">
           {% for opt in plan_type_opts %}
-          <option value="{{ opt }}" {% if (task_input.plan_type or 'AARRPlan') == opt %}selected{% endif %}>{{ opt }}</option>
+          <option value="{{ opt }}" {% if (task_input.plan_type or '通用') == opt %}selected{% endif %}>{{ opt }}</option>
           {% endfor %}
         </select>
       </div>
@@ -131,7 +116,7 @@
         <label>实际是否用券</label>
         <select name="coupon">
           {% for opt in coupon_opts %}
-          <option value="{{ opt }}" {% if (task_input.coupon or '否') == opt %}selected{% endif %}>{{ opt }}</option>
+          <option value="{{ opt }}" {% if (task_input.coupon or '通用') == opt %}selected{% endif %}>{{ opt }}</option>
           {% endfor %}
         </select>
       </div>
@@ -139,7 +124,8 @@
       <div class="form-row">
         <label>标题正文是否带券</label>
         <select name="text_has_coupon">
-          <option value="否" {% if (task_input.text_has_coupon or '否') == '否' %}selected{% endif %}>否</option>
+          <option value="通用" {% if (task_input.text_has_coupon or '通用') == '通用' %}selected{% endif %}>通用</option>
+          <option value="否" {% if task_input.text_has_coupon == '否' %}selected{% endif %}>否</option>
           <option value="是" {% if task_input.text_has_coupon == '是' %}selected{% endif %}>是</option>
         </select>
       </div>
@@ -147,11 +133,13 @@
       <div class="form-row">
         <label>投放日期类型</label>
         <select name="planned_send_date">
-          <option value="工作日" {% if (task_input.planned_send_date or '工作日') == '工作日' %}selected{% endif %}>工作日</option>
+          <option value="通用" {% if (task_input.planned_send_date or '通用') == '通用' %}selected{% endif %}>通用</option>
+          <option value="工作日" {% if task_input.planned_send_date == '工作日' %}selected{% endif %}>工作日</option>
           <option value="非工作日" {% if task_input.planned_send_date == '非工作日' %}selected{% endif %}>非工作日</option>
         </select>
       </div>
 
+      {# ── 附加 ───────────────────── #}
       <div class="form-row form-row-wide">
         <label>额外要求（可选）</label>
         <textarea name="extra_requirements" rows="3" placeholder="必须出现 / 不得出现 / 法务或业务补充">{{ task_input.extra_requirements or '' }}</textarea>
@@ -159,7 +147,7 @@
 
       <div class="form-row form-row-wide">
         <button type="submit" class="primary-btn" style="margin-top:0;width:100%;justify-content:center;">
-          生成 3 条候选内容 <span>→</span>
+          生成内容
         </button>
       </div>
     </form>

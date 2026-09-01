@@ -136,17 +136,17 @@ a:hover{color:var(--black)}
 
 .top-actions{display:flex;align-items:center;gap:26px}
 .model-select{
-  height:40px;min-width:215px;
+  height:40px;min-width:150px;
   border:1px solid var(--line-strong);
   background:#fff;border-radius:22px;
   display:flex;align-items:center;justify-content:space-between;
-  padding:0 14px 0 16px;color:#525861;
+  padding:0 14px 0 18px;color:#525861;gap:10px;
   box-shadow:0 1px 2px rgba(0,0,0,.02);
 }
 .status{display:flex;align-items:center;gap:7px}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
 .dot.off{background:#bbb}
-.chev{font-size:17px;color:#69707a}
+.chev{width:11px;height:7px;flex:none;display:block}
 .avatar{
   width:38px;height:38px;border-radius:50%;
   background:#24292f;color:#fff;display:grid;place-items:center;
@@ -335,10 +335,28 @@ tr:last-child td:last-child{border-bottom-right-radius:8px}
   padding:24px 24px 28px;
   box-shadow:0 2px 6px rgba(24,32,42,.025);
 }
+/* 相邻 panel-card 自动 14px 间距（Phase 37 · 2026-09-01：去掉 inline margin-top:14px） */
+.panel-card + .panel-card{margin-top:14px}
+/* panel-flat：透明嵌套容器（04 tabs 面板去掉 card 视觉，纯容器） */
+.panel-flat{padding:0;border:0;background:transparent;box-shadow:none}
 .panel-heading{font-size:17px;font-weight:650;margin-bottom:6px;color:var(--text)}
 .card-desc{color:var(--muted);font-size:12.5px;line-height:1.6;margin-bottom:18px}
 .subsection{margin-top:22px}
 .subsection-label{font-size:13px;font-weight:650;margin-bottom:10px;color:#3a4049}
+
+/* ---------- 通用工具类（Phase 37 · 2026-09-01：统一 02-05 行内样式） ---------- */
+.file-input{height:auto;padding:8px;border:1px solid var(--line-strong);border-radius:7px;background:#fff}
+.form-row-inline{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.checkbox-label{display:flex;align-items:center;gap:7px;font-size:12.5px;color:#3a4049;cursor:pointer}
+.mv-sm{font-size:13px;font-weight:650}
+.mv-md{font-size:13.5px;line-height:1.6;font-weight:680}
+.stat-line{font-size:12.5px;margin-bottom:4px;color:#3a4049}
+.cand-meta{margin-top:6px;font-size:12px;color:#888}
+
+/* panel-card 内表单后的常见间距：warning-banner / batch-wrap 默认 14px top */
+.panel-card .warning-banner{margin-top:14px}
+.panel-card .batch-wrap{margin-top:14px}
+.panel-card .batch-wrap + *{margin-top:14px}  /* batch-wrap 之后的按钮行也 14px */
 
 /* ---------- Settings bar (01 顶部) ---------- */
 .settings-bar{
@@ -373,27 +391,44 @@ tr:last-child td:last-child{border-bottom-right-radius:8px}
 /* ---------- Studio 3-column grid (01) ---------- */
 .studio-grid{
   display:grid;
-  grid-template-columns:1.05fr 1.05fr 1.35fr;
+  grid-template-columns:1fr 1.6fr 1.3fr;
   gap:16px;
   align-items:start;
 }
 
 /* ---------- Candidate cards (01) ---------- */
-.candidate-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+/* Phase 29.2 · 2026-09-01 用户反馈：候选卡 1 列 3 行竖排（每张占一整行），卡片内 body 横着读一行 12+ 字 */
+.candidate-grid{display:flex;flex-direction:column;gap:10px}
 .candidate-card{
+  display:flex;flex-direction:column;gap:8px;
   background:#fafbfc;border:1.5px solid var(--line);border-radius:10px;
-  padding:14px 14px 12px;display:flex;flex-direction:column;
+  padding:12px 14px;
+}
+.candidate-card .cand-row{
+  display:flex;flex-direction:row;align-items:center;gap:10px;
 }
 .candidate-card.selected{
   border-color:var(--yellow);
   background:#fff;
   box-shadow:0 0 0 1px var(--yellow) inset;
 }
-.cand-header{font-size:12px;color:#5a626b;margin-bottom:6px;font-weight:600}
-.cand-title{font-size:14px;font-weight:650;margin-bottom:6px;color:var(--text)}
-.cand-body{font-size:12.5px;color:#555d66;line-height:1.55;flex:1;white-space:pre-wrap;word-break:break-word}
+.cand-header{
+  flex:none;font-size:13px;color:#5a626b;font-weight:650;
+  width:120px;
+}
+.cand-title{
+  flex:1;min-width:0;
+  font-size:13.5px;font-weight:650;color:var(--text);
+  display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;
+  overflow:hidden;text-overflow:ellipsis;
+}
+.cand-body{
+  flex:1;min-width:0;
+  font-size:13px;color:#3a4049;line-height:1.5;
+  white-space:pre-wrap;word-break:break-word;
+}
 .btn-select{
-  width:100%;height:34px;border:1px solid var(--line-strong);
+  flex:none;width:90px;height:32px;border:1px solid var(--line-strong);
   border-radius:7px;background:#fff;cursor:pointer;font:inherit;color:var(--text);
 }
 .btn-select.active{background:var(--black);color:#fff;border-color:var(--black)}
@@ -540,6 +575,21 @@ tr:last-child td:last-child{border-bottom-right-radius:8px}
 .btn-primary{background:var(--black);color:#fff;border-color:var(--black)}
 .btn-primary:hover{background:#000;color:#fff}
 .btn-link{background:transparent;border:0;color:var(--text);padding:0 6px;height:auto;cursor:pointer}
+
+/* ---------- 业务按钮变体（Phase 37 · 必须放在 .btn 之后才能覆盖白底黑字） ---------- */
+.btn-sm{height:36px}  /* 紧凑查询按钮（04 tab 内） */
+.btn-submit{height:40px;width:200px;justify-content:center}  /* 标准提交按钮（02/03/04/05 顶部） */
+.btn-dark{
+  height:47px;padding:0 24px;
+  background:var(--black);color:#fff;border:0;border-radius:8px;
+  font-size:14px;font-weight:600;cursor:pointer;
+  box-shadow:0 2px 5px rgba(0,0,0,.12);
+  font-family:inherit;
+  display:inline-flex;align-items:center;justify-content:center;
+  transition:background .15s;
+}
+.btn-dark:hover{background:#000;color:#fff}
+.btn-dark:disabled{background:#3a4049;color:#9ca0a6;cursor:not-allowed;box-shadow:none}
 .btn-link:hover{text-decoration:underline}
 
 /* ============================================================

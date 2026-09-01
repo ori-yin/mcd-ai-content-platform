@@ -226,14 +226,22 @@ class CTRPredictionAdapter:
             time_multiplier=tm,
         )
 
-    # ── l1_model 路径（Phase 20）───────────────────────────────────
+    # ── l1_model 路径（Phase 20 · Phase 31A 混合校准）─────────────────────
+    # L1 LightGBM 区分能力差（R²=0.08）但绝对量级还行；
+    # baseline_lookup 6 维回退查表有数据基础；混合让两边互补（不重训）
+    L1_BLEND_ALPHA = 0.5  # L1 / (baseline×tm) 各占一半
+
     def _l1_model_pred(self, r: dict) -> PredictionResult:
-        """Phase 20 · l1_model mode 主路径。
+        """Phase 20 · l1_model mode 主路径 + Phase 31A 混合校准。
 
         enrich row 的中英文 key → predict_l1 接收的 kwargs 映射：
             标题 → title / 内容 → body / 渠道 → channel /
             计划类型 → plan_type / 是否用券 → coupon /
             工作日类型 → workday / _bl_str → baseline 透传
+
+        Phase 31A：L1 推理后叠加 baseline_lookup × tm 做混合校准
+        - baseline=None（兜底到 0）：final = ctr × tm（L1 相对量级 + 时段系数）
+        - baseline 有值：final = α·ctr + (1-α)·(baseline × tm)（50/50 平权）
         """
         bl = _safe_ctr(r.get("_bl_str"))
         tm = r.get("_tm", 1.0)
@@ -246,13 +254,23 @@ class CTRPredictionAdapter:
             workday=r.get("工作日类型") or r.get("workday"),
         )
         if l1_status == "model" and ctr is not None:
+            if bl is not None:
+                blx = bl * tm
+                final_ctr = round(self.L1_BLEND_ALPHA * ctr + (1 - self.L1_BLEND_ALPHA) * blx, 5)
+                suggestion = (
+                    f"L1 混合校准：L1={ctr*100:.2f}% · 基准×tm={blx*100:.2f}% · "
+                    f"50/50 加权 → {final_ctr*100:.2f}%"
+                )
+            else:
+                final_ctr = round(ctr * tm, 5)
+                suggestion = f"L1 预测（无基准可校准）× tm={tm:.2f} → {final_ctr*100:.2f}%"
             return PredictionResult.model_prediction(
-                pred_ctr=ctr,
+                pred_ctr=final_ctr,
                 confidence=0.6,  # LightGBM 无原生置信度，给个中等值便于 UI 显示
-                suggestion=f"L1 LightGBM 预测（模型上次训练见 lgbm_feature_meta.json）",
+                suggestion=suggestion,
                 baseline_ctr=bl,
                 time_multiplier=tm,
-                source="ctr_predictor_adapter/l1_lightgbm",
+                source="ctr_predictor_adapter/l1_blended",
             )
         if l1_status == "baseline_only":
             return PredictionResult.baseline_only(
