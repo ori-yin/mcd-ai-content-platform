@@ -6,11 +6,15 @@ ui/page_chrome.py — 5 个子页面统一的页面骨架
 
   ① st.set_page_config(...)        5 行
   ② inject_base_css()              1 行
-  ③ st.markdown(<div class="mcd-header">...</div>)  9 行
+  ③ st.markdown(<div class="mcd-header">...</div>)  由 ui/styles.py 提供样式
 
 约束（CLAUDE.md §9）：
 - UI 不放 emoji，h1 不带 emoji
 - 所有子页面统一 layout="wide"，侧边栏默认展开
+
+【v2 视觉重构】
+- header 由 96px 红渐变块 → 64px 中性标题行（左侧 3px MCD_RED 作 brand accent）
+- 视觉重量让给主内容区，符合"中台工具"的克制感
 
 页面级 banner（render_advanced_notice / render_ctr_feedback_notice / render_banner）
 调用顺序与是否启用随页面而异，由各 page 在 page_setup 之后自己调。
@@ -22,16 +26,19 @@ from __future__ import annotations
 
 import streamlit as st
 
+from ui.sidebar_brand import render_brand, render_sidebar_bottom
 from ui.styles import inject_base_css
 
 
 def page_setup(page_id: str, subtitle: str) -> None:
-    """统一 5 个子页面顶部骨架（zero visual change 目标）。
+    r"""统一 5 个子页面顶部骨架（v2 视觉）。
 
     等价于：
         st.set_page_config(page_title=page_id, page_icon=None,
                            layout="wide", initial_sidebar_state="expanded")
         inject_base_css()
+        render_brand()              # 侧栏顶部品牌块
+        render_sidebar_bottom()     # 侧栏底部占位
         st.markdown(f'''
             <div class="mcd-header">
                 <h1>{page_id}</h1>
@@ -46,6 +53,8 @@ def page_setup(page_id: str, subtitle: str) -> None:
         initial_sidebar_state="expanded",
     )
     inject_base_css()
+    render_brand()
+    render_sidebar_bottom()
     st.markdown(
         f"""
         <div class="mcd-header">

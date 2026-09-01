@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}02 文案诊断 · McD AI 内容平台{% endblock %}
+
+{% block content %}
+
+{# 顶部 banner #}
+{% if not llm_configured %}
+<div class="advanced-notice">
+  <b>Demo 模式</b>：当前 LLM 未配置，AI 改写走本地占位生成；CTR / 规则走本地 + 历史基准。
+</div>
+{% endif %}
+
+<div class="panel-card" style="margin-bottom:16px">
+  <div class="panel-heading">1 输入文案</div>
+  <div class="card-desc">选渠道，填标题和正文。本页不依赖 AI 生成，可直接调 CTR Adapter。</div>
+
+  {% if error_msg %}
+  <div class="warning-banner">{{ error_msg }}</div>
+  {% endif %}
+
+  <form method="post" action="/api/02/diagnose" class="form-grid">
+    <div class="form-row">
+      <label>投放渠道 *</label>
+      <select name="channel">
+        {% for opt in channels %}
+        <option value="{{ opt }}" {% if (task.channel or 'APP Push') == opt %}selected{% endif %}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label>AI 改写策略（可选）</label>
+      <select name="action">
+        {% for opt in action_opts %}
+        <option value="{{ opt }}" {% if (task.action or 'regen') == opt %}selected{% endif %}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-row form-row-wide">
+      <label>标题（短信 / 企微1v1 可空）</label>
+      <input type="text" name="title" maxlength="200"
+             value="{{ task.title or '' }}" placeholder="例：新品小卡来啦">
+    </div>
+
+    <div class="form-row form-row-wide">
+      <label>正文 *</label>
+      <textarea name="body" rows="4" maxlength="500"
+                placeholder="例：新品优惠 + 限定小卡，点击查看详情。">{{ task.body or '' }}</textarea>
+    </div>
+
+    <div class="form-row form-row-wide">
+      <button type="submit" class="btn btn-primary" style="height:40px;width:200px;justify-content:center">
+        开始诊断 →
+      </button>
+    </div>
+  </form>
+</div>
+
+<div class="diag-grid">
+
+  {# 左：本地诊断 #}
+  <section class="panel-card">
+    <div class="panel-heading">2 本地诊断</div>
+    {% include "partials/02_rule_panel.html" %}
+  </section>
+
+  {# 中：渠道预览 + CTR #}
+  <section class="panel-card">
+    <div class="panel-heading">3 渠道预览与 CTR 参考</div>
+    {% if not rule %}
+      <div class="empty-state">诊断后此处显示渠道预览和 CTR 参考。</div>
+    {% else %}
+      <div class="subsection-label">渠道预览</div>
+      {% include "partials/02_channel_preview.html" %}
+      <div class="subsection">
+        <div class="subsection-label">CTR 参考结果</div>
+        {% include "partials/02_ctr_card.html" %}
+      </div>
+    {% endif %}
+  </section>
+
+  {# 右：历史相似 + AI 改写 #}
+  <section class="panel-card">
+    <div class="panel-heading">4 历史相似 & AI 改写</div>
+    {% if not rule %}
+      <div class="empty-state">诊断后此处显示相似历史内容和 AI 改写候选。</div>
+    {% else %}
+      {% include "partials/02_similar_rewrites.html" %}
+    {% endif %}
+  </section>
+
+</div>
+
+{% endblock %}

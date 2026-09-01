@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}03 批量评估 · McD AI 内容平台{% endblock %}
+
+{% block content %}
+
+{# 顶部 banner #}
+{% if not llm_configured %}
+<div class="advanced-notice">
+  <b>Demo 模式</b>：批量 CTR 预测走本地 + 历史基准；不依赖 LLM。
+</div>
+{% endif %}
+
+<div class="panel-card">
+  <div class="panel-heading">1 上传文件</div>
+  <div class="card-desc">
+    支持 CSV / Excel。必填列：title + body + channel。兼容别名：「标题」「headline」「内容」「content」等。
+  </div>
+
+  {% if error_msg %}
+  <div class="warning-banner">{{ error_msg }}</div>
+  {% endif %}
+
+  {% if success_msg %}
+  <div class="advanced-notice" style="background:#eef9f0;border-color:#aedcc1;color:#1f6f3e">
+    <b>{{ success_msg }}</b>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/api/03/upload" enctype="multipart/form-data" class="form-grid">
+    <div class="form-row form-row-wide">
+      <label>选择文件（CSV / xlsx / xls）</label>
+      <input type="file" name="file" accept=".csv,.xlsx,.xls" required
+             style="height:auto;padding:8px;border:1px solid var(--line-strong);border-radius:7px;background:#fff">
+    </div>
+    <div class="form-row form-row-wide">
+      <button type="submit" class="btn btn-primary" style="height:40px;width:200px;justify-content:center">
+        上传并解析 →
+      </button>
+    </div>
+  </form>
+</div>
+
+{% if batch.filename %}
+<div class="panel-card" style="margin-top:14px">
+  <div class="panel-heading">2 解析预览</div>
+
+  <div class="metric-row">
+    <div class="metric-box">
+      <div class="ml">总行数</div>
+      <div class="mv">{{ batch.n_rows }}</div>
+    </div>
+    <div class="metric-box">
+      <div class="ml">必备列</div>
+      <div class="mv" style="font-size:13.5px;line-height:1.6">
+        title {{ '✓' if batch.has_title else '✗' }} ·
+        body {{ '✓' if batch.has_body else '✗' }} ·
+        channel {{ '✓' if batch.has_channel else '✗' }}
+      </div>
+    </div>
+    <div class="metric-box">
+      <div class="ml">命中渠道数</div>
+      <div class="mv">{{ batch.n_valid_channels }} / {{ batch.n_total_channels }}</div>
+    </div>
+    <div class="metric-box">
+      <div class="ml">文件</div>
+      <div class="mv" style="font-size:13px">{{ batch.filename }}</div>
+    </div>
+    <div class="metric-box">
+      <div class="ml">说明</div>
+      <div class="md">下一步：启动批量评估</div>
+    </div>
+  </div>
+
+  {% if batch.preview_rows %}
+  <div class="batch-wrap" style="margin-bottom:14px">
+  <table class="batch-table">
+    <thead><tr>
+      <th>标题</th><th>正文</th><th>渠道</th><th>Plan 类型</th><th>用券</th>
+    </tr></thead>
+    <tbody>
+    {% for r in batch.preview_rows %}
+    <tr>
+      <td>{{ r.title }}</td>
+      <td>{{ r.body[:60] if r.body else '' }}{% if r.body and r.body|length > 60 %}…{% endif %}</td>
+      <td>{{ r.channel }}</td>
+      <td>{{ r.plan_type or '—' }}</td>
+      <td>{{ r.coupon or '—' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  {% if not batch.can_eval %}
+  <div class="warning-banner">缺 body 或 channel 列，无法启动评估</div>
+  {% else %}
+  <form method="post" action="/api/03/evaluate" style="display:flex;align-items:center;gap:18px">
+    <button type="submit" class="btn btn-primary" style="height:40px">开始批量评估 →</button>
+    <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:#3a4049">
+      <input type="checkbox" name="save_to_records" value="1" {% if batch.save_to_records %}checked{% endif %}>
+      保存预测到 records.db（用于漂移监控 + 后续校准）
+    </label>
+  </form>
+  {% if batch.save_help %}
+  <div class="card-desc" style="margin-top:8px">{{ batch.save_help }}</div>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
+{% if batch.eval_done %}
+<div class="panel-card" style="margin-top:14px">
+  <div class="panel-heading">3 评估结果</div>
+
+  <div class="metric-row">
+    <div class="metric-box"><div class="ml">总行数</div><div class="mv">{{ result.n }}</div></div>
+    <div class="metric-box"><div class="ml">规则通过</div><div class="mv">{{ result.n_pass }}</div></div>
+    <div class="metric-box"><div class="ml">规则提醒</div><div class="mv">{{ result.n_warn }}</div></div>
+    <div class="metric-box"><div class="ml">规则阻断</div><div class="mv">{{ result.n_blocked }}</div></div>
+    <div class="metric-box"><div class="ml">CTR 有效</div><div class="mv">{{ result.n_ctr_ok }}</div></div>
+  </div>
+
+  {% if result.n_err %}
+  <div class="warning-banner">{{ result.n_err }} 行有解析错误，请检查必填列与渠道枚举。</div>
+  {% endif %}
+
+  {% if result.channel_chips %}
+  <div class="card-desc">渠道分布：{{ result.channel_chips | safe }}</div>
+  {% endif %}
+
+  <div class="batch-wrap" style="margin-top:12px">
+  <table class="batch-table">
+    <thead><tr>
+      <th>行号</th><th>标题</th><th>正文</th><th>渠道</th><th>规则</th>
+      <th>阻断数</th><th>提醒数</th><th>CTR 预测</th><th>基准 CTR</th><th>置信度</th>
+      <th>建议</th><th>错误</th>
+    </tr></thead>
+    <tbody>
+    {% for r in result.rows %}
+    <tr>
+      <td>{{ r.row_index }}</td>
+      <td>{{ r.title }}</td>
+      <td>{{ (r.body[:50] + '…') if r.body and r.body|length > 50 else (r.body or '') }}</td>
+      <td>{{ r.channel }}</td>
+      <td>{{ r.rule_status }}</td>
+      <td>{{ r.rule_fail_count }}</td>
+      <td>{{ r.rule_warn_count }}</td>
+      <td>{{ r.ctr_pred_str }}</td>
+      <td>{{ r.ctr_baseline_str }}</td>
+      <td>{{ r.ctr_confidence_str }}</td>
+      <td>{{ r.suggestion }}</td>
+      <td>{{ r.error }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <div style="margin-top:14px">
+    <a href="/api/03/download" class="btn btn-primary">下载结果 CSV（UTF-8 BOM）</a>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

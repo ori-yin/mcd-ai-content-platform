@@ -1,0 +1,179 @@
+{# ============================================================
+   home.html — 首页正文（继承 base.html）
+
+   CSS 全部从 v2.html 抽出（static/css/style.css），
+   这里只放页面骨架，业务数据未来由 app.py 路由注入。
+   ============================================================ #}
+
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="grid top-grid">
+
+  {# —— 核心 · 内容生成（主入口）—— #}
+  <div class="card hero core-card">
+    <div class="card-title">核心 · 内容生成</div>
+    <div class="card-desc">基于经营目标与场景，智能生成高质量内容，并提供 CTR 预测与投放建议</div>
+
+    {# 未来接业务后改成 hx-post：
+       <button class="primary-btn"
+               hx-get="/01"
+               hx-target="body"
+               hx-push-url="true">
+         进入 01 内容工坊 <span>→</span>
+       </button>
+    #}
+    <div class="primary-btn-wrap">
+      <a href="/01" class="primary-btn">
+        进入 01 内容工坊 <span>→</span>
+      </a>
+    </div>
+
+    <div class="spark">✦</div>
+    <div class="doc-illustration"></div>
+  </div>
+
+  {# —— 进阶能力（4 个子工具入口）—— #}
+  <div class="card advanced-card">
+    <div class="advanced-head">
+      <div class="card-title">进阶能力</div>
+      <div class="card-desc">从诊断、批量评估到洞察分析，提升内容效果与投放效率</div>
+    </div>
+
+    <div class="advanced-grid">
+
+      {# 02 文案诊断 #}
+      <a href="/02" class="advanced-item" style="text-decoration:none;">
+        <div class="advanced-icon">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        </div>
+        <div>
+          <div class="advanced-name">02 文案诊断</div>
+          <div class="advanced-desc">单条文案诊断与优化建议</div>
+        </div>
+        <div class="advanced-arrow">→</div>
+      </a>
+
+      {# 03 批量评估 #}
+      <a href="/03" class="advanced-item" style="text-decoration:none;">
+        <div class="advanced-icon">
+          <svg class="ico" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg>
+        </div>
+        <div>
+          <div class="advanced-name">03 批量评估</div>
+          <div class="advanced-desc">批量评估文案效果与风险</div>
+        </div>
+        <div class="advanced-arrow">→</div>
+      </a>
+
+      {# 04 历史洞察 #}
+      <a href="/04" class="advanced-item" style="text-decoration:none;">
+        <div class="advanced-icon">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M4 20V10M9 20V4M14 20v-7M19 20V7"/></svg>
+        </div>
+        <div>
+          <div class="advanced-name">04 历史洞察</div>
+          <div class="advanced-desc">历史数据分析与趋势洞察</div>
+        </div>
+        <div class="advanced-arrow">→</div>
+      </a>
+
+      {# 05 真实结果回流 #}
+      <a href="/05" class="advanced-item" style="text-decoration:none;">
+        <div class="advanced-icon">
+          <svg class="ico" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>
+        </div>
+        <div>
+          <div class="advanced-name">05 真实结果回流</div>
+          <div class="advanced-desc">回流真实数据闭环优化</div>
+        </div>
+        <div class="advanced-arrow">→</div>
+      </a>
+
+    </div>
+  </div>
+</div>
+
+{# —— 项目状态（4 列 metric）—— #}
+<section class="card section-card">
+  <div class="section-heading">项目状态</div>
+  <div class="status-grid">
+
+    <div class="metric">
+      <div class="metric-icon">✓</div>
+      <div>
+        <div class="metric-label">数据接入</div>
+        <div class="metric-value">完成</div>
+        <div class="metric-detail">数据源已接入并验证通过</div>
+      </div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-icon">✓</div>
+      <div>
+        <div class="metric-label">模型配置</div>
+        <div class="metric-value">完成</div>
+        <div class="metric-detail">LLM 与 CTR 模型已就绪</div>
+      </div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-icon">✓</div>
+      <div>
+        <div class="metric-label">规则库</div>
+        <div class="metric-value">完成</div>
+        <div class="metric-detail">文案规则库已加载</div>
+      </div>
+    </div>
+
+    <div class="metric">
+      <div class="metric-icon progress">◌</div>
+      <div>
+        <div class="metric-label">回流机制</div>
+        <div class="metric-value">进行中</div>
+        <div class="metric-detail">建设中，部分回流可用</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+{# —— 底部：关键决策 + 验证命令（两栏）—— #}
+<div class="grid bottom-grid">
+
+  <section class="card info-card">
+    <div class="info-head">
+      <div class="section-heading" style="margin:0">关键决策</div>
+      <div class="copy-icon" title="复制">
+        <svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      </div>
+    </div>
+    <table>
+      <tr><td>项目位置</td><td>mcd-ai-content-platform</td></tr>
+      <tr><td>复用策略</td><td>继承并优化现有资产</td></tr>
+      <tr><td>旧项目</td><td>mcd_content_platform（已归档）</td></tr>
+      <tr><td>PRD</td><td>PRD_内容平台_v1.0.md</td></tr>
+      <tr><td>应用模式</td><td>FastAPI + Jinja2 + HTMX</td></tr>
+      <tr><td>CTR 模式</td><td>现有预测 + baseline</td></tr>
+      <tr><td>配色</td><td>简约中性（黑白灰为主）</td></tr>
+    </table>
+  </section>
+
+  <section class="card info-card">
+    <div class="info-head">
+      <div class="section-heading" style="margin:0">验证命令</div>
+    </div>
+    <div class="code-wrap"><div class="code">
+      <div class="code-copy" title="复制">
+        <svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+      </div>
+      <div><span class="line-no">1</span>cd mcd-ai-content-platform\web</div>
+      <div><span class="line-no">2</span>pip install -r requirements.txt</div>
+      <div><span class="line-no">3</span><u>uvicorn</u> app:app --reload --port 8530</div>
+    </div></div>
+  </section>
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,34 @@
+{# partials/04_emoji.html — Tab 3: Emoji 表现 #}
+
+<form method="get" action="/04" class="form-grid" style="grid-template-columns:1fr 1fr 1fr;align-items:end">
+  <div class="form-row">
+    <label>最少 plan 数</label>
+    <select name="ef_min_plans">
+      {% for v in [1,2,3,5,10,20,50] %}
+      <option value="{{ v }}" {% if params.ef_min_plans == v %}selected{% endif %}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-row">
+    <label>前 N 个 emoji</label>
+    <select name="ef_top_n">
+      {% for v in [5,10,20,30,50,100] %}
+      <option value="{{ v }}" {% if params.ef_top_n == v %}selected{% endif %}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-row">
+    <button type="submit" class="btn btn-primary" style="height:36px">查询</button>
+  </div>
+</form>
+
+{% if not df_rows %}
+<div class="warning-banner" style="margin-top:14px">emoji 数据为空</div>
+{% else %}
+<div class="batch-wrap" style="margin-top:14px">
+<table class="batch-table">
+  <thead><tr>{% for c in columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+  <tbody>{% for r in df_rows %}<tr>{% for c in columns %}<td>{{ r[c] }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+</table>
+</div>
+{% endif %}

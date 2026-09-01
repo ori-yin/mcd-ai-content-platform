@@ -1,0 +1,47 @@
+{# partials/04_rank.html — Tab 1: 高效 Plan 排行
+
+依赖：
+  - df_rows（list[dict]，已转 JSON 安全）
+  - params（dict: min_reach/top_n）
+#}
+
+<form method="get" action="/04" class="form-grid" style="grid-template-columns:1fr 1fr 1fr;align-items:end">
+  <div class="form-row">
+    <label>最小触达过滤</label>
+    <select name="min_reach">
+      {% for v in [100,500,1000,3000,5000,10000] %}
+      <option value="{{ v }}" {% if params.min_reach == v %}selected{% endif %}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-row">
+    <label>显示前 N 条</label>
+    <select name="top_n">
+      {% for v in [5,10,20,30,50,100] %}
+      <option value="{{ v }}" {% if params.top_n == v %}selected{% endif %}>{{ v }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="form-row">
+    <button type="submit" class="btn btn-primary" style="height:36px">查询</button>
+  </div>
+</form>
+
+{% if not df_rows %}
+<div class="warning-banner" style="margin-top:14px">无符合条件的高效 Plan（调低最小触达过滤或上传更多数据）</div>
+{% else %}
+<div class="batch-wrap" style="margin-top:14px">
+<table class="batch-table">
+  <thead><tr>
+    {% for c in columns %}<th>{{ c }}</th>{% endfor %}
+  </tr></thead>
+  <tbody>
+  {% for r in df_rows %}
+  <tr>
+    {% for c in columns %}<td>{{ r[c] }}</td>{% endfor %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}

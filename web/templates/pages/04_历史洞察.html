@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}04 历史洞察 · McD AI 内容平台{% endblock %}
+
+{% block content %}
+
+<div class="panel-card">
+  <div class="panel-heading">1 上传历史数据</div>
+  <div class="card-desc">
+    支持 Excel（含「触达成功」「点击人次」必填列）/ CSV。
+    列名模糊匹配（兼容「发送日期/日期」「渠道/channel」等）。
+  </div>
+
+  {% if error_msg %}
+  <div class="warning-banner">{{ error_msg }}</div>
+  {% endif %}
+
+  {% if ins.filename %}
+  <div class="advanced-notice" style="background:#eef9f0;border-color:#aedcc1;color:#1f6f3e">
+    <b>已加载 {{ ins.n_rows }} 行</b>（{{ ins.filename }}）
+  </div>
+  {% endif %}
+
+  <form method="post" action="/api/04/upload" enctype="multipart/form-data" class="form-grid">
+    <div class="form-row form-row-wide">
+      <label>选择历史数据文件</label>
+      <input type="file" name="file" accept=".csv,.xlsx,.xls" required
+             style="height:auto;padding:8px;border:1px solid var(--line-strong);border-radius:7px;background:#fff">
+    </div>
+    <div class="form-row form-row-wide">
+      <button type="submit" class="btn btn-primary" style="height:40px;width:200px;justify-content:center">
+        上传并解析 →
+      </button>
+    </div>
+  </form>
+</div>
+
+{% if ins.filename %}
+
+<div class="panel-card" style="margin-top:14px">
+  <div class="panel-heading">2 数据概览</div>
+  <div class="metric-row">
+    <div class="metric-box"><div class="ml">总记录数</div><div class="mv">{{ ins.n_rows }}</div></div>
+    <div class="metric-box"><div class="ml">含文案记录</div><div class="mv">{{ ins.n_has_copy if ins.n_has_copy is not none else '—' }}</div></div>
+    <div class="metric-box"><div class="ml">渠道数</div><div class="mv">{{ ins.n_channels }}</div></div>
+    <div class="metric-box"><div class="ml">日期范围</div><div class="mv" style="font-size:13px">{{ ins.date_range }}</div></div>
+  </div>
+  {% if ins.channels %}
+  <div class="card-desc">渠道：{{ ins.channels | join(' · ') }}</div>
+  {% endif %}
+</div>
+
+<div class="panel-card" style="margin-top:14px;padding:0;border:0;background:transparent;box-shadow:none">
+  <div class="ins-tabs">
+    {% set tabs = [
+      ('rank', '高效 Plan 排行'),
+      ('wf',   '高低表现词'),
+      ('ef',   'Emoji 表现'),
+      ('tl',   '标题字数'),
+      ('sim',  '历史相似'),
+      ('daily','每日趋势'),
+      ('owner','Owner 对比'),
+    ] %}
+    {% for tid, tname in tabs %}
+    <a href="/04?tab={{ tid }}" class="ins-tab {% if active_tab == tid %}active{% endif %}">{{ tname }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="ins-panel active">
+    {% if active_tab == 'rank' %}
+      {% include "partials/04_rank.html" %}
+    {% elif active_tab == 'wf' %}
+      {% include "partials/04_word_freq.html" %}
+    {% elif active_tab == 'ef' %}
+      {% include "partials/04_table.html" %}
+    {% elif active_tab == 'tl' %}
+      {% include "partials/04_title_len.html" %}
+    {% elif active_tab == 'sim' %}
+      {% include "partials/04_similar.html" %}
+    {% elif active_tab == 'daily' %}
+      {% include "partials/04_daily_trend.html" %}
+    {% elif active_tab == 'owner' %}
+      {% include "partials/04_owner.html" %}
+    {% endif %}
+  </div>
+</div>
+
+{% endif %}
+
+{% endblock %}

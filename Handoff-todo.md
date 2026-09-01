@@ -9,6 +9,7 @@
 
 - [§6.2 待业务确认（按返工风险梯队）](#62-待业务确认按返工风险梯队)
 - [§6.3 候选（详 §5.5 CTR Roadmap）](#63-候选详-55-ctr-roadmap)
+- [§6.4 技术债 backlog（不上线不修）](#64-技术债-backlog-不上线不修)
 
 ---
 
@@ -26,6 +27,7 @@
 - [x] **#2** 投放目标 维度枚举 + 是否参与生成 —— ✅ **Phase 9 已拍板**，详 `Downloads/decision-objective-2026-08-26.md`（6 值 → 4 值收敛：品牌认知 / 点击驱动 / 转化促成 / 用户召回；**支持多选，逗号分隔，max 3，union 合并**；必填 + 参与生成 + 影响 strategy+tone，不约束 product；baseline 新增 objective_x_渠道 = 90 key，7 级回退兜底）
 - [x] **#4** CTR 校准频率 —— ✅ **用户拍板（2026-08-31）**：从 Phase 7.1「每周一上午手动」改为**每月一次手动**（建议每月 1 号上午跑）。`tools/weekly_calibrate.bat` 仍落档不调度，月初手动执行；`docs/ctr-feedback-schedule.md` 频率段待同步修订
 - [x] **#7** 02-05 附属页面 + 字典维护 UI 纳入正式版 —— ✅ **用户拍板（2026-08-31）**：UI 重设阶段一起做（首页 00 入口重排 + 字典 UI 独立页 `pages/06_settings.py`）。02 单条诊断 / 03 批量评估 / 04 七 Tab 洞察 / 05 上传回流 + 06 字典维护全部进正式版
+- [x] **#7a** UI 重设计落地（FastAPI + Jinja2 + HTMX 全量迁移，§62 · 2026-09-01） —— ✅ **Phase 26 完成**：5/5 页面已从 Streamlit 迁到 `web/templates/pages/` + 13 API + 金拱 SVG 替换 M 字母 + 居中 primary button + LLM 状态 pill；旧 Streamlit `pages/0X_*.py` 保留作 fallback。**字典维护 UI（`pages/06_settings.py`）仍待 Phase 27+**——本次迁移范围只覆盖 00-05。
 
 **第三梯队（用户口径 · Phase 10 拍板稿 · 2026-08-27 用户会话提）**
 
@@ -85,7 +87,7 @@
 
 ### 6.3 候选（详 §5.5 CTR Roadmap）
 
-> **业务确认后启动**（下方 P4 / UI 重设计 待拍板；L1 已落地 → docs/l1-training-runbook.md）。
+> **业务确认后启动**（下方 P4 仍待启动；UI 重设计 §62 已落地 → 见 Phase 26；L1 已落地 → docs/l1-training-runbook.md）。
 
 #### L1 · LightGBM 回归替 baseline 查找表 ✅ 已落地
 
@@ -122,7 +124,7 @@
 
 **用户反馈（2026-08-28）**：核心逻辑已完成，**UI 太丑，整体架构 + 布局都有大问题**。下一步计划整体重构，不是修修补补。
 
-**2026-08-31 拍板**：UI 重设**最后做**；P4 + 字典维护 UI（`pages/06_settings.py`，#7 拍板纳入）跟 UI 重设一起做。
+**2026-08-31 拍板 → 2026-09-01 落地**：UI 重设大部分做（Phase 26 5/5 页面 + 13 API 落地，见 Handoff.md §6.1）；**P4 + 字典维护 UI（`pages/06_settings.py`）仍待二轮 UI 优化（Phase 27+）**，避免改 04 页面结构两次。
 
 **find-skills 调研结论**（2026-08-28）：
 
@@ -140,9 +142,28 @@
 1. 跑 `developing-with-streamlit/scripts/discover.py` 拿项目级 recommendations
 2. 按输出决定补装外部 skill
 3. 走 skill 流水线整体重构（CLAUDE.md §9 红线）
-4. 同步做 P4 第 8 Tab + 字典维护 UI + 02-05 正式版统一
+4. 同步做 P4 第 8 Tab + 字典维护 UI + 02-05 正式版统一（**2026-09-01 注解**：02-05 页面已迁完正式版 UI，剩 P4 第 8 Tab + 字典维护 UI 待 Phase 27+）
 
 **作用域**：6 页面（app + 00-05）+ banner 系统 + sidebar 主题；**不动后端逻辑**。
+
+---
+
+## 6.4 技术债 backlog（不上线不修）
+
+> **原则**：严格遵守 CLAUDE.md §9 + UI 重设不动后端。当前 3 条，不写实现细节，保持精简。触发时机到来时再清，不让 backlog 长成"完整工程治理清单"。
+
+| # | 债项 | 触发时机 |
+|---|------|---------|
+| P1 | `feedback_lookup.py` 破窗焊死：加单测断言"无其他 adapter import sqlite3" | 任意对外分享前（含临时演示） |
+| P2 | 清 orphan field：`planned_send_date`（删前 grep 确认无人读，再从 TaskInput 移除） | 任意动 TaskInput 字段前（不只是上线） |
+| P2 | 补 10 处弱断言（`_check(x, True)` → 断言值正确） | 任意一轮重构或弱断言自然碰到时 |
+
+**为什么现在一律不动**：
+- 动 TaskInput 字段顺序 = 踩 dataclass 铁律 + 改 854 用例
+- 动 feedback_lookup.py 破窗 = 改 adapter 接口，UI 重设阶段不允许动后端
+- 补弱断言 = 数值固定化会绑死重构空间
+
+**配套防腐烂**：每次新建会话先扫本表，已完成项打 ✅ + 移出表。
 
 ---
 

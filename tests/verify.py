@@ -1281,9 +1281,9 @@ _section("30) pages import sanity")
 def test_pages_import():
     import importlib
 
-    for page in ("pages.00_home", "pages.01_content_studio",
-                 "pages.02_copy_diagnosis", "pages.03_batch_evaluation",
-                 "pages.04_historical_insights"):
+    for page in ("pages.00 首页", "pages.01 内容工坊",
+                 "pages.02 文案诊断", "pages.03 批量评估",
+                 "pages.04 历史洞察"):
         try:
             importlib.import_module(page)
             _check(f"{page} import 成功", True)
@@ -2132,7 +2132,7 @@ def test_phase_a1_product_benefit_split():
     _check("Demo 权益单空 body 含'赠品'", any("赠品" in c.body for c in cs_bt_only))
 
     # ── 5) pages/01_content_studio 源码静态检查 ──────────────
-    src_studio = open("pages/01_content_studio.py", encoding="utf-8").read()
+    src_studio = open("pages/01 内容工坊.py", encoding="utf-8").read()
     _check("content_studio 引用 core.product_benefit 模块",
            "from core.product_benefit import" in src_studio)
     _check("content_studio 调用 get_product_categories",
@@ -2183,11 +2183,11 @@ def test_phase6_p1_nav_and_notice():
     _check(".home-section-advanced CSS 已加", ".home-section-advanced" in styles_src)
 
     # ── 3) 4 个进阶页：02/03 顶部仅 advanced, 04/05 顶部 advanced + ctr ─
-    src02 = open("pages/02_copy_diagnosis.py", encoding="utf-8").read()
-    src03 = open("pages/03_batch_evaluation.py", encoding="utf-8").read()
-    src04 = open("pages/04_historical_insights.py", encoding="utf-8").read()
-    src05 = open("pages/05_feedback.py", encoding="utf-8").read()
-    home  = open("pages/00_home.py", encoding="utf-8").read()
+    src02 = open("pages/02 文案诊断.py", encoding="utf-8").read()
+    src03 = open("pages/03 批量评估.py", encoding="utf-8").read()
+    src04 = open("pages/04 历史洞察.py", encoding="utf-8").read()
+    src05 = open("pages/05 真实结果回流.py", encoding="utf-8").read()
+    home  = open("pages/00 首页.py", encoding="utf-8").read()
 
     for name, src in [("02", src02), ("03", src03), ("04", src04), ("05", src05)]:
         _check(f"{name} import render_advanced_notice",
@@ -2213,7 +2213,7 @@ def test_phase6_p1_nav_and_notice():
            "01_content_studio" in home)
 
     # ── 5) 01_content_studio 推荐结论已有免责话术（保留原有）──
-    src01 = open("pages/01_content_studio.py", encoding="utf-8").read()
+    src01 = open("pages/01 内容工坊.py", encoding="utf-8").read()
     _check("01 推荐结论含「不代表正式投放承诺」免责话术",
            "不代表正式投放承诺" in src01)
 
@@ -3208,7 +3208,7 @@ def test_phase16_calibrate_text_workday():
 def test_phase17_quality_cleanup():
     """Phase 17 · 2026-08-28 用户拍板"检查整体代码质量性能"后清理：
 
-    - 02_copy_diagnosis.py 改用 ui.llm_status.load_config()（不再 `from core.config` 失败）
+    - 02 文案诊断.py 改用 ui.llm_status.load_config()（不再 `from core.config` 失败）
     - services/record_service.py 整文件已删（Phase 13 后无人调）
     - core/llm_gateway.ProviderRouter.call 加实例级 LRU cache（512 容量）
     - docstring/注释 v3.0/Phase 3-4 标注对齐 Phase 16.5
@@ -3309,9 +3309,9 @@ def test_phase17_quality_cleanup():
            len(router2._cache) <= 512,
            f"size={len(router2._cache)}")
 
-    # ── 7) 02_copy_diagnosis.py 不再有 import core.config（注释里提到历史是 OK）──
+    # ── 7) 02 文案诊断.py 不再有 import core.config（注释里提到历史是 OK）──
     diag_src_path = os.path.join(
-        os.path.dirname(__file__), "..", "pages", "02_copy_diagnosis.py")
+        os.path.dirname(__file__), "..", "pages", "02 文案诊断.py")
     diag_src_path = os.path.normpath(diag_src_path)
     with open(diag_src_path, encoding="utf-8") as f:
         diag_src = f.read()
@@ -3321,13 +3321,13 @@ def test_phase17_quality_cleanup():
         ln for ln in diag_src.splitlines()
         if ln.strip().startswith(("from ", "import "))
     ]
-    _check("02_copy_diagnosis.py 删 `from core.config import settings` 实际 import",
+    _check("02 文案诊断.py 删 `from core.config import settings` 实际 import",
            not any("from core.config import" in ln for ln in import_lines),
            f"residual: {[l for l in import_lines if 'core.config' in l]}")
-    _check("02_copy_diagnosis.py 改用 load_config",
+    _check("02 文案诊断.py 改用 load_config",
            "ui.llm_status import" in diag_src and "load_config" in diag_src)
 
-    # ── 8) app.py / core/schemas.py / pages/00_home.py 注释对齐 Phase 16.5 ──
+    # ── 8) app.py / core/schemas.py / pages/00 首页.py 注释对齐 Phase 16.5 ──
     app_src = open(os.path.join(os.path.dirname(__file__), "..", "app.py"),
                    encoding="utf-8").read()
     _check("app.py 页面清单去 'Phase 4 占位'",
@@ -3379,7 +3379,7 @@ def test_phase17_weighted_ctr_utility():
     # 用 grep 统计还剩多少处 "click / reach * 100" 公式
     r1 = subprocess.run(
         ["grep", "-rn", "round(click / reach * 100",
-         "services/", "repositories/", "pages/04_historical_insights.py"],
+         "services/", "repositories/", "pages/04 历史洞察.py"],
         capture_output=True, text=True,
     )
     inline_remaining = len([l for l in r1.stdout.splitlines() if l.strip()])
@@ -3514,28 +3514,28 @@ def test_phase17_6_dead_code():
     import inspect
     import os
 
-    # ── 1) pages/04_historical_insights.py 不再有 __import__("io") ──
-    p04 = os.path.join(os.path.dirname(__file__), "..", "pages", "04_historical_insights.py")
+    # ── 1) pages/04 历史洞察.py 不再有 __import__("io") ──
+    p04 = os.path.join(os.path.dirname(__file__), "..", "pages", "04 历史洞察.py")
     src04 = open(p04, encoding="utf-8").read()
-    _check("04_historical_insights.py 删 __import__('io')",
+    _check("04 历史洞察.py 删 __import__('io')",
            "__import__(\"io\")" not in src04 and "__import__('io')" not in src04)
-    _check("04_historical_insights.py 改用 from io import BytesIO",
+    _check("04 历史洞察.py 改用 from io import BytesIO",
            "from io import BytesIO" in src04)
-    _check("04_historical_insights.py 含 _cached_parse_insights_file 缓存",
+    _check("04 历史洞察.py 含 _cached_parse_insights_file 缓存",
            "_cached_parse_insights_file" in src04)
 
-    # ── 2) pages/05_feedback.py 含 _cached_recent_feedback / _cached_generation_records_list ──
-    p05 = os.path.join(os.path.dirname(__file__), "..", "pages", "05_feedback.py")
+    # ── 2) pages/05 真实结果回流.py 含 _cached_recent_feedback / _cached_generation_records_list ──
+    p05 = os.path.join(os.path.dirname(__file__), "..", "pages", "05 真实结果回流.py")
     src05 = open(p05, encoding="utf-8").read()
-    _check("05_feedback.py 含 _cached_recent_feedback",
+    _check("05 真实结果回流.py 含 _cached_recent_feedback",
            "_cached_recent_feedback" in src05)
-    _check("05_feedback.py 含 _cached_generation_records_list",
+    _check("05 真实结果回流.py 含 _cached_generation_records_list",
            "_cached_generation_records_list" in src05)
 
-    # ── 3) pages/01_content_studio.py 不再有 "saved_id": None 死 state ──
-    p01 = os.path.join(os.path.dirname(__file__), "..", "pages", "01_content_studio.py")
+    # ── 3) pages/01 内容工坊.py 不再有 "saved_id": None 死 state ──
+    p01 = os.path.join(os.path.dirname(__file__), "..", "pages", "01 内容工坊.py")
     src01 = open(p01, encoding="utf-8").read()
-    _check("01_content_studio.py 删 'saved_id': None（Phase 13 残留）",
+    _check("01 内容工坊.py 删 'saved_id': None（Phase 13 残留）",
            "\"saved_id\"" not in src01 and "'saved_id'" not in src01)
 
     # ── 4) ui/plotly_helpers.py 删 apply_brand_theme ──
@@ -3948,16 +3948,16 @@ def test_phase19_l1_predictor():
            "微信小程序订阅消息" not in L1_SUPPORTED_CHANNELS)
 
     # ── 6) UI 集成：sidebar checkbox + _render_ctr_card 接受 l1_ctr 参数 ──
-    studio_page = ROOT / "pages" / "01_content_studio.py"
+    studio_page = ROOT / "pages" / "01 内容工坊.py"
     if studio_page.exists():
         src = studio_page.read_text(encoding="utf-8")
-        _check("01_content_studio.py 含 show_l1 checkbox",
+        _check("01 内容工坊.py 含 show_l1 checkbox",
                "show_l1" in src and "显示 L1 实验对比" in src)
-        _check("01_content_studio.py 调 predict_l1",
+        _check("01 内容工坊.py 调 predict_l1",
                "predict_l1(" in src)
-        _check("01_content_studio.py _render_ctr_card 接受 l1_ctr 参数",
+        _check("01 内容工坊.py _render_ctr_card 接受 l1_ctr 参数",
                "l1_ctr" in src and "_render_ctr_card(selected_ctr, l1_ctr=l1_ctr_pair)" in src)
-        _check("01_content_studio.py import L1_SUPPORTED_CHANNELS",
+        _check("01 内容工坊.py import L1_SUPPORTED_CHANNELS",
                "L1_SUPPORTED_CHANNELS" in src)
 
 
@@ -4041,13 +4041,13 @@ def test_phase20_l1_main_and_drift():
             pass
 
     # ── 4) UI sidebar 模式选择器 ──
-    studio_page = ROOT / "pages" / "01_content_studio.py"
+    studio_page = ROOT / "pages" / "01 内容工坊.py"
     src = studio_page.read_text(encoding="utf-8")
-    _check("01_content_studio.py sidebar 含 ctr_mode selectbox",
+    _check("01 内容工坊.py sidebar 含 ctr_mode selectbox",
            "ctr_mode" in src and "selectbox" in src and "CTR 主流程模式" in src)
-    _check("01_content_studio.py predict_for_candidates 用 session_state ctr_mode",
+    _check("01 内容工坊.py predict_for_candidates 用 session_state ctr_mode",
            'st.session_state.get("ctr_mode"' in src)
-    _check("01_content_studio.py 模式选项含 l1_model",
+    _check("01 内容工坊.py 模式选项含 l1_model",
            "l1_model" in src)
 
     # ── 5) 漂移监控脚本 ──
@@ -4254,7 +4254,7 @@ def test_phase22_c_auto_rollback():
     覆盖：
     1) core/active_mode 模块读写 clear 三态
     2) monitor_l1_drift.py 含 apply_auto_rollback 函数 + ALERT/WARN/OK 三档分支
-    3) pages/01_content_studio.py 含 read_active_mode import + 启动时覆盖 default_mode
+    3) pages/01 内容工坊.py 含 read_active_mode import + 启动时覆盖 default_mode
     4) 端到端：手动调 apply_auto_rollback 写文件 → read_active_mode 读回来
     """
     # ── 1) core/active_mode 模块 ──
@@ -4346,17 +4346,17 @@ def test_phase22_c_auto_rollback():
         _check("apply_auto_rollback('OK') 返回 'cleared'", result == "cleared")
         _check("apply_auto_rollback('OK') 删除文件", not tmp_path.exists())
 
-    # ── 4) pages/01_content_studio.py 含 active_mode 接入 ──
-    studio = ROOT / "pages" / "01_content_studio.py"
+    # ── 4) pages/01 内容工坊.py 含 active_mode 接入 ──
+    studio = ROOT / "pages" / "01 内容工坊.py"
     if studio.exists():
         sc = studio.read_text(encoding="utf-8")
-        _check("01_content_studio.py import read_active_mode",
+        _check("01 内容工坊.py import read_active_mode",
                "from core.active_mode import read_active_mode" in sc)
-        _check("01_content_studio.py 启动时调 read_active_mode",
+        _check("01 内容工坊.py 启动时调 read_active_mode",
                "read_active_mode()" in sc)
-        _check("01_content_studio.py 含 auto_rollback_msg banner",
+        _check("01 内容工坊.py 含 auto_rollback_msg banner",
                "auto_rollback_msg" in sc)
-        _check("01_content_studio.py 含 '自动回退' 提示文案",
+        _check("01 内容工坊.py 含 '自动回退' 提示文案",
                "自动回退" in sc)
 
     # ── 5) CLI 端到端：跑 monitor 一次，确认 active_mode.txt 处理逻辑跑通 ──
@@ -4384,7 +4384,7 @@ def test_phase22_d_batch_save_records():
     1) batch_signature 函数逻辑（与 task_signature 字段一致）
     2) save_predictions_to_records 落档格式正确
     3) 仅保存 ctr_result_type 非空的行
-    4) pages/03_batch_evaluation.py 含 checkbox + save 入口
+    4) pages/03 批量评估.py 含 checkbox + save 入口
     """
     from services.batch_evaluation_service import (
         batch_signature, save_predictions_to_records, evaluate_batch,
@@ -4480,9 +4480,9 @@ def test_phase22_d_batch_save_records():
     ], db_path=db_path)
     _check("全部无 ctr_result_type 返回 0", n_no_ctr == 0)
 
-    # ── 4) pages/03_batch_evaluation.py 含 checkbox + save 入口 ──
-    page_03 = ROOT / "pages" / "03_batch_evaluation.py"
-    _check("pages/03_batch_evaluation.py 存在", page_03.exists())
+    # ── 4) pages/03 批量评估.py 含 checkbox + save 入口 ──
+    page_03 = ROOT / "pages" / "03 批量评估.py"
+    _check("pages/03 批量评估.py 存在", page_03.exists())
     if page_03.exists():
         p3 = page_03.read_text(encoding="utf-8")
         _check("03 含 batch_save_to_records 状态",

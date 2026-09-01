@@ -7,11 +7,12 @@ app.py — MCD AI 内容运营工作台入口
 启动：streamlit run app.py（端口默认 8510）
 
 页面清单（pages/ 下自动扫描）：
-- pages/00_home.py：首页（项目状态 / 决策 / 资产）
-- pages/01_content_studio.py：01 内容创作（Phase 16.5 上线）
-- pages/02_copy_diagnosis.py：02 文案诊断（Phase 16.5 上线）
-- pages/03_batch_evaluation.py：03 批量评估（Phase 16.5 上线）
-- pages/04_historical_insights.py：04 历史洞察（Phase 16.5 上线）
+- pages/00 首页.py：首页（项目状态 / 决策 / 资产）
+- pages/01 内容工坊.py：01 内容创作（Phase 16.5 上线）
+- pages/02 文案诊断.py：02 文案诊断（Phase 16.5 上线）
+- pages/03 批量评估.py：03 批量评估（Phase 16.5 上线）
+- pages/04 历史洞察.py：04 历史洞察（Phase 16.5 上线）
+- pages/05 真实结果回流.py：05 真实结果回流（Phase 16.5 上线）
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 
 用途：
 - tools/monitor_l1_drift.py 检测到漂移时写文件，覆盖默认 CTR 模式
-- pages/01_content_studio.py 启动时读文件，决定 sidebar 默认值
+- pages/01 内容工坊.py 启动时读文件，决定 sidebar 默认值
 
 文件位置：data/active_mode.txt
 合法内容：'demo' | 'baseline_only' | 'l1_model'
