@@ -1157,10 +1157,17 @@ def _mask_api_key(api_key: str) -> str:
 
 
 def _write_llm_yaml(cfg: dict) -> None:
-    """写 4 字段到 llm_settings.yaml + 清 lru_cache。"""
+    """写 4 字段到家目录下 llm_settings.yaml + 清 lru_cache。
+
+    不写到项目目录是出于两点考虑：
+    1) 真实 api_key 不进 git 仓库
+    2) 多项目共用一份 LLM 配置
+    """
     from ui.llm_status import CONFIG_PATH, _load_yaml
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     body = (
         "# LLM 配置（页面右上角 pill 在线配置后保存）\n"
+        "# 写到 ~/.mcd-ai/llm_settings.yaml，不进项目目录\n"
         "# 4 字段全部非空启用 LLM 模式，否则走 Demo 占位\n"
         f'provider: "{cfg["provider"]}"\n'
         f'base_url: "{cfg["base_url"]}"\n'
@@ -1171,6 +1178,31 @@ def _write_llm_yaml(cfg: dict) -> None:
     _load_yaml.cache_clear()
 
 
+# 与 mcd-content-rank/config.py 的 API_PROVIDERS 对齐
+# protocol: "openai" / "anthropic" — 决定调哪个 SDK
+LLM_PROVIDERS = [
+    {"name": "MiniMax",     "base_url": "https://api.minimaxi.com/anthropic",
+     "protocol": "anthropic",
+     "models": ["MiniMax-M3"]},
+    {"name": "火山方舟",     "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
+     "protocol": "openai",
+     "models": ["minimax-m3", "deepseek-v4-flash", "GLM-5.2"]},
+    {"name": "百度千帆",     "base_url": "https://qianfan.baidubce.com/v2/coding",
+     "protocol": "openai",
+     "models": ["qianfan-code-latest"]},
+    {"name": "麦当劳AI网关","base_url": "https://ai-gateway-test.mcdchina.net/v1",
+     "protocol": "openai",
+     "models": ["gemini-3-flash-preview", "gemini-3-pro-image-preview",
+                "deepseek-v3", "claude-sonnet-4.6", "claude-haiku-4.5"]},
+    {"name": "SiliconFlow", "base_url": "https://api.siliconflow.cn/v1",
+     "protocol": "openai",
+     "models": ["deepseek-ai/DeepSeek-V3-0324", "Qwen/Qwen2.5-72B-Instruct"]},
+    {"name": "OpenAI",      "base_url": "",
+     "protocol": "openai",
+     "models": ["gpt-4o-mini", "gpt-4o"]},
+]
+
+
 @app.get("/api/settings/llm-modal", response_class=HTMLResponse)
 async def api_settings_llm_modal(request: Request):
     """点右上角 pill → 弹 modal。"""
@@ -1178,65 +1210,150 @@ async def api_settings_llm_modal(request: Request):
     return templates.TemplateResponse(
         request,
         "partials/settings_llm_modal.html",
-        {"form": {"provider": cfg.get("provider", ""),
-                  "base_url": cfg.get("base_url", ""),
-                  "model": cfg.get("model", ""),
-                  "api_key": cfg.get("api_key", "")},
-         "masked_key": _mask_api_key(cfg.get("api_key", "")),
-         "errors": [],
-         "success": False},
+        _modal_context(
+            {"provider": cfg.get("provider", ""),
+             "base_url": cfg.get("base_url", ""),
+             "model": cfg.get("model", ""),
+             "api_key": cfg.get("api_key", "")},
+            masked_key=_mask_api_key(cfg.get("api_key", "")),
+        ),
     )
 
 
-@app.post("/api/settings/llm", response_class=HTMLResponse)
-async def api_settings_llm_save(request: Request):
-    """保存 + 测试连接。返回 modal（含错）或更新后的 pill。"""
+async def _parse_llm_form(request: Request):
+    """提取 + 校验 4 字段。返回 (form_data, errors)。
+
+    model 自动清理 [xxx] / (xxx) 后缀注释，避免 MiniMax-M3[1m] 这种带标注的脏数据。
+    """
+    import re
     form = await request.form()
     provider = (form.get("provider") or "").strip()
     base_url = (form.get("base_url") or "").strip()
     model = (form.get("model") or "").strip()
     api_key = (form.get("api_key") or "").strip()
+    model = re.sub(r"\s*[\[（][^\]）]*[\]）]\s*$", "", model).strip()
     form_data = {"provider": provider, "base_url": base_url,
                   "model": model, "api_key": api_key}
-
     errors = []
     if not provider: errors.append("provider 必填")
     if not base_url: errors.append("base_url 必填")
     if not model: errors.append("model 必填")
     if not api_key: errors.append("api_key 必填")
+    return form_data, errors
 
+
+def _modal_context(form_data: dict, masked_key: str = "",
+                   errors: list = None, test_ok: bool = False, saved: bool = False) -> dict:
+    """统一 modal 渲染上下文（避免在多个 endpoint 重复传 providers）。"""
+    return {
+        "form": form_data,
+        "masked_key": masked_key,
+        "providers": LLM_PROVIDERS,
+        "errors": errors or [],
+        "test_ok": test_ok,
+        "saved": saved,
+    }
+
+
+def _probe_llm(provider: str, base_url: str, api_key: str, model: str,
+               timeout: int = 30):
+    """根据 provider protocol 选 SDK 试探连接。返回 (ok, error_msg)。
+
+    protocol=anthropic (MiniMax) 走 anthropic SDK
+    protocol=openai    走 openai SDK，base_url 空走 openai 默认
+    """
+    # 找 protocol
+    protocol = "openai"
+    for p in LLM_PROVIDERS:
+        if p["name"] == provider:
+            protocol = p.get("protocol", "openai")
+            break
+
+    effective_url = (base_url or "https://api.openai.com/v1").rstrip("/")
+    try:
+        if protocol == "anthropic":
+            import anthropic
+            client = anthropic.Anthropic(api_key=api_key, base_url=base_url, timeout=timeout)
+            client.messages.create(
+                model=model,
+                max_tokens=10,
+                messages=[{"role": "user", "content": "ping"}],
+            )
+            return True, ""
+        else:
+            import openai
+            if base_url:
+                client = openai.OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
+            else:
+                client = openai.OpenAI(api_key=api_key, timeout=timeout)
+            client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=10,
+            )
+            return True, ""
+    except Exception as e:
+        status = getattr(e, "status_code", None)
+        msg = (str(e)[:300] or type(e).__name__)
+        detail = f"连接失败: {msg}"
+        if status:
+            detail += f" [HTTP {status}]"
+        endpoint = "/v1/messages" if protocol == "anthropic" else "/chat/completions"
+        detail += f"\n请求 URL: {effective_url}{endpoint}"
+        if model:
+            detail += f"\nModel: {model}"
+        detail += f"\nProtocol: {protocol}"
+        return False, detail
+
+
+@app.post("/api/settings/llm/test", response_class=HTMLResponse)
+async def api_settings_llm_test(request: Request):
+    """只测试连接，不写入文件。"""
+    form_data, errors = await _parse_llm_form(request)
     if errors:
         return templates.TemplateResponse(
             request,
             "partials/settings_llm_modal.html",
-            {"form": form_data,
-             "masked_key": _mask_api_key(api_key),
-             "errors": errors, "success": False},
-            status_code=422,
+            _modal_context(form_data,
+                           masked_key=_mask_api_key(form_data["api_key"]),
+                           errors=errors),
         )
-
-    # 测试连接：openai SDK 直接调（绕过 ProviderRouter 白名单限制，
-    # 内网 LLM 通常是 openai 协议，base_url 自定义即可）
-    try:
-        import openai
-        client = openai.OpenAI(base_url=base_url, api_key=api_key, timeout=30)
-        client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": "ping"}],
-            max_tokens=10,
-        )
-    except Exception as e:
-        msg = str(e)[:200] or type(e).__name__
+    ok, err = _probe_llm(form_data["provider"], form_data["base_url"],
+                         form_data["api_key"], form_data["model"])
+    if not ok:
         return templates.TemplateResponse(
             request,
             "partials/settings_llm_modal.html",
-            {"form": form_data,
-             "masked_key": _mask_api_key(api_key),
-             "errors": [f"连接失败: {msg}"], "success": False},
-            status_code=400,
+            _modal_context(form_data,
+                           masked_key=_mask_api_key(form_data["api_key"]),
+                           errors=[err]),
+        )
+    return templates.TemplateResponse(
+        request,
+        "partials/settings_llm_modal.html",
+        _modal_context(form_data,
+                       masked_key=_mask_api_key(form_data["api_key"]),
+                       test_ok=True),
+    )
+
+
+@app.post("/api/settings/llm", response_class=HTMLResponse)
+async def api_settings_llm_save(request: Request):
+    """写入 yaml（不重复探测：测试连接已单独跑过，避免 select 改变导致协议错配）。
+
+    写到家目录下，不进项目目录。
+    """
+    form_data, errors = await _parse_llm_form(request)
+    if errors:
+        return templates.TemplateResponse(
+            request,
+            "partials/settings_llm_modal.html",
+            _modal_context(form_data,
+                           masked_key=_mask_api_key(form_data["api_key"]),
+                           errors=errors),
         )
 
-    # 写 yaml + 清缓存
+    # 写 yaml + 清缓存（不再探测，避免与 test endpoint 的探测协议不一致）
     _write_llm_yaml(form_data)
     status = get_llm_status()
 
@@ -1244,9 +1361,9 @@ async def api_settings_llm_save(request: Request):
     modal_html = templates.TemplateResponse(
         request,
         "partials/settings_llm_modal.html",
-        {"form": form_data,
-         "masked_key": _mask_api_key(api_key),
-         "errors": [], "success": True},
+        _modal_context(form_data,
+                       masked_key=_mask_api_key(form_data["api_key"]),
+                       test_ok=True, saved=True),
     ).body.decode("utf-8")
     pill_html = templates.TemplateResponse(
         request,

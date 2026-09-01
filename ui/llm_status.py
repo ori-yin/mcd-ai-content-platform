@@ -19,7 +19,8 @@ from pathlib import Path
 import yaml
 
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "llm_settings.yaml"
+# 配置写到用户家目录下，不进项目目录（避免 git 收集 key 历史）
+CONFIG_PATH = Path.home() / ".mcd-ai" / "llm_settings.yaml"
 REQUIRED_FIELDS = ("provider", "base_url", "model", "api_key")
 
 

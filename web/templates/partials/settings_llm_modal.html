@@ -1,19 +1,29 @@
 {# partials/settings_llm_modal.html — LLM 配置 modal
 
 依赖：form（dict: provider/base_url/model/api_key）+ masked_key（str）
-      errors（list[str]）+ success（bool）
+      providers（list[dict: name, base_url, models]）+ errors（list[str]）
+      test_ok（bool, True=测试连接成功）+ saved（bool）
 #}
 <div class="modal-mask" onclick="if(event.target===this) document.getElementById('settings-modal-slot').innerHTML=''">
   <div class="modal-card">
     <div class="modal-header">
-      <span>LLM 配置</span>
+      <span class="modal-title-text">
+        <b>LLM 配置</b>
+        <small>配置后页面所有 AI 功能即时生效</small>
+      </span>
       <span class="modal-close"
             onclick="document.getElementById('settings-modal-slot').innerHTML=''">&times;</span>
     </div>
 
-    {% if success %}
+    <div class="modal-body">
+
+    {% if saved %}
     <div class="success-banner">
-      连接成功，配置已写入 config/llm_settings.yaml。可继续编辑或关闭。
+      已保存到 ~/.mcd-ai/llm_settings.yaml。关闭即可生效。
+    </div>
+    {% elif test_ok %}
+    <div class="success-banner">
+      连接测试通过。点"应用配置"才会把配置写入本地文件。
     </div>
     {% endif %}
 
@@ -23,30 +33,42 @@
     </div>
     {% endif %}
 
-    <form hx-post="/api/settings/llm"
-          hx-target="#settings-modal-slot"
-          hx-swap="innerHTML">
+    <form id="llm-form">
       <label>
-        <span>provider</span>
-        <input type="text" name="provider"
-               value="{{ form.provider or '' }}"
-               placeholder="openai / siliconflow / qianfan / internal-llm" />
+        <span>Provider</span>
+        <select name="provider" id="llm-provider" onchange="onProviderChange()">
+          <option value="">— 选择 —</option>
+          {% for p in providers %}
+          <option value="{{ p.name }}"
+                  data-base-url="{{ p.base_url }}"
+                  data-models='{{ p.models | tojson }}'
+                  {% if form.provider == p.name %}selected{% endif %}>
+            {{ p.name }}
+          </option>
+          {% endfor %}
+          <option value="custom" {% if form.provider == 'custom' %}selected{% endif %}>自定义…</option>
+        </select>
       </label>
+
       <label>
-        <span>base_url</span>
-        <input type="text" name="base_url"
+        <span>Base URL</span>
+        <input type="text" name="base_url" id="llm-base-url"
                value="{{ form.base_url or '' }}"
-               placeholder="https://llm.internal.mcd.com/v1" />
+               placeholder="https://... 或留空用默认" />
       </label>
+
       <label>
-        <span>model</span>
-        <input type="text" name="model"
+        <span>Model</span>
+        <input type="text" name="model" id="llm-model"
+               list="llm-models-list"
                value="{{ form.model or '' }}"
                placeholder="mcd-llm-v1 / gpt-4o-mini" />
+        <datalist id="llm-models-list"></datalist>
       </label>
+
       <label>
-        <span>api_key</span>
-        <input type="text" name="api_key"
+        <span>API Key</span>
+        <input type="password" name="api_key" autocomplete="off"
                value="{{ form.api_key or '' }}"
                placeholder="sk-..." />
         {% if masked_key and not form.api_key %}
@@ -56,13 +78,56 @@
 
       <div class="modal-actions">
         <button type="button" class="btn-secondary"
-                onclick="document.getElementById('settings-modal-slot').innerHTML=''">取消</button>
-        <button type="submit" class="btn-primary">测试连接并保存</button>
+                hx-post="/api/settings/llm/test"
+                hx-include="#llm-form"
+                hx-target="#settings-modal-slot"
+                hx-swap="innerHTML">测试连接</button>
+        <button type="button" class="btn-primary"
+                hx-post="/api/settings/llm"
+                hx-include="#llm-form"
+                hx-target="#settings-modal-slot"
+                hx-swap="innerHTML">应用配置</button>
       </div>
     </form>
 
     <div class="modal-foot">
-      填 4 字段后保存会调一次 chat.completions 验证；失败会回显错。
+      配置会写到用户家目录下（~/.mcd-ai/llm_settings.yaml），不会进入项目目录，git 历史不会被污染。
+    </div>
+
     </div>
   </div>
 </div>
+
+<script>
+  // provider 切换 → 自动填 base_url + 刷新 model datalist
+  // 注意：只在用户主动改 select 时才覆盖 base_url，
+  // HTMX swap 后不要调用，避免冲掉用户手填的 base_url
+  function onProviderChange() {
+    const sel = document.getElementById('llm-provider');
+    if (!sel) return;
+    const opt = sel.options[sel.selectedIndex];
+    const baseUrlInput = document.getElementById('llm-base-url');
+    const datalist = document.getElementById('llm-models-list');
+    if (!baseUrlInput || !datalist) return;
+    if (opt && opt.value === 'custom') {
+      baseUrlInput.readOnly = false;
+      datalist.innerHTML = '';
+    } else if (opt && opt.value) {
+      baseUrlInput.value = opt.getAttribute('data-base-url') || '';
+      baseUrlInput.readOnly = true;
+      const models = JSON.parse(opt.getAttribute('data-models') || '[]');
+      datalist.innerHTML = models.map(m => `<option value="${m}">`).join('');
+    }
+  }
+  // 初次加载：若已选 provider，刷新 model datalist（不动 base_url，已有值保留）
+  (function initDatalist() {
+    const sel = document.getElementById('llm-provider');
+    if (!sel) return;
+    const opt = sel.options[sel.selectedIndex];
+    const datalist = document.getElementById('llm-models-list');
+    if (opt && opt.value && opt.value !== 'custom' && datalist) {
+      const models = JSON.parse(opt.getAttribute('data-models') || '[]');
+      datalist.innerHTML = models.map(m => `<option value="${m}">`).join('');
+    }
+  })();
+</script>
