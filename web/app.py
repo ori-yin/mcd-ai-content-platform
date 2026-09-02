@@ -46,13 +46,15 @@ import io
 import os
 import sys
 import csv
+import json
 import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, Response, RedirectResponse
+from fastapi.responses import HTMLResponse, Response, RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -229,7 +231,35 @@ NAV_PAGES = [
      "subtitle": "", "icon": "chart"},
     {"id": "feedback", "route": "/feedback", "name": "结果反哺",
      "subtitle": "", "icon": "refresh"},
+    {"id": "settings", "route": "/settings", "name": "字典维护",
+     "subtitle": "", "icon": "settings"},
 ]
+
+
+# ============================================================
+# 字典维护（Phase 39 · 2026-09-02）
+# ============================================================
+# 5 个核心配置：3 个 yaml + 1 个 txt + 1 个 json
+# 注意：路径相对 PROJECT_ROOT，不能让用户传（防路径遍历）
+DICTIONARIES = [
+    {"id": "channel_rules", "name": "渠道规则",
+     "path": "config/channel_rules.yaml", "kind": "yaml"},
+    {"id": "dimension_weights", "name": "维度权重",
+     "path": "config/dimension_weights.yaml", "kind": "yaml"},
+    {"id": "coupon_keywords", "name": "含券关键词",
+     "path": "config/coupon_keywords.yaml", "kind": "yaml"},
+    {"id": "custom_dict", "name": "产品词典",
+     "path": "data/custom_dict.txt", "kind": "text"},
+    {"id": "ctr_baseline", "name": "CTR 基准",
+     "path": "data/ctr_baseline.json", "kind": "json"},
+]
+
+
+def _dict_by_id(dict_id: str) -> dict | None:
+    for d in DICTIONARIES:
+        if d["id"] == dict_id:
+            return d
+    return None
 
 
 def base_context(active_id: str) -> dict:
@@ -1244,6 +1274,118 @@ async def api_05_upload(
         S_05["success_msg"] = f"已导入 {n} 条回流数据"
 
     return RedirectResponse(url="/feedback", status_code=303)
+
+
+# ============================================================
+# /settings  字典维护（Phase 39 · 2026-09-02）
+# ============================================================
+def _read_dict_file(dict_id: str) -> str:
+    """读取字典原始文本（保留注释/缩进/yaml 结构）。"""
+    d = _dict_by_id(dict_id)
+    if not d:
+        raise HTTPException(status_code=404, detail=f"未知字典：{dict_id}")
+    p = PROJECT_ROOT / d["path"]
+    if not p.exists():
+        return ""
+    try:
+        return p.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return p.read_text(encoding="gbk", errors="replace")
+
+
+def _write_dict_file(dict_id: str, content: str) -> tuple[bool, str]:
+    """Atomic write 字典文件（tmp + rename）。ctr_baseline.json 走 JSON 校验。
+
+    返回 (ok, msg)。
+    """
+    d = _dict_by_id(dict_id)
+    if not d:
+        return False, f"未知字典：{dict_id}"
+
+    # json 类型先校验
+    if d["kind"] == "json":
+        try:
+            json.loads(content)
+        except json.JSONDecodeError as e:
+            return False, f"JSON 格式错误：{e}"
+
+    p = PROJECT_ROOT / d["path"]
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    try:
+        tmp.write_text(content, encoding="utf-8")
+        os.replace(tmp, p)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+
+    # custom_dict.txt 写入后尝试热重载 jieba（可选，失败不影响保存）
+    if dict_id == "custom_dict":
+        try:
+            from web.services.text_analyzer import load_jieba_dict
+            load_jieba_dict()
+        except Exception:
+            pass
+
+    return True, "保存成功"
+
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request, msg: str = "", err: str = ""):
+    """字典维护页面：5 个字典，每个含 textarea + 保存/下载。"""
+    ctx = base_context("settings")
+    dicts = []
+    for d in DICTIONARIES:
+        item = dict(d)
+        try:
+            item["content"] = _read_dict_file(d["id"])
+            item["size"] = len(item["content"].encode("utf-8"))
+            item["lines"] = item["content"].count("\n") + (1 if item["content"] and not item["content"].endswith("\n") else 0)
+        except Exception as e:
+            item["content"] = ""
+            item["size"] = 0
+            item["lines"] = 0
+            item["error"] = str(e)
+        dicts.append(item)
+    ctx["dicts"] = dicts
+    ctx["flash_msg"] = msg
+    ctx["flash_err"] = err
+    return templates.TemplateResponse(request, "pages/06_settings.html", ctx)
+
+
+@app.post("/api/settings/save/{dict_id}")
+async def settings_save(dict_id: str, content: str = Form(...)):
+    ok, msg = _write_dict_file(dict_id, content)
+    if not ok:
+        return RedirectResponse(
+            url=f"/settings?err={quote(msg)}",
+            status_code=303,
+        )
+    d = _dict_by_id(dict_id)
+    name = d["name"] if d else dict_id
+    return RedirectResponse(
+        url=f"/settings?msg={quote(name + ' 保存成功')}",
+        status_code=303,
+    )
+
+
+@app.get("/api/settings/download/{dict_id}")
+async def settings_download(dict_id: str):
+    """直接返回字典文件原文下载。"""
+    d = _dict_by_id(dict_id)
+    if not d:
+        raise HTTPException(status_code=404, detail=f"未知字典：{dict_id}")
+    p = PROJECT_ROOT / d["path"]
+    if not p.exists():
+        raise HTTPException(status_code=404, detail=f"文件不存在：{d['path']}")
+    return FileResponse(
+        path=str(p),
+        filename=p.name,
+        media_type="application/octet-stream",
+    )
 
 
 # ============================================================

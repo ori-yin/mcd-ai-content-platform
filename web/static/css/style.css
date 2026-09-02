@@ -285,6 +285,43 @@ a:hover{color:var(--black)}
 .dict-desc{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5}
 .dict-arrow{font-size:22px;color:var(--muted);font-weight:300;line-height:1;flex-shrink:0}
 
+/* ============== Settings Page（字典维护）============== */
+.dict-form{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.dict-textarea{
+  width:100%;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12.5px;line-height:1.55;
+  padding:12px 14px;
+  border:1px solid var(--line);border-radius:8px;
+  background:#fbfbfc;color:var(--text);
+  resize:vertical;min-height:280px;
+  tab-size:2;
+  transition:border-color 180ms ease,box-shadow 180ms ease;
+}
+.dict-textarea:focus{
+  outline:none;
+  border-color:rgba(0,122,255,0.55);
+  box-shadow:0 0 0 3px rgba(0,122,255,0.12);
+  background:#ffffff;
+}
+.dict-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.dict-actions-hint{font-size:11.5px;color:var(--muted);margin-left:auto}
+.dict-meta-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px}
+.dict-path{
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:11.5px;color:var(--muted);
+  background:#f3f4f6;padding:2px 8px;border-radius:5px;
+}
+.dict-stat{font-size:11.5px;color:var(--muted)}
+.dict-kind-badge{
+  display:inline-block;font-size:10.5px;font-weight:600;letter-spacing:0.5px;
+  padding:2px 8px;border-radius:5px;text-transform:uppercase;
+  margin-left:8px;vertical-align:middle;
+}
+.dict-kind-badge.kind-yaml{background:#fef3c7;color:#92400e}
+.dict-kind-badge.kind-text{background:#dbeafe;color:#1e40af}
+.dict-kind-badge.kind-json{background:#dcfce7;color:#166534}
+
 table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 td{
   border-top:1px solid var(--line);
