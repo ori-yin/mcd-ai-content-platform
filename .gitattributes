@@ -1,0 +1,8 @@
+# ============================================================
+# .gitattributes — git checkout/commit 时统一 line ending
+#
+# 字典文件 (data/*.txt) 强制 CRLF，避免 Windows 上 git autocrlf + 浏览器
+# textarea (LF) 叠加产生 \r\r\n 双 CR 问题。
+# ============================================================
+
+data/*.txt text eol=crlf

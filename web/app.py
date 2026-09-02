@@ -1382,7 +1382,13 @@ def _write_dict_file(dict_id: str, content: str) -> tuple[bool, str]:
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(p.suffix + ".tmp")
     try:
-        tmp.write_text(content, encoding="utf-8")
+        # text 类字典统一 CRLF（防浏览器 textarea 写 LF + git autocrlf 在
+        # Windows 上叠加造成 \r\r\n 双 CR 问题）。yaml/json 保持原样（保留缩进）。
+        if d["kind"] == "text":
+            content_bytes = content.encode("utf-8").replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+            tmp.write_bytes(content_bytes)
+        else:
+            tmp.write_text(content, encoding="utf-8")
         os.replace(tmp, p)
     finally:
         if tmp.exists():
