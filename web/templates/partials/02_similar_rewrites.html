@@ -10,7 +10,7 @@
 
 {% if similar_summary and similar_summary.count and similar_summary.count > 0 %}
   {% set avg_ctr = similar_summary.avg_ctr %}
-<div class="kpi-tile" style="margin-bottom:12px">
+<div class="kpi-tile">
   <div class="label">相似 Plan 数</div>
   <div class="value">{{ similar_summary.count }}</div>
   {% if avg_ctr is not none %}
@@ -40,7 +40,7 @@
 
 <div class="subsection">
   <div class="subsection-label">AI 改写候选</div>
-  <form method="post" action="/api/diagnosis/rewrite" style="margin-bottom:12px">
+  <form method="post" action="/api/diagnosis/rewrite">
     <button type="submit" class="btn btn-dark">生成改写（{{ action }}）</button>
   </form>
 
@@ -52,7 +52,7 @@
   <div class="empty-state">点击上方按钮生成 2 条 AI 改写候选。</div>
   {% else %}
     {% for rw in rewrites %}
-    <div class="candidate-card" style="margin-bottom:10px">
+    <div class="candidate-card">
       <div class="cand-header">改写 {{ loop.index }}</div>
       <div class="cand-title">{{ rw.title or '（无标题）' }}</div>
       <div class="cand-body">{{ rw.body }}</div>

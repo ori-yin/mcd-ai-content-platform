@@ -358,6 +358,26 @@ tr:last-child td:last-child{border-bottom-right-radius:8px}
 .panel-card .batch-wrap{margin-top:14px}
 .panel-card .batch-wrap + *{margin-top:14px}  /* batch-wrap 之后的按钮行也 14px */
 
+/* ---------- A1-mid 新增：22 处 inline style 收敛（Phase 38 统一化） ---------- */
+/* form-grid 列数变体（04 各 tab 查询表单） */
+.form-grid-tri{grid-template-columns:1fr 1fr 1fr;align-items:end}
+.form-grid-quad{grid-template-columns:1fr 1fr 1fr 1fr;align-items:end}
+/* metric-row 列数变体（04_word_freq / 04_daily_trend / 05） */
+.metric-row-tri{grid-template-columns:repeat(3,1fr)}
+.metric-row-quad{grid-template-columns:repeat(4,1fr)}
+.metric-row-bi{grid-template-columns:repeat(2,1fr)}
+.metric-row-spaced{margin-top:10px}
+/* card-desc 内嵌说明（form / button / table 之后的辅助行） */
+.card-desc-spaced{margin-top:14px;margin-bottom:0}    /* panel-card 内独立辅助模块 */
+.card-desc-spaced-sm{margin-top:8px;margin-bottom:0}  /* form 后短说明 */
+/* 02 局部辅助类（panel-card 内部 kpi-tile / candidate-card 自动间距） */
+.kpi-tile + .kpi-tile{margin-top:12px}
+.candidate-card + .candidate-card{margin-top:10px}
+.stat-line-muted{color:var(--muted)}
+.subsection-tight{margin-top:14px}
+/* 03 模板下载链接（替代 inline color/text-decoration/font-weight） */
+.link-download{color:var(--black);text-decoration:underline;font-weight:600}
+
 /* ---------- Settings bar (01 顶部) ---------- */
 .settings-bar{
   display:flex;align-items:center;gap:24px;flex-wrap:wrap;

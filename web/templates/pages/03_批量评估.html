@@ -38,9 +38,9 @@
       </button>
     </div>
   </form>
-  <div class="card-desc" style="margin-top:14px;margin-bottom:0">
+  <div class="card-desc card-desc-spaced">
     不知道格式？
-    <a href="/api/batch/template" download style="color:var(--black);text-decoration:underline;font-weight:600">
+    <a href="/api/batch/template" download class="link-download">
       下载 Excel 模板
     </a>
     （含示例数据 + 列说明）
@@ -110,7 +110,7 @@
     </label>
   </form>
   {% if batch.save_help %}
-  <div class="card-desc" style="margin-top:8px">{{ batch.save_help }}</div>
+  <div class="card-desc card-desc-spaced">{{ batch.save_help }}</div>
   {% endif %}
   {% endif %}
 </div>

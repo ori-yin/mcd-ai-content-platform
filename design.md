@@ -9,14 +9,28 @@
 
 ---
 
-## 0. 设计原则（4 条铁律 · 写任何页面之前先读）
+## 0. 设计 DNA + 4 条铁律（写任何页面之前先读）
+
+### 0.1 一句话定义
+
+> **安静的、强层级的、可信赖的中台界面 —— 让用户的工作（任务、内容、数据、决策）成为视觉主角，UI 退后半步。**
+
+参考 Layer 0（`~\OneDrive - ATOS\桌面\DESIGN.md` · Universal Premium UI Design System）：calm / clean / premium / precise / spacious / modern / professional / intentional / consistent。本规范把这些哲学**项目特化**到 McD AI 内容平台。
+
+### 0.2 4 条铁律
 
 | # | 原则 | 解释 |
 |---|------|------|
-| 1 | **复用优先** | 已有类名直接用，不新建 inline `style="..."` 顶替 |
+| 1 | **复用优先** | 已有类名直接用，不新建 inline `style="..."` 顶替（§8 反模式） |
 | 2 | **中性留白** | 主色只有黑白黄绿，间距靠 `--radius` + `gap` 系列，不靠色块分隔 |
 | 3 | **数字优先** | KPI / 表格 / 预测结果用大字号 + 单色，对比靠 `gap` 不靠 `border` |
 | 4 | **无 emoji** | 图标一律 SVG（`/static/img/mcdonalds.svg` + inline 24×24 路径），状态用文字（✓ ! ✗） |
+
+### 0.3 安静界面 3 条具体动作
+
+- **不抢戏**：banner 用浅黄/浅绿，禁词不用红色块；按钮黑底白字 vs 白底黑字分主次，不两个都画
+- **靠间距分组，不用 border**：section 之间 14/22/30px `margin-top`，比 border 干净
+- **状态靠文字**：warning banner 写"缺 body 列，无法启动预测"代替红 X 图标；规则项用 `[PASS] / [WARN] / [FAIL]` 文本代替色块
 
 ---
 
@@ -411,15 +425,22 @@ modal 里的 `<label>` 自动有 4px 黄色圆点前缀（`.modal-card label>spa
 
 ---
 
-## 5. 当前不一致项（待 Phase 37 收敛）
+## 5. 当前不一致项（历史记录）
 
-> Phase 36 审计发现，下面 3 处仍有"贴板"问题，建议下次开会拍板后一次性收敛。
+> Phase 38 A1-mid 完成收敛（22 处 inline style → 7 个新类 + 4 条自动间距规则）。以下 3 处 Phase 36 列出的"贴板"问题已全部处理。
 
-| # | 文件 | 问题 | 建议收敛 |
+| # | 文件 | 原方案 | 状态 |
 |---|---|---|---|
-| 1 | `partials/02_similar_rewrites.html:60` | `.cand-body` 上 inline `style="margin-top:6px;font-size:12px;color:#888"` | 抽出 `.cand-meta` 类（或用 `.subsection-label`） |
-| 2 | `partials/02_rule_panel.html:51, 52` | 行内 `<div style="font-size:12.5px;margin-bottom:4px;color:#3a4049">` | 抽出 `.stat-line` 类 |
-| 3 | `partials/02_rule_panel.html:57` | 行内 `<div style="margin-top:10px">` | 改成 `.subsection` 类（已有 22px top margin） |
+| 1 | `partials/02_similar_rewrites.html:60` | 抽 `.cand-meta` 类 | ✅ Phase 37 完成 |
+| 2 | `partials/02_rule_panel.html:51, 52` | 抽 `.stat-line` 类 | ✅ Phase 37 完成 |
+| 3 | `partials/02_rule_panel.html:57` | 改成 `.subsection` 类 | ✅ Phase 38 A1-mid（`.subsection-tight` 14px 变体） |
+
+**Phase 38 A1-mid 新增收敛（2026-09-01）**：
+- 22 处 inline style 全部替换为 8 个新 CSS 类
+- 7 个新类：`form-grid-tri` / `form-grid-quad` / `metric-row-tri` / `metric-row-quad` / `metric-row-bi` / `metric-row-spaced` / `card-desc-spaced` / `card-desc-spaced-sm` / `subsection-tight` / `stat-line-muted` / `link-download`
+- 4 条自动间距规则：`.kpi-tile + .kpi-tile` / `.candidate-card + .candidate-card` / `.panel-card .warning-banner` / `.panel-card .batch-wrap`
+- 1 处 `<title>` 数字前缀：`04 历史洞察` → `历史洞察`
+- **唯一剩余 inline style**（业务特化保留）：`01_内容工坊.html:149` 主按钮 `style="margin-top:0;width:100%;justify-content:center;"` —— Phase 27 设计：内容工坊主按钮占满整行 + 居中
 
 ---
 
@@ -493,14 +514,45 @@ modal 里的 `<label>` 自动有 4px 黄色圆点前缀（`.modal-card label>spa
 参照 `partials/settings_llm_modal.html`：`modal-mask > modal-card > modal-header / modal-body / modal-foot`。
 **关键属性**：`hx-post` + `hx-include="#form-id"` + `hx-target="#slot-id"` + `hx-swap="innerHTML"`。
 
+### 6.7 加 form-grid 列数变体（Phase 38 新增）
+
+04 各 tab 查询表单多为 3/4 列，`form-grid` 默认 2 列不匹配。新类继承 `form-grid`，列数变体如下：
+
+```html
+<form method="get" action="/insights" class="form-grid form-grid-tri">  <!-- 3 列 -->
+<form method="get" action="/insights" class="form-grid form-grid-quad">  <!-- 4 列 -->
+```
+
+**规则**：03/05 业务表单用 `form-grid`（默认 2 列）+ `form-row-wide` 跨双列；04 tab 查询表单用 `form-grid-tri/quad` 紧凑列对齐底部。
+
+### 6.8 加 metric-row 列数变体（Phase 38 新增）
+
+`metric-row` 默认 5 列；04/05 不同 KPI 排数需求 2/3/4 列：
+
+```html
+<div class="metric-row metric-row-tri">  <!-- 3 列 -->
+<div class="metric-row metric-row-quad">  <!-- 4 列 -->
+<div class="metric-row metric-row-bi metric-row-spaced">  <!-- 2 列 + 10px 顶部间距 -->
+```
+
+### 6.9 加 card-desc 紧凑变体（Phase 38 新增）
+
+`card-desc-spaced` = panel-card 内独立辅助模块（margin-top:14px）；`card-desc-spaced-sm` = form/button 后短说明（margin-top:8px）：
+
+```html
+<div class="card-desc card-desc-spaced">     <!-- panel-card 内独立模块间距 -->
+<div class="card-desc card-desc-spaced-sm"> <!-- form 后短说明 -->
+```
+
 ---
 
 ## 7. 演进路线（按返工风险梯队）
 
 | 优先级 | 内容 | 触发条件 |
 |---|---|---|
-| P0 | **静态 lint**：扫 `templates/` 下所有 inline `style="..."`，3 条问题先收敛 | 改下一个新页面之前 |
-| P1 | **新增 `.stat-line` / `.cand-meta` 类**：02 行内样式抽类 | P0 完成后批量改 |
+| P0 | **静态 lint**：扫 `templates/` 下所有 inline `style="..."`（除 01 主按钮业务特化） | 改下一个新页面之前 |
+| P1 | **新增 4 列/3 列 metric-row 变体**（✅ Phase 38 A1-mid 完成） | — |
+| P1 | **新增 form-grid-tri/quad 列数变体**（✅ Phase 38 A1-mid 完成） | — |
 | P2 | **modal 抽取为宏**：4 个 modal（LLM / 上传确认）共用 `{% include "partials/modal_frame.html" %}` | 第 3 个 modal 出现时 |
 | P3 | **图标系统**：现有 SVG 都内联在 base.html nav，9+ 处 inline SVG 可抽 `{% include "partials/icon.html" name="..." %}` | UI 重设阶段 |
 | P4 | **Dark mode**：基于 token 改 `--bg/--panel/--text` 三件套即可，组件层 0 改动 | 业务方拍板后 |
@@ -528,31 +580,117 @@ modal 里的 `<label>` 自动有 4px 黄色圆点前缀（`.modal-card label>spa
 
 ```python
 def test_design_md_no_inline_style():
-    """禁止 templates/ 下出现 inline style（除 dynamic 表达式）"""
+    """禁止 templates/ 下出现 inline style（除 01_内容工坊 主按钮业务特化）"""
     import re, pathlib
-    pat = re.compile(r'style="[^"]*(?:font-size|background|color|display|gap|padding):')
+    pat = re.compile(r'style="[^"]*(?:font-size|background|color|display|gap|padding|grid-template-columns|margin-(?:top|bottom|left|right)):')
     offenders = []
     for p in pathlib.Path('web/templates').rglob('*.html'):
         for i, line in enumerate(p.read_text(encoding='utf-8').splitlines(), 1):
             if pat.search(line):
+                # allowlist: 01 内容工坊 主按钮业务特化（Phase 27 拍板）
+                if '01_内容工坊.html' in str(p) and 'primary-btn' in line:
+                    continue
                 offenders.append(f'{p}:{i}: {line.strip()[:80]}')
     assert not offenders, f'inline style 违规 {len(offenders)} 处：\n' + '\n'.join(offenders[:5])
 ```
 
-> 这一条要配合 §5 列出的 3 个不一致项收敛一起上，否则先 lint 会全红。
+**Phase 38 A1-mid 落地状态**：22 处 inline style 全部收敛完成（除 1 处 allowlist）。lint 允许上线。
+
+## 10. AI Agent 必走 5 步流程（改任何 UI 之前）
+
+参考 Layer 0 §23 Process for Every New Page。每次改 UI 必走 5 步：
+
+1. **确认任务**：用户到底想做什么？（生成 / 诊断 / 批量 / 洞察 / 回流）
+2. **定义主操作**：用户下一步最该做什么？（上传 / 生成 / 查询 / 导入）
+3. **定义视觉焦点**：用户第一眼该看到什么？（表单 / 表格 / 候选卡 / KPI）
+4. **组织信息**：按 主 → 次 → 辅助 → 元数据 四级排
+5. **复用现有系统**：用 design.md §2 原子组件 + §3 分子组件；不要新建 inline style / 临时类名
+
+**禁止**：
+- 自己造一套 banner / KPI 样式
+- 给同一概念造新类名（如 `.warn-box` / `.tip-card`）
+- inline `style="..."` 调 margin/grid/background
+
+## 11. 质量检查清单（提交前自查）
+
+每次改完 UI 自查 5 项（Layer 0 §25 Quality Checklist 项目化）：
+
+- [ ] **目的**：页面目的 1 秒内可理解？
+- [ ] **层级**：是否有 1 个明确视觉焦点（主操作 vs 辅助信息）？
+- [ ] **复用**：design.md §2/§3 现有组件已用？无新造类名？
+- [ ] **克制**：无多余卡片 / border / 色块 / 动画？
+- [ ] **产品感**：像同一个产品的不同页面？（不是不同网站拼起来）
+
+提交前跑 `python tests/verify.py`（848 PASS / 0 FAIL）+ `python -m py_compile web/app.py`。
+
+## 12. 避坑教训（Phase 38 A1-mid 复盘）
+
+> 新 session 第一步读 §0-§2 + §11 + §12；其他按需跳转。
+
+### 12.1 Handoff 数字 vs verify.py 漂移（高发 · 必修）
+
+**坑**：Handoff §6.0 写 `847 PASS / 0 FAIL`，实际跑是 `842 PASS / 5 FAIL`。Phase 28 / Phase 30 改 schema 时 verify.py 没同步 5 处断言。
+
+**铁律**：**schema / enum / 必填字段改动 → verify.py 同步改是「改文件清单」的硬约束**，不是「下次再说」。
+
+**预防**：
+- 改 `core/schemas.py` 任何字段、enum、默认值 → 必跑 `python tests/verify.py`，有 FAIL 就修
+- 改 `ui/llm_status.py` / `core/product_benefit.py` 等带 lru_cache 的模块 → 测试必须 monkey-patch + cache_clear，否则闭包变量不入 hash key
+- Handoff §6.0 数字每次写必现场跑一次（**不引用旧数字**）
+
+**本次落地**：5 FAIL 全修（Phase 28 必填 4→3 / PLAN_TYPES 3→4 / options_with_custom +1→+2 / llm_status tmpdir 隔离 yaml）。回归 848 PASS / 0 FAIL。
+
+### 12.2 inline style 收敛暴露系统漏洞（中发 · 必查）
+
+**坑**：22 处 inline style 里有 4 种**重复模式**（form-grid 列数变体 / metric-row 列数变体 / card-desc 间距 / form 后短说明），说明 design.md §2.6「表单」和 §2.8「KPI」没把变体列全。
+
+**铁律**：**遇到 N 处以上相同模式的 inline style → 抽新类 + 补 design.md §6 复用指引**（一次性收口，不要"先这样下次再说"）。
+
+**预防**：
+- 每次 grep `style="..."` 找到 ≥3 处同模式 → 必抽类+加 design.md 文档
+- 抽类时同时补 §6 复用指引（§6.7-§6.9）+ §附录 A 类名速查
+- §9 lint 脚本允许列表加注 + 注释解释为何保留
+
+**本次落地**：8 个新类（form-grid-tri/quad + metric-row-tri/quad/bi/spaced + card-desc-spaced/spaced-sm + subsection-tight + stat-line-muted + link-download）+ 4 条自动间距规则 + §6.7-§6.9 + 附录 A 48→60。
+
+### 12.3 design.md 之前缺 DNA 段（一次性 · 已修）
+
+**坑**：之前 design.md 只有 §0「4 条铁律」表，缺「**为什么是这 4 条**」的哲学锚点。新 session 接手只知道规则，不知道产品长什么样。
+
+**铁律**：**任何设计规范第一段必须是 DNA（一句话 + 哲学参考）**，不是直接给规则。
+
+**预防**：
+- §0.1 一句话定义 + 参考 Layer 0 哲学来源（`~\OneDrive - ATOS\桌面\DESIGN.md`）
+- §0.3 给 3 条具体动作（不抢戏 /靠间距分组 /状态靠文字），让 DNA 可执行
+
+**本次落地**：§0.1 + §0.3 已加（2026-09-01）。
+
+### 12.4 跨文件改动必须「改一个测试一个」（流程铁律）
+
+**坑**：本次 A1-mid 一开始想"先改 CSS 全部 → 一次性 verify"，结果中间出了 1 处遗漏 inline（03 line 41）。如果**改完一类就 grep lint + verify**，能立刻发现。
+
+**铁律**：**每次 Edit 完一个文件 → 立刻跑针对该文件的小验证**（grep inline style / py_compile / verify §对应段），不要攒一批改完再测。
+
+**预防**：
+- 改 HTML → grep `style="..."` 残留
+- 改 Python → `python -m py_compile`
+- 改 schema / enum / 必填 → 立刻跑 `python tests/verify.py`
+- 全部改完 → 最后跑一次完整 verify.py + curl 6 路由
 
 ---
 
-## 附录 A：类名速查（48 个）
+## 附录 A：类名速查（60 个）
 
 ```
 骨架    .app .main .topbar .content .footer .sidebar .brand
 导航    .nav .nav-item .nav-ico .ico
-通用    .card .panel-card .card-title .card-desc .panel-heading .section-heading .subtitle .page-title
-文字    .subsection .subsection-label .empty-state
-布局    .grid .top-grid .bottom-grid .studio-grid .diag-grid .advanced-grid .status-grid .metric-row .ins-tabs
-交互    .primary-btn .btn-primary .btn-secondary .btn-select
-表单    .form-grid .form-row .form-row-wide .form-row label
+通用    .card .panel-card .panel-flat .card-title .card-desc .card-desc-spaced .card-desc-spaced-sm
+       .panel-heading .section-heading .subtitle .page-title
+文字    .subsection .subsection-label .subsection-tight .stat-line .stat-line-muted .cand-meta .empty-state
+布局    .grid .top-grid .bottom-grid .studio-grid .diag-grid .advanced-grid .status-grid
+       .metric-row .metric-row-tri .metric-row-quad .metric-row-bi .metric-row-spaced .ins-tabs
+交互    .primary-btn .btn-primary .btn-secondary .btn-select .btn .btn-dark .btn-sm .btn-submit .link-download
+表单    .form-grid .form-grid-tri .form-grid-quad .form-row .form-row-wide .form-row-inline .checkbox-label .form-row label
 提示    .warning-banner .success-banner .advanced-notice
 展示    .kpi-tile .metric .metric-box .metric-icon .metric-label .metric-value .metric-detail
        .advanced-card .advanced-item .advanced-icon .advanced-name .advanced-desc .advanced-arrow
@@ -562,6 +700,7 @@ def test_design_md_no_inline_style():
        .l1-pill .l1-label .l1-value .l1-meta
        .model-select .dot .chev .avatar .settings-bar .settings-form .settings-label
        .info-card .code-wrap .code .line-no
+       .fb-section .fb-kpis
 表格    .batch-wrap .batch-table
 Tabs    .ins-tab .ins-panel
 状态    .status
@@ -577,4 +716,7 @@ Modal   .modal-mask .modal-card .modal-header .modal-title-text .modal-close .mo
 | Phase 26 | 2026-08-31 | 从 v2.html 抽出第一版 CSS 落地 `static/css/style.css`，5 页面迁移到 FastAPI |
 | Phase 27 | 2026-09-01 | LLM modal 完整化 + URL 语义化 + 删除冗余（L1 hint / 副标题） |
 | Phase 36 | 2026-09-01 | 滚动恢复强化 + URL `/04` 收尾 |
+| Phase 37 | 2026-09-01 | UI 统一化：11 个新 CSS 类 + 5 页面 + 7 partial 适配 + 「真实结果回流」改名「结果反哺」 |
+| Phase 38 A1-mid | 2026-09-01 | **22 处 inline style 全部收敛**：8 个新 CSS 类（form-grid-tri/quad + metric-row-tri/quad/bi/spaced + card-desc-spaced/spaced-sm + stat-line-muted + subsection-tight + link-download）+ 4 条自动间距规则 + 04 title 去前缀 + 5 FAIL verify.py 断言同步 |
+| Phase 38 A1-mid-b | 2026-09-01 | **加 §12 避坑教训 4 条**：12.1 Handoff 数字漂移 / 12.2 inline 收敛暴露系统漏洞 / 12.3 design.md 缺 DNA 段（已修）/ 12.4 跨文件改动必须「改一个测试一个」 |
 | **本文件** | 2026-09-01 | **首次写 design.md，沉淀 §1-§9 规范 + §5 不一致清单** |

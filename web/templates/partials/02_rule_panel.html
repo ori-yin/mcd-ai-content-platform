@@ -9,7 +9,7 @@
 <div class="empty-state">请先在左侧输入文案并点击「开始诊断」。</div>
 {% else %}
   {% set status_label = {'pass':'全部通过','warn':'有提醒','fail':'存在阻断'}.get(rule.status, rule.status) %}
-  <div class="kpi-tile" style="margin-bottom:14px">
+  <div class="kpi-tile">
     <div class="label">规则状态</div>
     <div class="value">{{ status_label }}</div>
     <div class="sub">通过 {{ rule.passes|length }} / 提醒 {{ rule.warns|length }} / 阻断 {{ rule.fails|length }}</div>
@@ -40,7 +40,7 @@
     {% set score = diagnose.score %}
     {% set grade = diagnose.grade or '—' %}
     {% if score is not none %}
-    <div class="kpi-tile" style="margin-bottom:12px">
+    <div class="kpi-tile">
       <div class="label">文案评分</div>
       <div class="value">{{ score }} / 100 · {{ grade }}</div>
     </div>
@@ -50,11 +50,11 @@
     {% set miss = ((d.miss_top) or [])[:8] %}
     {% if hit %}<div class="stat-line">命中高效词：{{ hit | join('、') }}</div>{% endif %}
     {% if miss %}<div class="stat-line">未出现的高频高 CTR 词：{{ miss | join('、') }}</div>{% endif %}
-    {% if not hit and not miss %}<div class="stat-line" style="color:var(--muted)">无历史高频词数据（需上传历史计划）</div>{% endif %}
+    {% if not hit and not miss %}<div class="stat-line stat-line-muted">无历史高频词数据（需上传历史计划）</div>{% endif %}
 
     {% set problems = (diagnose.problems) or [] %}
     {% if problems %}
-    <div class="subsection" style="margin-top:14px">
+    <div class="subsection subsection-tight">
       {% for p in problems[:5] %}
         {% set msg = p.label or '' %}
         {% set so_what = p.so_what or '' %}

@@ -1934,6 +1934,12 @@ def test_llm_status():
     import ui.llm_status as ls
     _check("llm_status 模块存在", ls is not None)
 
+    # 默认全空测试需隔离 CONFIG_PATH（避免用户家目录 ~/.mcd-ai/llm_settings.yaml 已写过）
+    import tempfile as _tf_llm
+    _tmp_llm = _tf_llm.mkdtemp(prefix="llm_status_default_")
+    ls.CONFIG_PATH = type(ls.CONFIG_PATH)(_tmp_llm + "/nonexistent.yaml")
+    ls._load_yaml.cache_clear()
+
     # 1) 默认全空（仓库初始状态）
     _check("默认 is_configured() == False", ls.is_configured() is False)
     _check("默认 missing_fields() 4 字段",
@@ -2025,8 +2031,10 @@ def test_phase_a1_product_benefit_split():
     _check("options_with_custom 加「自定义」在末位",
            options_with_custom(cats)[-1] == "自定义"
            and options_with_custom(bts)[-1] == "自定义")
-    _check("options_with_custom 长度 = 原 + 1",
-           len(options_with_custom(cats)) == len(cats) + 1)
+    _check("options_with_custom 长度 = 原 + 2（Phase 30 加「通用」首位）",
+           len(options_with_custom(cats)) == len(cats) + 2)
+    _check("options_with_custom 首位 = 「通用」",
+           options_with_custom(cats)[0] == "通用")
 
     # lru_cache 命中：再 load 不重复读盘（直接调函数即可，行为校验）
     cfg = load_product_benefit()
@@ -3669,9 +3677,11 @@ def test_phase12_schema():
     _check("CHANNELS 含'微信小程序订阅消息'（Phase 12 #8 加）",
            "微信小程序订阅消息" in CHANNELS)
 
-    # ── 2) PLAN_TYPES 连写命名（Phase 12 #9）──
-    _check("PLAN_TYPES 3 值",
-           len(PLAN_TYPES) == 3)
+    # ── 2) PLAN_TYPES 连写命名（Phase 12 #9）；Phase 28 加「通用」首位 → 4 值 ──
+    _check("PLAN_TYPES 4 值（Phase 28 加「通用」）",
+           len(PLAN_TYPES) == 4)
+    _check("PLAN_TYPES 首位 = 「通用」",
+           PLAN_TYPES[0] == "通用")
     _check("PLAN_TYPES 含 'AARRPlan'（连写，无空格）",
            "AARRPlan" in PLAN_TYPES)
     _check("PLAN_TYPES 含 '常规Plan'（连写，无空格）",
@@ -4617,9 +4627,9 @@ def test_smoke_sweep():
         except Exception as _e:
             _check(f"sweep ctr mode={_mode} OK", False, f"{type(_e).__name__}: {_e}")
 
-    # 5) TaskInput 必填校验
+    # 5) TaskInput 必填校验（Phase 28 改 3 项：audience/channel/tone，stage 改可选）
     from core.schemas import TaskInput as _TI
-    for _f in ("audience", "channel", "stage", "tone"):
+    for _f in ("audience", "channel", "tone"):
         _kw = {k: "x" for k in ("product_category", "benefit_type", "audience",
                                   "channel", "objective", "stage", "scene",
                                   "tone", "expected_action", "extra_requirements")}

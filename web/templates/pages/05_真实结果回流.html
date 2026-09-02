@@ -110,13 +110,13 @@
   {% if join.error %}
   <div class="warning-banner">{{ join.error }}</div>
   {% else %}
-  <div class="metric-row" style="grid-template-columns:repeat(3,1fr)">
+  <div class="metric-row metric-row-tri">
     <div class="metric-box"><div class="ml">回流 signature 数</div><div class="mv">{{ join.n_feedback }}</div></div>
     <div class="metric-box"><div class="ml">已 join 生成记录</div><div class="mv">{{ join.n_joined }}</div></div>
     <div class="metric-box"><div class="ml">生成侧未回流</div><div class="mv">{{ join.n_only_gen }}</div></div>
   </div>
   {% if join.n_only_feedback %}
-  <div class="card-desc" style="margin-top:8px;margin-bottom:0">
+  <div class="card-desc card-desc-spaced-sm">
     {{ join.n_only_feedback }} 个 signature 没有对应生成记录（可能手填或人工发放）
   </div>
   {% endif %}
