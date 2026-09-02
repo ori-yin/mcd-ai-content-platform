@@ -139,25 +139,78 @@
   </div>
 </section>
 
-{# —— 底部：关键决策 + 验证命令（两栏）—— #}
+{# —— 底部：字典管理 + 验证命令（两栏）—— #}
 <div class="grid bottom-grid">
 
   <section class="card info-card">
     <div class="info-head">
-      <div class="section-heading" style="margin:0">关键决策</div>
-      <div class="copy-icon" title="复制">
-        <svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
-      </div>
+      <div class="section-heading" style="margin:0">字典管理</div>
+      <div class="card-desc-spaced" style="margin:0;color:var(--muted)">5 个核心配置 · 维护后即时生效</div>
     </div>
-    <table>
-      <tr><td>项目位置</td><td>mcd-ai-content-platform</td></tr>
-      <tr><td>复用策略</td><td>继承并优化现有资产</td></tr>
-      <tr><td>旧项目</td><td>mcd_content_platform（已归档）</td></tr>
-      <tr><td>PRD</td><td>PRD_内容平台_v1.0.md</td></tr>
-      <tr><td>应用模式</td><td>FastAPI + Jinja2 + HTMX</td></tr>
-      <tr><td>CTR 模式</td><td>现有预测 + baseline</td></tr>
-      <tr><td>配色</td><td>简约中性（黑白灰为主）</td></tr>
-    </table>
+
+    <div class="dict-list">
+
+      <a href="#" class="dict-row">
+        <div class="dict-icon-box">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        </div>
+        <div class="dict-body">
+          <div class="dict-name">渠道规则</div>
+          <div class="dict-meta">config/channel_rules.yaml</div>
+          <div class="dict-desc">4 渠道字数与结构定义</div>
+        </div>
+        <div class="dict-arrow">›</div>
+      </a>
+
+      <a href="#" class="dict-row">
+        <div class="dict-icon-box">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l9 6 9-6"/><path d="M3 18l9-6 9 6"/></svg>
+        </div>
+        <div class="dict-body">
+          <div class="dict-name">维度权重</div>
+          <div class="dict-meta">config/dimension_weights.yaml</div>
+          <div class="dict-desc">文案诊断 5 维度评分权重</div>
+        </div>
+        <div class="dict-arrow">›</div>
+      </a>
+
+      <a href="#" class="dict-row">
+        <div class="dict-icon-box">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 9.5a3 3 0 1 1 4.5 2.6c-.9.5-1.5 1-1.5 2.4M12 17.5h.01"/></svg>
+        </div>
+        <div class="dict-body">
+          <div class="dict-name">含券关键词</div>
+          <div class="dict-meta">config/coupon_keywords.yaml</div>
+          <div class="dict-desc">discount / coupon / link 三类</div>
+        </div>
+        <div class="dict-arrow">›</div>
+      </a>
+
+      <a href="#" class="dict-row">
+        <div class="dict-icon-box">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        </div>
+        <div class="dict-body">
+          <div class="dict-name">场景关键词</div>
+          <div class="dict-meta">config/scene_keywords.yaml</div>
+          <div class="dict-desc">场景内容推断（暂为占位）</div>
+        </div>
+        <div class="dict-arrow">›</div>
+      </a>
+
+      <a href="#" class="dict-row">
+        <div class="dict-icon-box">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+        </div>
+        <div class="dict-body">
+          <div class="dict-name">CTR 基准</div>
+          <div class="dict-meta">data/ctr_baseline.json</div>
+          <div class="dict-desc">6 维度加权 CTR（指数衰减校准）</div>
+        </div>
+        <div class="dict-arrow">›</div>
+      </a>
+
+    </div>
   </section>
 
   <section class="card info-card">

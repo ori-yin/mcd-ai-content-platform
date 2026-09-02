@@ -261,6 +261,30 @@ a:hover{color:var(--black)}
 .code-wrap{flex:1;display:flex;align-items:center}
 .code-wrap .code{width:100%}
 
+/* ============== Dict Management（苹果风格）============== */
+/* 复用于 home.html 字典管理区块 + 未来 pages/06_settings.html */
+.dict-list{display:flex;flex-direction:column;flex:1}
+.dict-row{
+  display:flex;align-items:center;gap:14px;
+  padding:12px 8px;border-radius:10px;
+  text-decoration:none;color:inherit;
+  transition:background 180ms ease;
+}
+.dict-row + .dict-row{margin-top:2px}
+.dict-row:hover{background:var(--soft)}
+.dict-icon-box{
+  width:36px;height:36px;border-radius:9px;
+  background:rgba(0,122,255,0.08);color:#007AFF;
+  display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;
+}
+.dict-icon-box .ico{width:18px;height:18px;stroke-width:1.8}
+.dict-body{flex:1;min-width:0}
+.dict-name{font-size:14px;font-weight:600;color:var(--text);line-height:1.3}
+.dict-meta{font-size:11.5px;color:var(--muted);margin-top:2px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.dict-desc{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5}
+.dict-arrow{font-size:22px;color:var(--muted);font-weight:300;line-height:1;flex-shrink:0}
+
 table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 td{
   border-top:1px solid var(--line);
