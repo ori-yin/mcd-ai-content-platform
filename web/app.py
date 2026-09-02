@@ -1382,11 +1382,17 @@ def _write_dict_file(dict_id: str, content: str) -> tuple[bool, str]:
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(p.suffix + ".tmp")
     try:
-        # text 类字典统一 CRLF（防浏览器 textarea 写 LF + git autocrlf 在
-        # Windows 上叠加造成 \r\r\n 双 CR 问题）。yaml/json 保持原样（保留缩进）。
+        # text 类字典 4 重防御（防止 line ending 累积污染）：
+        #   1) CRLF / 孤 CR 全部归一为 LF（兼容任何浏览器 / OS 来源）
+        #   2) 空行（用户按回车 + gitattributes normalize 偶发）→ 过滤
+        #   3) 每行 rstrip 去行尾空格（保留前导空格用于 indent）
+        #   4) 输出 CRLF（gitattributes eol=crlf 一致）
+        # 保留 # 注释行（jieba load_userdict 容忍 # 开头）
+        # yaml/json 保持原样（保留缩进 / 格式）。
         if d["kind"] == "text":
-            content_bytes = content.encode("utf-8").replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
-            tmp.write_bytes(content_bytes)
+            raw = content.encode("utf-8").replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+            lines = [ln.rstrip() for ln in raw.split(b"\n") if ln.strip()]
+            tmp.write_bytes(b"\r\n".join(lines) + b"\r\n")
         else:
             tmp.write_text(content, encoding="utf-8")
         os.replace(tmp, p)
