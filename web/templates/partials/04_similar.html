@@ -1,6 +1,7 @@
 {# partials/04_similar.html — Tab 5: 历史相似 #}
 
 <form method="get" action="/insights" class="form-grid form-grid-quad">
+  <input type="hidden" name="tab" value="sim" />
   <div class="form-row">
     <label>查询标题</label>
     <input type="text" name="sim_title" value="{{ params.sim_title or '' }}" placeholder="（可选）">

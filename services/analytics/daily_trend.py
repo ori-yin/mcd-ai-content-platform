@@ -88,8 +88,12 @@ def daily_aggregate(
     # 周环比：相对 7 天前同 channel/owner 的 CTR
     if len(out) >= 8:
         out["_ctr_shift"] = out["加权CTR%"].shift(7)
-        out["周环比%"] = ((out["加权CTR%"] - out["_ctr_shift"]) / out["_ctr_shift"].replace(0, pd.NA) * 100).round(2)
-        out["周环比%"] = out["周环比%"].fillna(pd.NA)
+        # 分母为 0 → NA；计算时产生 NA 列，pandas round() 不接受 NA → 报 TypeError
+        # 修：先用 nullable Float64 类型存，round 前 drop NA
+        shifted = out["_ctr_shift"].replace(0, pd.NA)
+        ratio_pct = (out["加权CTR%"] - shifted) / shifted * 100
+        ratio_pct = ratio_pct.astype("Float64")  # nullable，NA 不会被 round 报错
+        out["周环比%"] = ratio_pct.round(2)
         out = out.drop(columns=["_ctr_shift"])
 
     return out

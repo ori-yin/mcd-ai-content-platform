@@ -178,6 +178,32 @@ cmd 严格要 CRLF；Write 工具默认 LF。
 
 ---
 
+### 19. Jinja2 `dict.key%` 中 `%` 关键字 + `}}%` 解析崩（2026-09-02 · Phase 46）
+
+**坑**：`04_rank.html` 第一次写：
+```html
+<div class="metric-box"><div class="ml">加权 CTR</div>
+  <div class="mv">{{ "%.2f"|format(plan_detail.加权CTR%) }}%</div></div>
+```
+→ Jinja2 抛 `TemplateSyntaxError: unexpected ')'`（line 43）。
+
+**对照实验**：
+- ✅ `{{ "{:,}".format(plan_detail.触达成功) }}` ← 解析 OK（无 `%`）
+- ✅ `{{ summary['整体CTR%'] }}` ← 解析 OK（下标写法）
+- ✅ `{{ "%.2f"|format(plan_detail['加权CTR%']) }}%` ← 解析 OK（下标写法）
+- ❌ `{{ "%.2f"|format(plan_detail.加权CTR%) }}%` ← **崩**
+
+**根因**（猜测）：Jinja2 lexer 在 `加权CTR` 后看到 `%` + `)` + `}}` + `%` 这一连串 token，**属性语法 `.key%` 与 `)` 闭合出现切分歧义**。下标语法 `['加权CTR%']` 整体作为单个 subscript token，没有歧义。
+
+**铁律**：Jinja2 模板里 dict key 含 `%` 等特殊字符 → **永远用 `dict['key%']` 下标写法**，不要 `dict.key%` 属性语法。
+
+**避坑指引**：
+- pandas DataFrame 转 dict 后保留原列名（中文 + `%`），模板访问一律 `r['加权CTR%']`
+- 不要图省事写 `r.加权CTR%` —— 看似更 Pythonic，Jinja2 解析器不答应
+- 静态检查：写完模板立刻 `curl` 一次 500 → 看 uvicorn traceback 找 Jinja2 报哪一行
+
+---
+
 ## 已删（详见 git log 早期 commit / memory）
 
 | 类别 | 删节项 |

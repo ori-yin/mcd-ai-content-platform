@@ -241,3 +241,23 @@
 
 ---
 
+## 6.9 Phase 46 历史洞察 4 BUG 修复 + 3 Tab 查询增强（2026-09-02）
+
+**已完成**（Phase 46 · 1 commit 待 push）：
+- ✅ **BUG 1**：daily 500（pandas `round()` 不接受 pd.NA） → 改 `astype("Float64")` nullable 类型
+- ✅ **BUG 2**：wf 选词对比 select → input（form-row-span2 占 2 列 + CSS 缓存 `?v=20260902wf`）
+- ✅ **BUG 3**：6 个 tab form 加 `<input type="hidden" name="tab" value="X" />`（rank/wf/ef/sim/owner/daily），提交不再跳回 rank
+- ✅ **BUG 4**：wf 单词对比位置重排（表单 → 单词对比 → 高效词 → 低效词），自然无跳动
+- ✅ **增强 1**：rank Tab "输入 Plan ID 查详情" → 新 `_plan_detail()` helper + 详情区块（紧贴表单）
+- ✅ **增强 2**：ef Tab "输入 emoji 查对比" → 复用 `compare_token(col=_emojis)` + 对比区块（紧贴表单）
+
+**踩坑教训**（Handoff-lessons.md §19）：Jinja2 模板 dict key 含 `%` → 永远用 `dict['key%']` 下标写法，不要 `dict.key%` 属性语法（解析器崩 `unexpected ')'`）。
+
+**验证**：5 GET endpoints + 5 form 提交 → 全 200；`tests/verify.py` 848 PASS / 0 FAIL。
+
+**不动**：
+- ⏳ 其他 insights tab 增强（如 sim topk UI 微调等）暂不展开（本轮聚焦 daily/wf/rank/ef）
+- ⏳ 按钮/handler 全量 smoke 发现无其他 BUG，留作下一轮被动发现
+
+---
+

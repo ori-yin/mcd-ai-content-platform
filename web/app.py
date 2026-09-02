@@ -946,6 +946,47 @@ def _safe_int(v, default=0):
         return default
 
 
+def _plan_detail(df: pd.DataFrame, plan_id: str) -> Optional[dict]:
+    """按 Plan ID 精确查询，返回 plan 元数据 + 触达/点击/CTR + 样本标题正文。
+
+    与 rank_plans 一行字段对齐 + 加 title/body 示例，给 Tab 1 「输入 Plan ID 查详情」用。
+    """
+    if df is None or df.empty or "Plan ID" not in df.columns:
+        return None
+    sub = df[df["Plan ID"].astype(str) == plan_id]
+    if sub.empty:
+        return None
+    reach = int(sub["触达成功"].sum())
+    click = int(sub["点击人次"].sum())
+    has_date = "发送日期" in sub.columns
+    n_days = sub["发送日期"].dt.date.nunique() if has_date else 0
+    sample_title = str(sub["标题"].iloc[0]) if "标题" in sub.columns else ""
+    sample_body = str(sub["正文"].iloc[0])[:120] if "正文" in sub.columns else ""
+    detail = {
+        "plan_id": plan_id,
+        "plan_name": str(sub["Plan名称"].iloc[0]) if "Plan名称" in sub.columns else "",
+        "channel": str(sub["渠道"].iloc[0]) if "渠道" in sub.columns else "",
+        "owner": str(sub["owner"].iloc[0]) if "owner" in sub.columns else "",
+        "n_records": int(len(sub)),
+        "n_days": int(n_days) if n_days else 0,
+        "触达成功": reach,
+        "点击": click,
+        "加权CTR%": round(weighted_ctr(click, reach), 2),
+        "标题字数均值": round(float(sub["标题"].astype(str).str.len().mean()), 1)
+        if "标题" in sub.columns else 0,
+        "正文字数均值": round(float(sub["正文"].astype(str).str.len().mean()), 1)
+        if "正文" in sub.columns else 0,
+        "样本标题": sample_title,
+        "样本正文": sample_body,
+    }
+    if "_tokens" in sub.columns:
+        tok_set = set()
+        for s in sub["_tokens"]:
+            tok_set |= set(s)
+        detail["覆盖高效词数"] = len(tok_set)
+    return detail
+
+
 def _df_to_rows(df, columns: Optional[list] = None, limit: int = 5000) -> list[dict]:
     """DataFrame → list[dict]，处理 NaN。"""
     if df is None or df.empty:
@@ -1002,7 +1043,8 @@ async def page_04(request: Request) -> HTMLResponse:
     ctx["params"] = {k: request.query_params.get(k, "") for k in (
         "min_reach", "top_n",
         "wf_min_plans", "wf_top_n", "wf_compare_sel",
-        "ef_min_plans", "ef_top_n",
+        "ef_min_plans", "ef_top_n", "ef_compare_sel",
+        "rank_plan_sel",
         "sim_title", "sim_body", "sim_topk",
         "by_channel",
         "oc_min_plans", "oc_min_reach",
@@ -1015,6 +1057,8 @@ async def page_04(request: Request) -> HTMLResponse:
     ctx["params"].setdefault("wf_compare_sel", "")
     ctx["params"].setdefault("ef_min_plans", "3")
     ctx["params"].setdefault("ef_top_n", "20")
+    ctx["params"].setdefault("ef_compare_sel", "")
+    ctx["params"].setdefault("rank_plan_sel", "")
     ctx["params"].setdefault("sim_topk", "5")
     ctx["params"].setdefault("oc_min_plans", "3")
     ctx["params"].setdefault("oc_min_reach", "1000")
@@ -1039,6 +1083,12 @@ async def page_04(request: Request) -> HTMLResponse:
             show = out
         ctx["df_rows"] = _df_to_rows(show, columns=list(show.columns) if not show.empty else None)
         ctx["columns"] = list(show.columns) if not show.empty else []
+
+        # 单 plan 详情（按 Plan ID 精确查询；input → result 一对，仿 wf）
+        sel = p["rank_plan_sel"].strip()
+        ctx["plan_detail"] = None
+        if sel:
+            ctx["plan_detail"] = _plan_detail(df, sel)
 
     elif active_tab == "wf":
         min_plans = _safe_int(p["wf_min_plans"], 3)
@@ -1092,6 +1142,29 @@ async def page_04(request: Request) -> HTMLResponse:
                 ef[col] = ef[col].round(4)
         ctx["df_rows"] = _df_to_rows(ef)
         ctx["columns"] = list(ef.columns)
+
+        # emoji 对比（input → result 一对，仿 wf）；复用 compare_token(col=_emojis)
+        sel = p["ef_compare_sel"].strip()
+        ctx["ef_compare"] = None
+        if sel:
+            if "_emojis" not in df.columns:
+                df = add_tokens(df)
+            cmp = compare_token(df, sel, col="_emojis")
+            if cmp:
+                in_block = cmp.get("含", {}) or {}
+                out_block = cmp.get("不含", {}) or {}
+                ctr_in = float(in_block.get("ctr", 0.0))
+                ctr_out = float(out_block.get("ctr", 0.0))
+                ctx["ef_compare"] = {
+                    "sel_emoji": sel,
+                    "reach_with": int(in_block.get("reach", 0)),
+                    "reach_without": int(out_block.get("reach", 0)),
+                    "ctr_with": round(ctr_in, 2),
+                    "ctr_without": round(ctr_out, 2),
+                    "delta_pp": round(ctr_in - ctr_out, 2),
+                    "n_plans_with": int(in_block.get("n_plans", 0)),
+                    "n_plans_without": int(out_block.get("n_plans", 0)),
+                }
 
     elif active_tab == "tl":
         if "标题" in df.columns and "Plan ID" in df.columns:

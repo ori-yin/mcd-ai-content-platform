@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent  # tools/_archive/ → repo
 TOKEN = ""
 
 # 要推的 commits（从旧到新）
-COMMITS_TO_PUSH = ["efb990c"]
+COMMITS_TO_PUSH = ["fcaf5a8"]
 
 
 def api(method: str, path: str, body=None):

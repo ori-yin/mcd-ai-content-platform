@@ -384,6 +384,93 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ---
 
+## Phase 46 · 2026-09-02 · 历史洞察 4 BUG 修复 + 3 Tab 查询增强
+
+**用户原话**："再检查一下吧，我还是发现很多BUG的，比如 http://localhost:8530/insights?tab=wf 的选词对比... 然后不知道这个是什么点击后会报错：http://localhost:8530/insights?tab=daily 点击后 Internal Server Error"
+
+**用户原话（追加反馈）**：
+- "还有 BUG，我在高低表现词，输入了一个词后，点击搜索，跳回了高效 plan 排行"
+- "单词对比我觉得应该放到查询下面... 但是这样页面会跳动一下对吧，有更好的解决方案吗？"
+- "我发现 emoji、高效 plan 排名，这两个没有输入的按钮，不能查询指定的 plan 和 emoji"
+
+**4 个 BUG + 3 Tab 查询增强**：
+
+### BUG 1 · daily 500（pandas round() 不接受 pd.NA）
+
+**根因**：`services/analytics/daily_trend.py:91` 周环比计算时 `_ctr_shift` 分母为 0 → `pd.NA` → 整个 ratio Series 含 NA → `.round(2)` 抛 `TypeError: type NAType doesn't define __round__`。
+
+**修法**：`ratio_pct = ratio_pct.astype("Float64")`（nullable type）后再 `.round(2)`（pandas 2.0+ 支持 round on Float64 with NA preserved）。
+
+**教训**：pandas 2.0+ nullable types (`Float64`/`Int64`) 跟默认 numpy types 行为不同；任何 `.round()` / 数学运算前先想清楚 NA 处理。
+
+### BUG 2 · wf 选词对比 select → input
+
+**用户原话**："应该是输入关键词查询指定词，而不是选词。因为有很多词"
+
+**修法**：`04_word_freq.html` `<select name="wf_compare_sel">` → `<input type="text" name="wf_compare_sel" placeholder="任意词，含/不含 plan CTR 对比" maxlength="32">`；CSS 加 `.form-row-span2{grid-column:span 2}` 让输入框跨 2 列；base.html 缓存 `?v=20260902wf`。
+
+### BUG 3 · wf 提交后 tab 跳回 rank（所有 6 个 tab 同病）
+
+**根因**：`web/app.py:1001` `active_tab = request.query_params.get("tab", "rank")` —— 表单不传 tab → 默认 rank。wf/ef/sim/owner/daily 5 个表单全部缺这个 hidden field。
+
+**修法**：6 个 tab form 全部加 `<input type="hidden" name="tab" value="X" />`：
+- `04_rank.html` → tab=rank
+- `04_word_freq.html` → tab=wf
+- `04_table.html` → tab=ef
+- `04_similar.html` → tab=sim
+- `04_owner.html` → tab=owner
+- `04_daily_trend.html` → tab=daily（这个其实原本就有，但保险起见也加了）
+
+**教训**：多个 form 共享同一查询 URL + 后端 default tab → **每个 form 都要主动传 tab**，不能依赖 default。
+
+### BUG 4 · 单词对比位置 + 页面跳动
+
+**用户原话**："单词对比我觉得应该放到查询下面... 但是这样页面会跳动一下对吧"
+
+**分析**：之前表单 → 高效词 → 低效词 → 单词对比；输入词提交后单词对比在屏幕下方，需要下滑。Phase 36 的 scroll restore 虽然在工作，但本质问题是"对比不在视口内"。
+
+**修法**（用户原话"有更好的解决方案吗" → 答"有"）：把 单词对比 移到 表单 紧下方 → 高效词 → 低效词。input/output 一对贴一起，提交后对比区块就在视口里，**自然不依赖 scroll 恢复**，base.html 的 Phase 36 滚动机制保留继续生效。
+
+### 增强 1 · rank Tab 加 "输入 Plan ID 查详情"
+
+**用户原话**："高效 plan 排名没有输入的按钮，不能查询指定的 plan"
+
+**改动**：
+- `04_rank.html` 表单加 `<input type="text" name="rank_plan_sel" placeholder="单个 plan 详细元数据 + CTR" maxlength="64">`
+- `web/app.py` 新增 `_plan_detail(df, plan_id) -> Optional[dict]` helper（字段对齐 `rank_plans` 一行 + 加 title/body 样本）
+- `04_rank.html` 加 `{% if plan_detail %}` 区块：触达 / 点击 / CTR / Plan名称 / 渠道 / Owner / 覆盖高效词数 + n_records / n_days / 字数均值 + 样本标题正文
+
+### 增强 2 · ef Tab 加 "输入 emoji 查对比"
+
+**用户原话**："emoji 没有输入的按钮"
+
+**改动**：
+- `04_table.html` 表单加 `<input type="text" name="ef_compare_sel" placeholder="任意 emoji..." maxlength="16">`
+- `web/app.py` `ef` 分支调 `compare_token(df, sel, col="_emojis")`（`text_analyzer.py` 已有 `_emojis` 列，复用 wf 路径）
+- 加 `{% if ef_compare %}` 区块：含 emoji plan 触达 / 不含 plan 触达 / delta_pp / 含 CTR / 不含 CTR / n_plans_with/without
+
+### 踩坑 · Jinja2 `%` 关键字 + `}}%` 解析崩
+
+**坑**：第一次写 `{{ "%.2f"|format(plan_detail.加权CTR%) }}%` —— Jinja2 报 `unexpected ')'`。其他 4 处中文 key（如 `summary['整体CTR%']`）用下标写法都 OK，只有 `.加权CTR%` 这种**点语法 + `%` 关键字结尾**会触发解析器混乱（猜测 Jinja2 lexer 在 `加权CTR` 后看到 `%` + `)` + `}}` + `%` 一连串 token 切分歧义）。
+
+**修法**：全部用 `plan_detail['加权CTR%']` 下标写法。
+
+**教训**（Handoff-lessons.md §19）：Jinja2 模板里 dict key 含 `%` 等特殊字符 → **永远用 `dict['key%']` 下标写法**，不要 `dict.key%` 属性语法。
+
+### 按钮/handler 全量 smoke
+
+17 GET + 12 POST 路由全部 smoke 过：所有 GET 返回 200/303（303 是 /settings auth redirect），所有 POST 返回 303/422/200（无 500）。所有按钮/handler wired 正确，**本轮没有其他未发现的 handler 不一致 BUG**。
+
+### 验证
+
+- `tests/verify.py` 848 PASS / 0 FAIL
+- curl smoke：5 个 tab (daily/wf/rank/ef/owner) + 5 个表单提交场景 全 200
+- rank_plan_sel=P202410110023 → "Plan 详情 · P202410110023" 区块渲染
+- ef_compare_sel=🎉 → "emoji 对比 · 🎉" 区块渲染
+- wf_compare_sel=test → "单词对比 · test" 区块渲染
+
+---
+
 ## 已压缩删节（细节查 git log）
 
 - `setup_and_run.bat` 闪退 5 次迭代详细历史（v1-v5 各版）
