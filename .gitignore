@@ -63,3 +63,6 @@ data/reports/
 
 # 一次性 GitHub Contents API 推送脚本（不入 git，需要时本地重生成）
 tools/push_*_via_api.py
+
+# 字典本地备份（防手残误删，详见 tools/backup_dicts.py）
+data/.backups/
