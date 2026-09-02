@@ -310,6 +310,35 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 - **验证**：`python tests/verify.py` 仍 **848 PASS / 0 FAIL**（无回归）；smoke 7 case 全过（settings 鉴权链路 + 字典读写 + cookie path 修复）
 - **Commit**：`d6417c9`（本地 + 远端 `32508fb3bd62`）—— `.gitattributes` + `web/app.py` + `data/custom_dict.txt`
 
+### 2026-09-02 · Phase 44 _write_dict_file 4 重防御（双 CR + 空行 + trailing space）
+
+- **问题复盘**：用户再次报"保存后中间插入一行空格"——Phase 43 的 `replace(\r\n → \n).replace(\n → \r\n)` 没防住**回旋效应**场景：当 input 含历史 `\r\r\n` 双 CR 时，**第一次 replace 只吃掉 CRLF（第二个 + 第三个字节），剩下孤 `\r`**，**第二次 replace 之前，孤 `\r` 还在**，第二次 replace 把 `\n` 转 `\r\n`，但孤 `\r` 前面没东西——实际结果：第一次 replace 输出 `b"的\r了\r和\r"`（保留所有第一个 `\r`），第二次 replace 不动（没匹配）→ 输出还是 `b"的\r了\r和\r"`。
+
+  **但是**：用户保存的 input 是 read_text 之后的 LF only（universal newlines 模式），**理论上不会有 `\r\r\n` input**。那 `\r\r\n` 怎么来的？**唯一可能**：之前 gitattributes + autocrlf 把已 CRLF 的 working tree 重新 normalize 一次（叠加），或者保存链路中间有别的路径。
+
+- **新算法（彻底防御）**：
+  ```python
+  raw = content.encode("utf-8").replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+  lines = [ln.rstrip() for ln in raw.split(b"\n") if ln.strip()]
+  tmp.write_bytes(b"\r\n".join(lines) + b"\r\n")
+  ```
+  - ① **CRLF / 孤 CR 全部归一 LF**：破回旋效应（先 replace `\r\n` → `\n`，再 replace `\r` → `\n`，无论 input 怎么混合都归一）
+  - ② **过滤空行**：HEAD stopwords.txt 原含 1 空行（`\r\n\r\n`），用户保存后被规范化过滤掉
+  - ③ **每行 rstrip 去行尾空格**：保留前导缩进（jieba load_userdict 用空格分隔词频）
+  - ④ **输出 CRLF + trailing CRLF**：跟 gitattributes `eol=crlf` 一致
+  - **保留 `#` 注释行**：jieba load_userdict 容忍 `# 开头`（不参与分词）
+
+- **验证**：
+  - **16/16 单元测试**：`tmp_normalize_test.py` 覆盖 LF / CRLF / 双 CR / 孤 CR / 混合 / 空行 / whitespace-only / 前后空格 / 无 trailing newline / 中文
+  - **smoke e2e**：注入 `\r\r\n`（78 处）→ 输出 77 CRLF + 0 双 CR ✓；注入空行（68 处 × 2 LF）→ 输出 68 行 + 0 空行 ✓
+  - **回归**：`python tests/verify.py` **848 PASS / 0 FAIL**（无回归）
+
+- **为什么换"表格"方案没用**：用户试探"实在不行要不要换表格"——表格方案（每行一个 input + JS add/row）虽然每行自动 trim 不易污染，但要重写 JS 加 add/row，对 jieba hot reload 路径不友好（要 join `\n`）。**4 重防御已经能防住所有 line ending 边界**，表格方案作为备选留待后续。
+
+- **顺手修 push 脚本 bug**：archive 嵌套的 `push_phase43_via_api.py` 用 `.parent.parent` 计算 ROOT（只到 tools/），但实际脚本在 `tools/_archive/` 里，应该是 `.parent.parent.parent`（多一层）。**Phase 38 A1-mid 教训 §13 复现**，又踩了一次。修后推送成功。
+
+- **Commit**：`3ba20c5`（本地 + 远端 `956ec3b64cd8`）—— `web/app.py` 1 文件 +10 -4 行。
+
 ---
 
 ## 已压缩删节（细节查 git log）

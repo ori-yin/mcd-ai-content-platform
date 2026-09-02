@@ -162,6 +162,20 @@ cmd 严格要 CRLF；Write 工具默认 LF。
 - 看 GitHub diff 出现 `^M`：`git show HEAD:path | od -c | head` 看实际字节
 - Windows + Python + git autocrlf + 浏览器 textarea = 4 重套娃，必须 4 重防御
 
+### 18. bytes replace 回旋效应：双 CR 无法用 2-step replace 清理（2026-09-02 · Phase 44）
+
+**坑**：Phase 43 用了 `replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")` 想做 CRLF 归一。**但当 input 含 `\r\r\n` 双 CR 时**：
+- 第一次 `replace(b"\r\n", b"\n")`：匹配 `\r\r\n` 中的 `\r\n`（byte 2-3），剩下孤 `\r`（byte 1）
+- 第二次 `replace(b"\n", b"\r\n")`：没匹配（孤 `\r` 没动），孤 `\r` 还在 → 输出 `b"\r"` 残留在每行
+- **实际看到的现象**：用户保存后 textarea 显示 `的\r\n了\r\n和\r\n...` 每行带孤 CR（看不见但 `\r` 在）
+
+**铁律**：归一化 line ending 必须**先全部归 LF**（`replace(\r\n → \n).replace(\r → \n)`），**再统一输出**（`\r\n`.join + `\r\n`）。任何"先归一再归二"的 2-step 算法都有回旋风险。
+
+**避坑指引**：
+- 写文件前的 line ending 处理：3 步算法（`\r\n → \n` → `\r → \n` → `split → filter → join(\r\n) + \r\n`）
+- 不要相信 `replace(\r\n → \n).replace(\n → \r\n)` 这种"对偶"算法——它假设 input 只有 LF 或 CRLF 一种，**遇到双 CR 必坏**
+- 单元测试覆盖 5 种混合 line ending（LF/CRLF/双 CR/孤 CR/混合）
+
 ---
 
 ## 已删（详见 git log 早期 commit / memory）

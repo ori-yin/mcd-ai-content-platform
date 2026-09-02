@@ -198,5 +198,22 @@
 - ⏳ 字典维护 UI 重设（按 Phase 37 design.md 路线图收尾）
 - ⏳ L2 模型训练数据准备（领导口径「输入因子有效性检查 vs 第一版 base」差距分析待落地）
 
+## 6.7 Phase 44 _write_dict_file 4 重防御（2026-09-02）
+
+**已完成**（Phase 44 · commit 3ba20c5，远端 956ec3b64cd8）：
+- ✅ _write_dict_file 4 重防御：CRLF/孤 CR 归一 LF → 过滤空行 → rstrip → 输出 CRLF
+- ✅ 单元测试 16/16 PASS（tmp_normalize_test.py 覆盖 5 种 line ending 混合 + 中文）
+- ✅ smoke e2e：注入 `\r\r\n` 双 CR + 空行后保存，输出干净（0 双 CR / 0 空行）
+- ✅ 顺手修 push 脚本 archive 嵌套 ROOT 路径（§13 教训复现）
+
+**新增洞察**：
+- ⚠️ `replace(\r\n → \n).replace(\n → \r\n)` 有**回旋效应**——遇到双 CR 必坏（详见 lessons §18）
+- ⚠️ bytes replace 必须先用 `.replace(b"\r\n", b"\n").replace(b"\r", b"\n")` 归一，再统一输出
+- ⚠️ 用户试探"换表格"方案——4 重防御已经能防住所有 line ending 边界，表格方案作为备选留待后续
+
+**TODO 后续**：
+- ⏳ 字典维护 UI 重设（按 Phase 37 design.md 路线图收尾）
+- ⏳ 表格方案备选（如果 4 重防御后还出问题再考虑）
+
 ---
 
