@@ -30,8 +30,8 @@ BRANCH = "main"
 ROOT = Path(__file__).resolve().parent.parent.parent  # 适配 archive 嵌套（tools/_archive/ → repo root）
 TOKEN = ""
 
-# 要推的 commits（按从旧到新的顺序；本地 HEAD = 0c20e38 → ahead 远端 1 commit）
-COMMITS_TO_PUSH = ["0c20e38"]
+# 要推的 commits（按从旧到新的顺序；本地 HEAD = e77e96c → ahead 远端 2 commits）
+COMMITS_TO_PUSH = ["e55cf03", "e77e96c"]
 
 
 def api(method: str, path: str, body=None):
