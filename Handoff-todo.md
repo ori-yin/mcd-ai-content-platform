@@ -178,5 +178,25 @@
 - ⚠️ inline 收敛暴露设计系统漏洞的根因 = design.md §2.6 / §2.8 没把变体列全（详见 design.md §12.2）
 - ⚠️ design.md 缺 DNA 段 = 「4 条铁律」表无法给新 session 提供哲学锚点（详见 design.md §12.3）
 
+## 6.6 Phase 40-43 字典维护鉴权 + 3 个连环 BUG 修复（2026-09-02）
+
+**已完成**（Phase 40-43 · commit d6417c9，远端 32508fb3bd62）：
+- ✅ 字典维护鉴权（Phase 40）：左侧栏隐藏 + 密码 `ori1026` 鉴权 + cookie `path=/` 修复
+- ✅ stopwords 字典（Phase 41）：产品词典加 stopwords 字段，jieba 热重载
+- ✅ textarea 双重 escape 修复（Phase 41-42）：tojson + `<script type="application/json">` 避开 HTML attribute `\n` 截断
+- ✅ 双 CR BUG 修复（Phase 43）：custom_dict.txt 清空 `\r\r\n` + 空行（135→68 行），`.gitattributes` 防御，`_write_dict_file` bytes CRLF 统一
+
+**新增洞察**：
+- ⚠️ Jinja autoescape + `| e` 双 escape 是 textarea 的高频坑（textarea 不解析 entity）
+- ⚠️ HTML5 attribute `\n` 截断 spec 坑：多行数据绝不放 attribute
+- ⚠️ Cookie path 严格匹配 + `/api/*` 是兄弟路径 = 必须 `path=/`
+- ⚠️ Windows + Python + git autocrlf + 浏览器 textarea = 4 重 line ending 套娃，必须 4 重防御
+
+**验证**：848 PASS / 0 FAIL（无回归）+ smoke 7 case 全过。
+
+**TODO 后续**（不属于本轮）：
+- ⏳ 字典维护 UI 重设（按 Phase 37 design.md 路线图收尾）
+- ⏳ L2 模型训练数据准备（领导口径「输入因子有效性检查 vs 第一版 base」差距分析待落地）
+
 ---
 

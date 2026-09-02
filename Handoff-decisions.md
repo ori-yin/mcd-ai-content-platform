@@ -278,6 +278,38 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 - **顺手修脚本 bug**：push 脚本 archive 嵌套路径需 `.parent.parent.parent`（原 `.parent.parent` 只到 tools/，导致走「删除文件」分支 422 BadObjectState）。下次 archive push 脚本直接用这个修正。
 - **验证**：848 PASS / 0 FAIL（含 1 新增 options_with_custom 首位 = 通用）+ inline style 1 处 allowlist + py_compile web/app.py 全过。
 
+### 2026-09-02 · Phase 40-43 字典维护鉴权 + 3 个连环 BUG 修复
+
+- **Phase 40 字典鉴权 + 左侧栏隐藏**：
+  - 用户拍板"左侧栏不显示字典维护入口 + 简单密码鉴权（密码 `ori1026`，无 SSO）"
+  - `web/app.py` `NAV_PAGES` 加 `hidden_in_nav: True` 标记 settings 项；`base.html` nav 循环跳过 `hidden_in_nav` 项
+  - 新增 `SETTINGS_PASSWORD` / `SETTINGS_COOKIE_NAME` 常量 + HMAC-SHA256 签名 cookie（`httponly + samesite=lax + path=/`）+ `_make_settings_cookie` / `_verify_settings_cookie` / `_settings_auth_or_redirect` helper
+  - 新增 3 个路由：`GET /settings/login` / `POST /settings/login` / `GET /settings/logout`
+  - 现有 `/settings` + `/api/settings/save` + `/api/settings/download` 全部加鉴权装饰
+  - `home.html` 字典管理区底部「停用词」行（× icon）
+  - `web/templates/pages/06_settings_login.html` 新建（简洁居中卡片）
+  - `static/css/style.css` 加 `.settings-head` + `.login-wrap`
+- **Phase 40 BUG**：cookie `path=/settings` 严格匹配 → `/api/settings/*` 不在 cookie 路径下 → 浏览器不发 cookie → 全 401。**修**：改 `path=/`。
+- **Phase 41 textarea 双重 escape BUG + 加 stopwords 字典**：
+  - **问题**：Jinja autoescape + `| e` 双重 escape → `&#34;` 等 entity 字符串写进 textarea → 浏览器 textarea **不解析 HTML entity**（与 input 不同）→ 数据乱码
+  - **修**：textarea 内容改 `<script type="application/json" id="dict-init-X">{{ d.content | tojson }}</script>` + JS 读 `.textContent` 后 `JSON.parse` 填入 textarea
+  - **加 stopwords 字典**：`DICTIONARIES` 加 stopwords 项（5+1=6 个字典）；`_write_dict_file` 加 stopwords reload 分支
+- **Phase 42 textarea `\n` attribute 截断 BUG**：
+  - **问题**：HTML5 spec attribute value 遇 LF 截断。tojson 输出 `"word1\nword2"`，HTML parser 在 `\n` 处截断 attribute → 数据丢失
+  - **修**：tojson 输出挪到 `<script type="application/json">` tag（script 标签内容可以是任意字符包括 \n，HTML parser 不截断）
+  - **JS 路径**：document.querySelectorAll('textarea[data-init-id]').forEach → JSON.parse(scriptEl.textContent) → ta.value
+- **Phase 43 双 CR BUG + .gitattributes 防御**：
+  - **问题**：浏览器 textarea 写 LF + Windows git autocrlf 把 LF 转 CRLF 但因为历史 CRLF 残留 → commit 时叠加变成 `\r\r\n`（双 CR，UTF-8 不报错但显示有 ^M^M）
+  - **修**：
+    1. Python 脚本清空 `custom_dict.txt` 双 CR + 空行（135 行 → 68 行 67 词，纯 LF）
+    2. 新建 `.gitattributes` `data/*.txt text eol=crlf`（防止 git autocrlf 叠加造成 `\r\r\n`）
+    3. `_write_dict_file` 写 text 类字典统一 CRLF：`content.encode("utf-8").replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")`（textarea 写 LF + Windows autocrlf 双 CR 防御）
+    4. yaml/json 保留原样（保留缩进）
+- **不动**：业务层 0 行改动；HMAC-SHA256 secret 从 `SECRET_KEY` env 拿（Phase 25 已有约定）；Phase 26 5 页面 + 13 API 路径全保留
+- **为什么 4 个 phase 串成一周**：用户先报"左侧栏藏 + 加密码"（Phase 40），然后报"产品字典缺 stopwords"（Phase 41），然后报"保存后内容换行混乱"（Phase 42 → Phase 43）。3 个连环 BUG 全部从「Jinja autoescape → HTML attribute → CRLF line ending」一层一层挖出来。每个修一个再触发下一个。
+- **验证**：`python tests/verify.py` 仍 **848 PASS / 0 FAIL**（无回归）；smoke 7 case 全过（settings 鉴权链路 + 字典读写 + cookie path 修复）
+- **Commit**：`d6417c9`（本地 + 远端 `32508fb3bd62`）—— `.gitattributes` + `web/app.py` + `data/custom_dict.txt`
+
 ---
 
 ## 已压缩删节（细节查 git log）

@@ -115,6 +115,53 @@ cmd 严格要 CRLF；Write 工具默认 LF。
 - 新写 `_archive/` 下的工具脚本：直接用 `.parent.parent.parent`，不要 `.parent.parent`
 - 跑 push 脚本前先 Read ROOT 计算那行，确认从 archive 跑不会走"删除"分支
 
+### 14. Cookie `path` 严格匹配陷阱（2026-09-02 · Phase 40）
+
+**坑**：cookie `path=/settings` → 浏览器只在 `/settings` 精确路径下发送 cookie → `/api/settings/save/*` / `/api/settings/download/*` 不发送 → 全 401。**修**：改 `path=/`（覆盖整站）。
+
+**铁律**：cookie `path` 设 `/`，除非有明确子域隔离需求。
+
+**避坑指引**：
+- 鉴权 cookie 一律 `path=/`，不要按"敏感路径"细分
+- `/api/*` 跟 `/foo` 是兄弟路径，不存在父子包含关系
+- 调试 cookie 鉴权：先 `chrome://settings/cookies` 看 cookie scope + 再看 Network request cookie header
+
+### 15. HTML attribute 遇 `\n` 截断（2026-09-02 · Phase 42）
+
+**坑**：HTML5 spec 规定 attribute value 遇 LF (`\n`) 截断。`{{ d.content | tojson }}` 输出 `"word1\nword2"`，HTML parser 在第一个 `\n` 处截断 attribute → 后面的内容丢失。**症状**：textarea 显示不全。
+
+**铁律**：textarea / pre / script 等需要保留 `\n` 的内容，绝不放 HTML attribute，必须放 tag 内容（`<script type="application/json">` / `<pre>` / `<textarea>` 本身）。
+
+**避坑指引**：
+- 多行文本 → 用 `<script type="application/json">` tag + JS `JSON.parse(tag.textContent)`
+- 不用 `<input value="...">` / `<div data-x="...">` 装多行
+- 不用 `<textarea>` 的 `value` attribute（textarea 没有 value 属性，只能写文本节点）
+
+### 16. textarea 不解析 HTML entity（2026-09-02 · Phase 41）
+
+**坑**：Jinja autoescape + `| e` 双重 escape → `&#34;` / `&amp;` 等 entity 字符串写进 textarea → **浏览器 textarea 不解析 HTML entity**（与 `<input value="...">` 不同） → 显示成 `&#34;` 字面量。**症状**：textarea 显示 `&quot;` 而不是 `"`。
+
+**铁律**：textarea 内容只能用纯文本，不能用 HTML escape。必须 JSON 序列化。
+
+**避坑指引**：
+- 不要在 textarea 标签内 / attribute 上用 `| e` / `| escape`
+- 用 `{{ content | tojson }}` 输出到 `<script>` tag，JS 读后 `ta.value = JSON.parse(...)`
+- 同样适用于 `<pre>` / `<code>` 内容
+
+### 17. git autocrlf 叠加双 CR 坑（2026-09-02 · Phase 43）
+
+**坑**：浏览器 textarea 写 LF + Windows git autocrlf=true 把 LF 转 CRLF + 文件已含历史 CRLF 残留 → commit 时叠加变成 `\r\r\n`（双 CR）。**症状**：git diff 显示 `^M^M` 但 UTF-8 不报错。
+
+**铁律**：
+1. 跨平台协作的文件，仓库里加 `.gitattributes` 强制 line ending（`*.txt text eol=crlf` / `*.py text eol=lf`）
+2. 服务端写文件前必须 normalize（`replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")`）
+3. 用 bytes 操作，不用 str `.replace()`（后者只匹配单字符）
+
+**避坑指引**：
+- 任何写文本文件的服务端函数：bytes level CRLF 统一
+- 看 GitHub diff 出现 `^M`：`git show HEAD:path | od -c | head` 看实际字节
+- Windows + Python + git autocrlf + 浏览器 textarea = 4 重套娃，必须 4 重防御
+
 ---
 
 ## 已删（详见 git log 早期 commit / memory）
