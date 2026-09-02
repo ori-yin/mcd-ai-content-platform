@@ -14,10 +14,10 @@
 
 {# flash #}
 {% if flash_err %}
-<div class="panel-card"><div class="warning-banner">{{ flash_err }}</div></div>
+<div class="warning-banner">{{ flash_err }}</div>
 {% endif %}
 {% if flash_msg %}
-<div class="panel-card"><div class="success-banner">{{ flash_msg }}</div></div>
+<div class="success-banner">{{ flash_msg }}</div>
 {% endif %}
 
 {# 5 个字典 panel #}
@@ -52,6 +52,7 @@
         下载原文
       </a>
       <span class="dict-actions-hint">
+        {% if d.kind == 'yaml' %}yaml 保存会原样保留注释和缩进{% endif %}
         {% if d.kind == 'json' %}保存时会校验 JSON 格式{% endif %}
         {% if d.kind == 'text' and d.id == 'custom_dict' %}保存后自动重载 jieba{% endif %}
       </span>
