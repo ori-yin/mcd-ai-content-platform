@@ -167,3 +167,16 @@
 
 ---
 
+## 6.5 Phase 38 A1-mid 同步条目（2026-09-01）
+
+**已完成**（Phase 38 A1-mid · commit fd94aea + 816eb85）：
+- ✅ §6.2 #7a UI 重设落地 → 已完成（5/5 页面 + 13 API + 金拱 SVG），本轮 A1-mid 是 UI 统一收尾
+- ✅ §6.4 技术债 P1/P2/P2 仍未动（UI 收尾阶段不允许动后端）
+
+**新增洞察**（design.md §12）：
+- ⚠️ Handoff 数字漂移是「schema 改 → verify.py 同步改」铁律失效的体现（详见 design.md §12.1）
+- ⚠️ inline 收敛暴露设计系统漏洞的根因 = design.md §2.6 / §2.8 没把变体列全（详见 design.md §12.2）
+- ⚠️ design.md 缺 DNA 段 = 「4 条铁律」表无法给新 session 提供哲学锚点（详见 design.md §12.3）
+
+---
+

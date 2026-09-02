@@ -80,6 +80,41 @@ cmd 严格要 CRLF；Write 工具默认 LF。
 
 **副坑**：uvicorn `--reload` 在 Windows 上常失效，**改完代码必须手动重启 server** 才生效（setup_and_run.bat 默认不带 `--reload`，所以双击 bat 是最稳的方式）。
 
+### 11. Handoff 数字漂移 =「schema 改 → verify.py 同步改」铁律失效（2026-09-01 · Phase 38 A1-mid 复盘）
+
+**坑**：Handoff §6.0 写 `847 PASS / 0 FAIL`，实际跑是 `842 PASS / 5 FAIL`。Phase 28 / Phase 30 改 schema 时 verify.py 没同步 5 处断言（必填 4→3 / PLAN_TYPES 3→4 / options_with_custom +1→+2 / llm_status 默认测试用真实 yaml / sweep stage 必填 → 选填）。
+
+**铁律**：
+- **schema / enum / 必填字段改动 → verify.py 同步改是「改文件清单」的硬约束**，不是「下次再说」
+- 改 `ui/llm_status.py` / `core/product_benefit.py` 等带 lru_cache 的模块 → 测试必须 monkey-patch + cache_clear，**闭包变量不入 hash key**
+- Handoff §6.0 数字每次写必现场跑一次（**不引用旧数字**）
+
+**避坑指引**：
+- 改 `core/schemas.py` 任何字段、enum、默认值 → 必跑 `python tests/verify.py`，有 FAIL 就修
+- design.md §12.1 写明此坑；新 session 第一步 grep Handoff §6.0 数字 + 现场跑 verify，数字对不上就查 lessons
+
+### 12. 跨文件改动必须「改一个测试一个」（2026-09-01 · Phase 38 A1-mid 流程教训）
+
+**坑**：本次 A1-mid 一开始想「先改 CSS 全部 → 一次性 verify」，结果中间出了 1 处遗漏 inline（03 line 41）。如果**改完一类就 grep lint + verify**，能立刻发现。
+
+**铁律**：**每次 Edit 完一个文件 → 立刻跑针对该文件的小验证**（grep inline style / py_compile / verify §对应段），不要攒一批改完再测。
+
+**避坑指引**：
+- 改 HTML → grep `style="..."` 残留
+- 改 Python → `python -m py_compile`
+- 改 schema / enum / 必填 → 立刻跑 `python tests/verify.py`
+- 全部改完 → 最后跑一次完整 verify.py + curl 6 路由
+
+### 13. archive 嵌套的脚本 ROOT 路径需 `.parent.parent.parent`（2026-09-01 · Phase 38 A1-mid 顺手修）
+
+**坑**：push_via_api.py 脚本从 `tools/_archive/` 跑时，`Path(__file__).resolve().parent.parent` 只到 `tools/`（不是 repo root），导致 `local.exists()` 检查错误，把"添加文件"分支走成"删除文件"分支，422 BadObjectState。
+
+**铁律**：archive 里的脚本 `ROOT` 计算 = `.parent.parent.parent`（多一层）适配 archive 嵌套。
+
+**避坑指引**：
+- 新写 `_archive/` 下的工具脚本：直接用 `.parent.parent.parent`，不要 `.parent.parent`
+- 跑 push 脚本前先 Read ROOT 计算那行，确认从 archive 跑不会走"删除"分支
+
 ---
 
 ## 已删（详见 git log 早期 commit / memory）

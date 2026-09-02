@@ -264,6 +264,20 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
   - `XGBoost` → `LightGBM`（底层真实模型名）
 - **不动**：`value` 属性（demo / baseline_only / l1_model 后端 mode 值不变）；`selected` 判断不变；CSS class 不变；后端逻辑完全无影响
 
+### 2026-09-01 · Phase 38 A1-mid 22 处 inline style 收敛 + design.md §0.1 DNA + §12 避坑
+
+- **问题发现**：Handoff §6.0 写「847 PASS / 0 FAIL」但实际跑是「842 PASS / 5 FAIL」—— 5 FAIL 全是 verify.py 同步漂移（Phase 28 / Phase 30 改 schema 时 verify.py 没同步 5 处断言）。**这是「Handoff 文档 vs 代码数字」系统性脱节**，详见 design.md §12.1。
+- **范围拍板**：用户走 A1-mid 范围（修 22 inline + design.md 增量 + 5 FAIL 同步），不动 A1-min / A1-full。
+- **22 处 inline 收敛**：8 个新 CSS 类（form-grid-tri/quad、metric-row-tri/quad/bi/spaced、card-desc-spaced/spaced-sm、subsection-tight、stat-line-muted、link-download）+ 4 条自动间距规则（.kpi-tile + .kpi-tile / .candidate-card + .candidate-card / .panel-card .warning-banner / .panel-card .batch-wrap）。
+- **design.md 增量**：§0.1 一句话定义 + 参考 Layer 0（OneDrive DESIGN.md 通用哲学）/ §5 历史收敛记录 / §6.7-§6.9 新模式 / §10 AI Agent 5 步流程 / §11 质量检查清单 / §12 避坑教训 4 条 / 附录 A 48→60 类 / 附录 B 变更日志。
+- **配套**：04_历史洞察.html `<title>` 去前缀 `04 历史洞察` → `历史洞察`（Phase 27 URL 语义化尾巴）。
+- **唯一残留 inline style**：01 内容工坊主按钮业务特化（allowlist 注释，§9 lint 跳过）。
+- **why**：22 处里有 4 种重复模式（form-grid 列数变体 / metric-row 列数变体 / card-desc 间距 / form 后短说明），说明 design.md §2.6「表单」和 §2.8「KPI」之前没把变体列全。本次抽 8 个类补全，§12.2 避坑记录「≥3 处同模式必抽类」。
+- **verify.py 同步 5 处**：① Phase 28 必填 4→3 / ② Phase 30 options_with_custom +1→+2 / ③ PLAN_TYPES 3→4 / ④ llm_status 默认测试用 tmpdir 隔离 yaml / ⑥ sweep TaskInput stage 选填跳过。
+- **3 commit 推送**：fd94aea（fix: A1-mid）/ 816eb85（docs: §12 避坑）/ f7835ef（chore: 归档 push 脚本）。**远端 HEAD**：6e0be2cf7db6。
+- **顺手修脚本 bug**：push 脚本 archive 嵌套路径需 `.parent.parent.parent`（原 `.parent.parent` 只到 tools/，导致走「删除文件」分支 422 BadObjectState）。下次 archive push 脚本直接用这个修正。
+- **验证**：848 PASS / 0 FAIL（含 1 新增 options_with_custom 首位 = 通用）+ inline style 1 处 allowlist + py_compile web/app.py 全过。
+
 ---
 
 ## 已压缩删节（细节查 git log）
