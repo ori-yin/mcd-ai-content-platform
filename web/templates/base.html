@@ -73,6 +73,7 @@
 
     <nav class="nav">
       {% for page in nav_pages %}
+      {% if not page.hidden_in_nav %}
       <a class="nav-item {% if page.id == active_id %}active{% endif %}"
          href="{{ page.route }}">
         {# 每个导航项的 SVG 图标（按 page.icon 字段选） #}
@@ -93,6 +94,7 @@
         </span>
         <span>{{ page.name }}</span>
       </a>
+      {% endif %}
       {% endfor %}
     </nav>
 

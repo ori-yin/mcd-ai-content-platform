@@ -6,8 +6,11 @@
 
 {# 顶部说明 #}
 <div class="panel-card">
-  <div class="panel-heading">字典维护</div>
-  <div class="card-desc">
+  <div class="settings-head">
+    <div class="panel-heading" style="margin:0">字典维护</div>
+    <a href="/settings/logout" class="btn-secondary">退出登录</a>
+  </div>
+  <div class="card-desc" style="margin-top:10px">
     这里维护 5 个核心配置：3 个 YAML（渠道规则 / 维度权重 / 含券关键词）+ 1 个产品词典（jieba 分词用）+ 1 个 CTR 基准 JSON。保存后立即生效（产品词典会自动热重载 jieba，CTR 基准校验 JSON 格式）。
   </div>
 </div>

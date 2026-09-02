@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}字典维护登录 · McD AI 内容平台{% endblock %}
+
+{% block content %}
+<div class="login-wrap">
+  <div class="panel-card">
+    <div class="panel-heading">字典维护</div>
+    <div class="card-desc">仅管理员可访问，请输入密码。</div>
+
+    {% if login_error %}
+    <div class="warning-banner">{{ login_error }}</div>
+    {% endif %}
+
+    <form method="post" action="/settings/login" class="form-grid">
+      <input type="hidden" name="next" value="{{ next_url }}">
+      <div class="form-row form-row-wide">
+        <label>密码</label>
+        <input type="password" name="password" required autofocus
+               autocomplete="current-password"
+               placeholder="请输入字典维护密码" />
+      </div>
+      <div class="form-row form-row-wide">
+        <button type="submit" class="btn btn-dark btn-submit">登录</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

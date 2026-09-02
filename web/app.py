@@ -47,6 +47,8 @@ import os
 import sys
 import csv
 import json
+import time
+import hmac
 import hashlib
 from datetime import datetime
 from pathlib import Path
@@ -232,8 +234,73 @@ NAV_PAGES = [
     {"id": "feedback", "route": "/feedback", "name": "结果反哺",
      "subtitle": "", "icon": "refresh"},
     {"id": "settings", "route": "/settings", "name": "字典维护",
-     "subtitle": "", "icon": "settings"},
+     "subtitle": "", "icon": "settings", "hidden_in_nav": True},
 ]
+
+
+# ============================================================
+# 字典维护鉴权（Phase 40 · 2026-09-02）
+# ============================================================
+# 简单密码鉴权，无 SSO：
+# - 密码：环境变量 MCD_SETTINGS_PASSWORD（默认 ori1026）
+# - Cookie：HMAC-SHA256 签名 + 30 天有效，httponly + samesite=lax + path=/settings
+# - SECRET：环境变量 MCD_SETTINGS_SECRET（默认占位，生产必改）
+# - 仅用于内网个人访问，不要放公网
+SETTINGS_PASSWORD = os.environ.get("MCD_SETTINGS_PASSWORD", "ori1026")
+SETTINGS_COOKIE_NAME = "mcd_settings_auth"
+SETTINGS_COOKIE_MAX_AGE = 30 * 24 * 3600  # 30 天
+SETTINGS_SECRET = os.environ.get(
+    "MCD_SETTINGS_SECRET", "mcd-default-secret-change-me-in-prod"
+)
+
+
+def _make_settings_cookie() -> str:
+    """生成签名 cookie：settings:<ts>:<sig>。"""
+    ts = int(time.time())
+    payload = f"settings:{ts}"
+    sig = hmac.new(
+        SETTINGS_SECRET.encode("utf-8"),
+        payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()[:32]
+    return f"{payload}:{sig}"
+
+
+def _verify_settings_cookie(cookie_value: str) -> bool:
+    """验证 cookie：签名匹配 + 在 30 天有效期内。"""
+    if not cookie_value:
+        return False
+    try:
+        parts = cookie_value.split(":")
+        if len(parts) != 3 or parts[0] != "settings":
+            return False
+        ts = int(parts[1])
+        if (time.time() - ts) > SETTINGS_COOKIE_MAX_AGE:
+            return False
+        sig = parts[2]
+        expected = hmac.new(
+            SETTINGS_SECRET.encode("utf-8"),
+            f"settings:{ts}".encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()[:32]
+        return hmac.compare_digest(sig, expected)
+    except Exception:
+        return False
+
+
+def _settings_auth_or_redirect(request: Request):
+    """检查 settings 鉴权 cookie。未通过 → 返回 RedirectResponse；否则 None。
+
+    每个 settings 路由开头 `if (r := _settings_auth_or_redirect(request)): return r`
+    """
+    cookie = request.cookies.get(SETTINGS_COOKIE_NAME, "")
+    if not _verify_settings_cookie(cookie):
+        next_url = request.url.path
+        return RedirectResponse(
+            url=f"/settings/login?next={quote(next_url)}",
+            status_code=303,
+        )
+    return None
 
 
 # ============================================================
@@ -1333,9 +1400,52 @@ def _write_dict_file(dict_id: str, content: str) -> tuple[bool, str]:
     return True, "保存成功"
 
 
+@app.get("/settings/login", response_class=HTMLResponse)
+async def settings_login_page(request: Request, next: str = "/settings", error: str = ""):
+    """字典维护登录页（独立模板，简洁居中卡片）。"""
+    ctx = base_context("settings")
+    ctx["next_url"] = next
+    ctx["login_error"] = error
+    return templates.TemplateResponse(request, "pages/06_settings_login.html", ctx)
+
+
+@app.post("/settings/login")
+async def settings_login_submit(
+    request: Request,
+    password: str = Form(...),
+    next: str = Form("/settings"),
+):
+    """校验密码 → 设置 HMAC 签名 cookie → 302 到 next。"""
+    if password != SETTINGS_PASSWORD:
+        return RedirectResponse(
+            url=f"/settings/login?next={quote(next)}&error={quote('密码错误')}",
+            status_code=303,
+        )
+    resp = RedirectResponse(url=next or "/settings", status_code=303)
+    resp.set_cookie(
+        key=SETTINGS_COOKIE_NAME,
+        value=_make_settings_cookie(),
+        max_age=SETTINGS_COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    return resp
+
+
+@app.get("/settings/logout")
+async def settings_logout():
+    """清 cookie → 302 到 login 页。"""
+    resp = RedirectResponse(url="/settings/login", status_code=303)
+    resp.delete_cookie(SETTINGS_COOKIE_NAME, path="/")
+    return resp
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, msg: str = "", err: str = ""):
     """字典维护页面：5 个字典，每个含 textarea + 保存/下载。"""
+    if (r := _settings_auth_or_redirect(request)):
+        return r
     ctx = base_context("settings")
     dicts = []
     for d in DICTIONARIES:
@@ -1357,7 +1467,9 @@ async def settings_page(request: Request, msg: str = "", err: str = ""):
 
 
 @app.post("/api/settings/save/{dict_id}")
-async def settings_save(dict_id: str, content: str = Form(...)):
+async def settings_save(request: Request, dict_id: str, content: str = Form(...)):
+    if (r := _settings_auth_or_redirect(request)):
+        return r
     ok, msg = _write_dict_file(dict_id, content)
     if not ok:
         return RedirectResponse(
@@ -1373,8 +1485,10 @@ async def settings_save(dict_id: str, content: str = Form(...)):
 
 
 @app.get("/api/settings/download/{dict_id}")
-async def settings_download(dict_id: str):
+async def settings_download(request: Request, dict_id: str):
     """直接返回字典文件原文下载。"""
+    if (r := _settings_auth_or_redirect(request)):
+        return r
     d = _dict_by_id(dict_id)
     if not d:
         raise HTTPException(status_code=404, detail=f"未知字典：{dict_id}")
