@@ -15,8 +15,8 @@ web/app.py — FastAPI 入口（MCD AI 内容平台 · v2 全量迁移版）
   页面 GET：
     /                00 首页
     /01              01 内容工坊
-    /02              02 文案诊断
-    /03              03 批量预测
+    /02              02 内容诊断
+    /03              03 内容预测
     /04              04 历史洞察
     /05              05 真实结果回流
 
@@ -221,10 +221,10 @@ NAV_PAGES = [
      "subtitle": "AI 驱动的内容生产与效果评估平台", "icon": "home"},
     {"id": "studio", "route": "/studio", "name": "内容工坊",
      "subtitle": "", "icon": "edit"},
-    {"id": "diagnosis", "route": "/diagnosis", "name": "文案诊断",
-     "subtitle": "单条文案规则诊断 + 词语分析 + CTR 参考 + AI 改写", "icon": "stethoscope"},
-    {"id": "batch", "route": "/batch", "name": "批量预测",
-     "subtitle": "CSV / Excel 上传 + 批量规则评估 + CTR 预测 + 结果导出", "icon": "clipboard"},
+    {"id": "diagnosis", "route": "/diagnosis", "name": "内容诊断",
+     "subtitle": "单条内容规则诊断 + 词语分析 + CTR 参考 + AI 改写", "icon": "stethoscope"},
+    {"id": "batch", "route": "/batch", "name": "内容预测",
+     "subtitle": "CSV / Excel 上传 + 多条规则评估 + CTR 预测 + 结果导出", "icon": "clipboard"},
     {"id": "insights", "route": "/insights", "name": "历史洞察",
      "subtitle": "七 Tab 排名 / 词频 / Emoji / 趋势 / Owner 维度分析", "icon": "chart"},
     {"id": "feedback", "route": "/feedback", "name": "结果反哺",
@@ -424,7 +424,7 @@ async def api_01_l1_toggle(request: Request) -> Response:
 
 
 # ============================================================
-# 02 文案诊断
+# 02 内容诊断
 # ============================================================
 def _02_context() -> dict:
     ctx = base_context("diagnosis")
@@ -453,7 +453,7 @@ def _02_context() -> dict:
 @app.get("/diagnosis", response_class=HTMLResponse)
 async def page_02(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
-        request, "pages/02_文案诊断.html", _02_context()
+        request, "pages/02_内容诊断.html", _02_context()
     )
 
 
@@ -590,7 +590,7 @@ async def api_02_rewrite(request: Request) -> Response:
 
 
 # ============================================================
-# 03 批量预测
+# 03 内容预测
 # ============================================================
 def _03_context() -> dict:
     ctx = base_context("batch")
@@ -646,7 +646,7 @@ def _03_context() -> dict:
 @app.get("/batch", response_class=HTMLResponse)
 async def page_03(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
-        request, "pages/03_批量评估.html", _03_context()
+        request, "pages/03_内容预测.html", _03_context()
     )
 
 
@@ -765,7 +765,7 @@ async def api_03_download() -> Response:
 
 @app.get("/api/batch/template")
 async def api_03_template() -> Response:
-    """Phase 35 · 2026-09-01 批量预测 Excel 模板下载（含示例行 + 渠道枚举）。"""
+    """Phase 35 · 2026-09-01 内容预测 Excel 模板下载（含示例行 + 渠道枚举）。"""
     try:
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment
@@ -774,7 +774,7 @@ async def api_03_template() -> Response:
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "批量预测模板"
+    ws.title = "内容预测模板"
 
     # ── 表头（Phase 12 渠道枚举 + parse_batch_file 兼容别名）──
     headers = ["title", "body", "channel", "plan_type", "coupon", "workday_type"]

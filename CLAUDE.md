@@ -29,7 +29,7 @@ Streamlit (app.py + pages/)
   ↓
 services/ (业务层，纯函数为主)
   ├── generation_service       任务输入 → 3 条候选
-  ├── copy_analysis_service    文案诊断 / 词频分析
+  ├── copy_analysis_service    内容诊断 / 词频分析
   ├── ctr_prediction_service   CTR Adapter 包装
   ├── similarity_service       TF-IDF 找相似历史 Plan
   ├── rule_engine              规则检查

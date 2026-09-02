@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 r"""
-pages/02_copy_diagnosis.py — 02 文案诊断（PRD §4.2 入口 B）
+pages/02_copy_diagnosis.py — 02 内容诊断（PRD §4.2 入口 B）
 
 PRD §4.0 入口 B：用户手动输入 title + body + channel，无需 AI 生成，立刻调 CTR Adapter。
 CTR Adapter 必须脱离 AI 生成上下文独立工作（PRD §4.0 末段）。
@@ -51,8 +51,8 @@ from ui.page_chrome import page_setup
 # ============================================================
 
 page_setup(
-    "02 文案诊断",
-    "单条文案诊断 · 本地规则 · 词语表现 · 历史相似 · CTR 入口 B · AI 改写",
+    "02 内容诊断",
+    "单条内容诊断 · 本地规则 · 词语表现 · 历史相似 · CTR 入口 B · AI 改写",
 )
 
 # 进阶能力 banner（决策文档 Demo 范围 §2）

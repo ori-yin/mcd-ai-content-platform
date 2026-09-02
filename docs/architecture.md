@@ -6,8 +6,8 @@
 graph TB
     subgraph UI["UI 层 · pages/"]
         P1["01 内容创作 ✅"]:::done
-        P2["02 文案诊断 ✅"]:::done
-        P3["03 批量评估 ✅"]:::done
+        P2["02 内容诊断 ✅"]:::done
+        P3["03 内容预测 ✅"]:::done
         P4["04 历史洞察 ✅"]:::done
         P5["05 真实回流 ✅"]:::done
     end

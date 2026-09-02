@@ -1,7 +1,7 @@
 # mcd-ai-content-platform · 设计规范
 
 > 目的：把首页 + 内容工坊里那一套"看着像个产品"的观感，抽象成可复用的设计语言，
-> 让 02 文案诊断 / 03 批量预测 / 04 历史洞察 / 05 真实结果回流 / LLM 配置 modal 都跟它们对齐。
+> 让 02 内容诊断 / 03 内容预测 / 04 历史洞察 / 05 真实结果回流 / LLM 配置 modal 都跟它们对齐。
 >
 > **适用范围**：FastAPI + Jinja2 + HTMX 后的所有 5 页面 + 9 partial + 1 modal（`web/templates/`）
 >
@@ -284,7 +284,7 @@ modal 里的 `<label>` 自动有 4px 黄色圆点前缀（`.modal-card label>spa
 
 ### 3.1 候选卡（candidate-card）
 
-**01 内容工坊 + 02 文案诊断（AI 改写）共用**。
+**01 内容工坊 + 02 内容诊断（AI 改写）共用**。
 
 ```html
 <div class="candidate-card selected">
@@ -421,7 +421,7 @@ modal 里的 `<label>` 自动有 4px 黄色圆点前缀（`.modal-card label>spa
 | `.status-grid` | repeat(4, 1fr) | 项目状态 4 metric |
 | `.metric-row` | repeat(5, 1fr) | KPI 一排 5 |
 | `.studio-grid` | 1fr / 1.6fr / 1.3fr | 内容工坊 3 列 |
-| `.diag-grid` | 1fr / 1.05fr / 1.1fr | 文案诊断 3 列 |
+| `.diag-grid` | 1fr / 1.05fr / 1.1fr | 内容诊断 3 列 |
 
 ---
 

@@ -541,7 +541,7 @@ tr:last-child td:last-child{border-bottom-right-radius:8px}
 .diag-grid{display:grid;grid-template-columns:1fr 1.05fr 1.1fr;gap:16px;align-items:start}
 
 /* ============================================================
-   03 批量评估
+   03 内容预测
    ============================================================ */
 .metric-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
 .metric-box{

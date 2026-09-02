@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 
-{% block title %}03 批量预测 · McD AI 内容平台{% endblock %}
+{% block title %}03 内容预测 · McD AI 内容平台{% endblock %}
 
 {% block content %}
 
 {# 顶部 banner #}
 {% if not llm_configured %}
 <div class="advanced-notice">
-  <b>Demo 模式</b>：批量 CTR 预测走本地 + 历史基准；不依赖 LLM。
+  <b>Demo 模式</b>：多条 CTR 预测走本地 + 历史基准；不依赖 LLM。
 </div>
 {% endif %}
 
@@ -74,7 +74,7 @@
     </div>
     <div class="metric-box">
       <div class="ml">说明</div>
-      <div class="md">下一步：启动批量预测</div>
+      <div class="md">下一步：启动内容预测</div>
     </div>
   </div>
 
@@ -103,7 +103,7 @@
   <div class="warning-banner">缺 body 或 channel 列，无法启动预测</div>
   {% else %}
   <form method="post" action="/api/batch/evaluate" class="form-row-inline">
-    <button type="submit" class="btn btn-dark">开始批量预测</button>
+    <button type="submit" class="btn btn-dark">开始内容预测</button>
     <label class="checkbox-label">
       <input type="checkbox" name="save_to_records" value="1" {% if batch.save_to_records %}checked{% endif %}>
       保存预测到 records.db（用于漂移监控 + 后续校准）

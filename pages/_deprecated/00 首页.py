@@ -67,8 +67,8 @@ st.markdown(
             面向运营 / 内容的扩展工具，非本次 demo 主线。可随时进入。
         </p>
         <ul>
-            <li><a href="02_copy_diagnosis">02 文案诊断</a> · 单条规则 + 词语 + CTR + AI 改写</li>
-            <li><a href="03_batch_evaluation">03 批量评估</a> · CSV/Excel 上传 + 批量规则 + CTR + 导出</li>
+            <li><a href="02_copy_diagnosis">02 内容诊断</a> · 单条规则 + 词语 + CTR + AI 改写</li>
+            <li><a href="03_batch_evaluation">03 内容预测</a> · CSV/Excel 上传 + 多条规则 + CTR + 导出</li>
             <li><a href="04_historical_insights">04 历史洞察</a> · 七 Tab 排名/词频/Emoji/趋势/Owner</li>
             <li><a href="05_feedback">05 真实结果回流</a> · CTR 反哺闭环数据源（演示口径，业务确认前不接真实数据）</li>
         </ul>

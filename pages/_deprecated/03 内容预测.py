@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 r"""
-pages/03_batch_evaluation.py — 03 批量评估（PRD §4.3 入口 C）
+pages/03_batch_evaluation.py — 03 内容预测（PRD §4.3 入口 C）
 
 PRD §4.3：
 - 上传 CSV 或 Excel
@@ -42,7 +42,7 @@ from ui.page_chrome import page_setup
 # Page config
 # ============================================================
 
-page_setup("03 批量评估", "CSV / Excel 批量导入 · 规则 + CTR 批量评估 · 优化建议 · 结果导出")
+page_setup("03 内容预测", "CSV / Excel 批量导入 · 规则 + CTR 评估 · 优化建议 · 结果导出")
 
 # 进阶能力 banner（决策文档 Demo 范围 §2）
 render_advanced_notice()
@@ -144,7 +144,7 @@ def _render_preview():
 
     c1, c2 = st.columns([1, 4])
     with c1:
-        if st.button("开始批量评估", type="primary", use_container_width=True):
+        if st.button("开始内容预测", type="primary", use_container_width=True):
             _run_evaluation()
     with c2:
         st.session_state.batch_save_to_records = st.checkbox(

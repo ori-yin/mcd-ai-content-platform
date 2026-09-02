@@ -1292,8 +1292,8 @@ def test_pages_import():
     """
     import os
     pages_dir = ROOT / "pages" / "_deprecated"
-    for fname in ("00 首页.py", "01 内容工坊.py", "02 文案诊断.py",
-                  "03 批量评估.py", "04 历史洞察.py", "05 真实结果回流.py"):
+    for fname in ("00 首页.py", "01 内容工坊.py", "02 内容诊断.py",
+                  "03 内容预测.py", "04 历史洞察.py", "05 真实结果回流.py"):
         path = pages_dir / fname
         _check(f"pages/_deprecated/{fname} 存在", path.exists())
         # 只 00 首页.py 调用 inject_base_css，其他页面共享 00 注入的 CSS
@@ -1304,9 +1304,9 @@ def test_pages_import():
 
 
 # ============================================================
-# 31) Phase 4.1 — 02 文案诊断页入口 B 闭环
+# 31) Phase 4.1 — 02 内容诊断页入口 B 闭环
 # ============================================================
-_section("31) 02 文案诊断（PRD §4.2 入口 B）")
+_section("31) 02 内容诊断（PRD §4.2 入口 B）")
 
 def test_diagnosis_page():
     from services.rule_engine import load_rules, check_one
@@ -2191,8 +2191,8 @@ def test_phase6_p1_nav_and_notice():
     _check(".home-section-advanced CSS 已加", ".home-section-advanced" in styles_src)
 
     # ── 3) 4 个进阶页：02/03 顶部仅 advanced, 04/05 顶部 advanced + ctr ─
-    src02 = open("pages/_deprecated/02 文案诊断.py", encoding="utf-8").read()
-    src03 = open("pages/_deprecated/03 批量评估.py", encoding="utf-8").read()
+    src02 = open("pages/_deprecated/02 内容诊断.py", encoding="utf-8").read()
+    src03 = open("pages/_deprecated/03 内容预测.py", encoding="utf-8").read()
     src04 = open("pages/_deprecated/04 历史洞察.py", encoding="utf-8").read()
     src05 = open("pages/_deprecated/05 真实结果回流.py", encoding="utf-8").read()
     home  = open("pages/_deprecated/00 首页.py", encoding="utf-8").read()
@@ -3216,7 +3216,7 @@ def test_phase16_calibrate_text_workday():
 def test_phase17_quality_cleanup():
     """Phase 17 · 2026-08-28 用户拍板"检查整体代码质量性能"后清理：
 
-    - 02 文案诊断.py 改用 ui.llm_status.load_config()（不再 `from core.config` 失败）
+    - 02 内容诊断.py 改用 ui.llm_status.load_config()（不再 `from core.config` 失败）
     - services/record_service.py 整文件已删（Phase 13 后无人调）
     - core/llm_gateway.ProviderRouter.call 加实例级 LRU cache（512 容量）
     - docstring/注释 v3.0/Phase 3-4 标注对齐 Phase 16.5
@@ -3319,7 +3319,7 @@ def test_phase17_quality_cleanup():
 
     # ── 7) 02 文案诊断.py 不再有 import core.config（注释里提到历史是 OK）──
     diag_src_path = os.path.join(
-        os.path.dirname(__file__), "..", "pages", "_deprecated", "02 文案诊断.py")
+        os.path.dirname(__file__), "..", "pages", "_deprecated", "02 内容诊断.py")
     diag_src_path = os.path.normpath(diag_src_path)
     with open(diag_src_path, encoding="utf-8") as f:
         diag_src = f.read()
@@ -3329,10 +3329,10 @@ def test_phase17_quality_cleanup():
         ln for ln in diag_src.splitlines()
         if ln.strip().startswith(("from ", "import "))
     ]
-    _check("02 文案诊断.py 删 `from core.config import settings` 实际 import",
+    _check("02 内容诊断.py 删 `from core.config import settings` 实际 import",
            not any("from core.config import" in ln for ln in import_lines),
            f"residual: {[l for l in import_lines if 'core.config' in l]}")
-    _check("02 文案诊断.py 改用 load_config",
+    _check("02 内容诊断.py 改用 load_config",
            "ui.llm_status import" in diag_src and "load_config" in diag_src)
 
     # ── 8) core/schemas.py 注释对齐 Phase 16.5（Phase 26 删了根 app.py / pages/）──
@@ -3763,9 +3763,9 @@ def main():
     test_prompts()
     test_phase3_imports()
     test_pages_import()
-    # Phase 4.1: 02 文案诊断
+    # Phase 4.1: 02 内容诊断
     test_diagnosis_page()
-    # Phase 4.2: 03 批量评估
+    # Phase 4.2: 03 内容预测
     test_batch_evaluation()
     # Phase 4.3: 04 历史洞察
     test_historical_insights()
@@ -4494,9 +4494,9 @@ def test_phase22_d_batch_save_records():
     ], db_path=db_path)
     _check("全部无 ctr_result_type 返回 0", n_no_ctr == 0)
 
-    # ── 4) pages/03 批量评估.py 含 checkbox + save 入口 ──
-    page_03 = ROOT / "pages" / "_deprecated" / "03 批量评估.py"
-    _check("pages/03 批量评估.py 存在", page_03.exists())
+    # ── 4) pages/03 内容预测.py 含 checkbox + save 入口 ──
+    page_03 = ROOT / "pages" / "_deprecated" / "03 内容预测.py"
+    _check("pages/03 内容预测.py 存在", page_03.exists())
     if page_03.exists():
         p3 = page_03.read_text(encoding="utf-8")
         _check("03 含 batch_save_to_records 状态",
