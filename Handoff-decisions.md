@@ -339,6 +339,49 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 - **Commit**：`3ba20c5`（本地 + 远端 `956ec3b64cd8`）—— `web/app.py` 1 文件 +10 -4 行。
 
+### 2026-09-02 · Phase 45 字典本地备份（CLI + 自动触发双方案）
+
+- **用户需求**：担心字典维护手残误删，本地每天有备份。
+
+- **第 1 版（CLI 脚本）**：
+  - `tools/backup_dicts.py` 主备份脚本（CLI + 内化 API）
+  - `tools/backup_dicts.bat` 双击便捷调用（CRLF UTF-8，按 §8 教训强制 CRLF）
+  - `.gitignore` 加 `data/.backups/`（不污染 git）
+  - 备份 7 个字典文件：custom_dict/stopwords/ctr_baseline/channel_rules/dimension_weights/coupon_keywords/brand_rules
+  - 输出 `data/.backups/dicts_YYYY-MM-DD_HHMMSS.tar.gz`
+  - 保留 14 天（自动清理）
+  - 提供可选 schtasks 命令示例（用户可加自动每日定时）
+  - **Commit**：`8d09f71`（本地 + 远端 `6a7ad524869c`）
+
+- **第 2 版（用户反馈：应该是每次保存时自动备份）**：
+  - 用户原话："应该是我明白次保存，比如上一次记录是昨天，我今天点了，昨天的就备份了，是不是应该这样"
+  - **理解**：用户要的不是定时 cron，而是**用户每次点 settings 页面「保存」按钮时自动备份**——"改动即留档"。
+  - **去重**：每天首次保存才创建备份（同一天多次保存不产生多个 tar.gz）
+  - **改动**：
+    - `tools/backup_dicts.py` 拆出 `has_backup_today()` + `create_backup_internal(days=14)` 内部 API（web handler 可调用）
+    - `web/app.py` `settings_save` 在 `_write_dict_file` 成功后调用 `create_backup_internal`
+    - flash_msg 拼上备份信息（用户每次保存看到）
+    - 备份失败 try/except 兜底，**不影响保存流程**
+  - **flash 文案**：
+    - 首次保存：「产品词典 保存成功 · 已自动备份 7 个字典文件 (19,309 字节)」
+    - 同天重复：「产品词典 保存成功 · 今天已备份过（dicts_2026-09-02_153217.tar.gz），跳过」
+  - **Commit**：`4c032a6`（本地 + 远端 `51ed42480e56`）—— `tools/backup_dicts.py` 内化 API + `web/app.py` settings_save hook
+
+- **设计细节**：
+  - **tar.gz 压缩比**约 3x（19KB 原始 → 7KB 压缩）
+  - **去重逻辑**：`has_backup_today()` 检查 `dicts_YYYY-MM-DD_*.tar.gz` 文件名（glob 前缀匹配）
+  - **清理逻辑**：每次备份后跑 `cleanup_old(days=14)`，删除超过 N 天的
+  - **失败容错**：备份异常 try/except 兜底，不会因备份失败阻塞保存
+  - **双重保险**：本地 tar.gz + 远端 git 历史，恢复任意层
+
+- **验证**：
+  - e2e smoke：首次保存 → 1 个备份 / 同天重复 → 仍 1 个备份 + 跳过消息
+  - `python tests/verify.py` **848 PASS / 0 FAIL**（无回归）
+
+- **不动**：
+  - 第 1 版的 CLI `.bat` 双击方案保留作为手动备份入口（用户偶尔想强制备份完整周报时用）
+  - schtasks 自动定时方案**作废**（用户选了保存时自动触发，不需要定时）
+
 ---
 
 ## 已压缩删节（细节查 git log）
