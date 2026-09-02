@@ -218,17 +218,17 @@ templates.env.filters["safe_cell"] = _jinja_safe
 # ============================================================
 NAV_PAGES = [
     {"id": "home", "route": "/", "name": "首页",
-     "subtitle": "AI 驱动的内容生产与效果评估平台", "icon": "home"},
+     "subtitle": "", "icon": "home"},
     {"id": "studio", "route": "/studio", "name": "内容工坊",
      "subtitle": "", "icon": "edit"},
     {"id": "diagnosis", "route": "/diagnosis", "name": "内容诊断",
-     "subtitle": "单条内容规则诊断 + 词语分析 + CTR 参考 + AI 改写", "icon": "stethoscope"},
+     "subtitle": "", "icon": "stethoscope"},
     {"id": "batch", "route": "/batch", "name": "内容预测",
-     "subtitle": "CSV / Excel 上传 + 多条规则评估 + CTR 预测 + 结果导出", "icon": "clipboard"},
+     "subtitle": "", "icon": "clipboard"},
     {"id": "insights", "route": "/insights", "name": "历史洞察",
-     "subtitle": "七 Tab 排名 / 词频 / Emoji / 趋势 / Owner 维度分析", "icon": "chart"},
+     "subtitle": "", "icon": "chart"},
     {"id": "feedback", "route": "/feedback", "name": "结果反哺",
-     "subtitle": "回流投放数据 · 校验入库 · CTR 反哺闭环", "icon": "refresh"},
+     "subtitle": "", "icon": "refresh"},
 ]
 
 
