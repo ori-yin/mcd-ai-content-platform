@@ -42,7 +42,7 @@
   <form method="post" action="/api/settings/save/{{ d.id }}" class="dict-form">
     <textarea name="content" rows="14" class="dict-textarea"
               spellcheck="false"
-              data-default='{{ d.content | tojson }}'></textarea>
+              data-init-id="dict-init-{{ d.id }}"></textarea>
 
     <div class="dict-actions">
       <button type="submit" class="btn btn-dark btn-submit">
@@ -62,19 +62,25 @@
       </span>
     </div>
   </form>
+
+  {# 字典初始内容（type=application/json 不解析 HTML，script tag 内容可以是任意字符包括 \n）
+     用法：JS 读 .textContent 后 JSON.parse 填入 textarea。彻底避开 HTML attribute 的 \n 截断 BUG。 #}
+  <script type="application/json" id="dict-init-{{ d.id }}">{{ d.content | tojson }}</script>
   {% endif %}
 </div>
 {% endfor %}
 
 <script>
-  // 初始化 textarea 默认值（用 tojson + JSON.parse 避免 HTML escape 双重问题）
-  document.querySelectorAll('textarea[data-default]').forEach(ta => {
-    ta.value = JSON.parse(ta.getAttribute('data-default'));
+  // 初始化 textarea 默认值（从 <script type="application/json"> tag 读，避开 HTML attribute 截断）
+  document.querySelectorAll('textarea[data-init-id]').forEach(ta => {
+    const scriptEl = document.getElementById(ta.dataset.initId);
+    if (scriptEl) ta.value = JSON.parse(scriptEl.textContent);
   });
 
   function dictReset(btn) {
     const ta = btn.closest('form').querySelector('.dict-textarea');
-    ta.value = JSON.parse(ta.getAttribute('data-default'));
+    const scriptEl = document.getElementById(ta.dataset.initId);
+    if (scriptEl) ta.value = JSON.parse(scriptEl.textContent);
     ta.focus();
   }
 </script>
