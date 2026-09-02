@@ -42,7 +42,7 @@
   <form method="post" action="/api/settings/save/{{ d.id }}" class="dict-form">
     <textarea name="content" rows="14" class="dict-textarea"
               spellcheck="false"
-              data-default="{{ d.content | e }}">{{ d.content }}</textarea>
+              data-default='{{ d.content | tojson }}'></textarea>
 
     <div class="dict-actions">
       <button type="submit" class="btn btn-dark btn-submit">
@@ -58,6 +58,7 @@
         {% if d.kind == 'yaml' %}yaml 保存会原样保留注释和缩进{% endif %}
         {% if d.kind == 'json' %}保存时会校验 JSON 格式{% endif %}
         {% if d.kind == 'text' and d.id == 'custom_dict' %}保存后自动重载 jieba{% endif %}
+        {% if d.kind == 'text' and d.id == 'stopwords' %}保存后自动重载停用词缓存{% endif %}
       </span>
     </div>
   </form>
@@ -66,12 +67,14 @@
 {% endfor %}
 
 <script>
+  // 初始化 textarea 默认值（用 tojson + JSON.parse 避免 HTML escape 双重问题）
+  document.querySelectorAll('textarea[data-default]').forEach(ta => {
+    ta.value = JSON.parse(ta.getAttribute('data-default'));
+  });
+
   function dictReset(btn) {
     const ta = btn.closest('form').querySelector('.dict-textarea');
-    const def = ta.getAttribute('data-default') || '';
-    // 把 textarea 内容还原到初始 server 渲染值
-    // 用 textarea.value 即可，无需 escape（value 不解析 HTML）
-    ta.value = def;
+    ta.value = JSON.parse(ta.getAttribute('data-default'));
     ta.focus();
   }
 </script>

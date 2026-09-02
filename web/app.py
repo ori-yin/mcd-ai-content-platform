@@ -317,6 +317,8 @@ DICTIONARIES = [
      "path": "config/coupon_keywords.yaml", "kind": "yaml"},
     {"id": "custom_dict", "name": "产品词典",
      "path": "data/custom_dict.txt", "kind": "text"},
+    {"id": "stopwords", "name": "停用词",
+     "path": "data/stopwords.txt", "kind": "text"},
     {"id": "ctr_baseline", "name": "CTR 基准",
      "path": "data/ctr_baseline.json", "kind": "json"},
 ]
@@ -1394,6 +1396,12 @@ def _write_dict_file(dict_id: str, content: str) -> tuple[bool, str]:
         try:
             from web.services.text_analyzer import load_jieba_dict
             load_jieba_dict()
+        except Exception:
+            pass
+    elif dict_id == "stopwords":
+        try:
+            from web.services.text_analyzer import load_stopwords
+            load_stopwords.cache_clear()
         except Exception:
             pass
 
