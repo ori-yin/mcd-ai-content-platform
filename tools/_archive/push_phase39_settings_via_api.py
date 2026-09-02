@@ -28,11 +28,11 @@ from pathlib import Path
 OWNER = "ori-yin"
 REPO = "mcd-ai-content-platform"
 BRANCH = "main"
-ROOT = Path(__file__).resolve().parent.parent  # tools/ → repo root
+ROOT = Path(__file__).resolve().parent.parent.parent  # 适配 archive 嵌套（tools/_archive/ → repo root）
 TOKEN = ""
 
-# 要推的 commit（本地 HEAD = b21c4a894f29 → ahead 远端 0 commit，全部已推送）
-COMMITS_TO_PUSH = ["b21c4a894f29"]
+# 要推的 commit（本地 HEAD = edc49e2 → ahead 远端 1 commit）
+COMMITS_TO_PUSH = ["edc49e2"]
 
 
 def api(method: str, path: str, body=None):
