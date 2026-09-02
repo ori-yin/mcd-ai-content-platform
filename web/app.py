@@ -1496,10 +1496,18 @@ async def settings_save(request: Request, dict_id: str, content: str = Form(...)
             url=f"/settings?err={quote(msg)}",
             status_code=303,
         )
+    # 保存成功后自动备份（今天首次保存才备份；失败也不影响保存）
+    try:
+        from tools.backup_dicts import create_backup_internal
+        _, backup_msg = create_backup_internal(days=14)
+    except Exception as e:
+        backup_msg = f"自动备份失败：{e}"
+
     d = _dict_by_id(dict_id)
     name = d["name"] if d else dict_id
+    full_msg = f"{name} 保存成功 · {backup_msg}"
     return RedirectResponse(
-        url=f"/settings?msg={quote(name + ' 保存成功')}",
+        url=f"/settings?msg={quote(full_msg)}",
         status_code=303,
     )
 

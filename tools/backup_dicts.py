@@ -58,6 +58,14 @@ def list_backups() -> list[Path]:
     return sorted(BACKUP_DIR.glob("dicts_*.tar.gz"), reverse=True)
 
 
+def has_backup_today() -> bool:
+    """今天是否已有备份？用于 settings 保存时的去重。"""
+    if not BACKUP_DIR.exists():
+        return False
+    today = datetime.now().strftime("%Y-%m-%d")
+    return any(f.name.startswith(f"dicts_{today}_") for f in BACKUP_DIR.glob("dicts_*.tar.gz"))
+
+
 def cleanup_old(days: int) -> int:
     """清理 N 天前的备份，返回删除数量。"""
     if not BACKUP_DIR.exists():
@@ -79,8 +87,55 @@ def cleanup_old(days: int) -> int:
     return removed
 
 
+def create_backup_internal(days: int = 14, verbose: bool = False) -> tuple[Path | None, str]:
+    """内部 API：创建新备份（被 web/settings_save handler 调用）。
+
+    返回 (backup_path_or_None, info_message)。
+    - backup_path_or_None: 备份文件路径；None 表示今天已备份过（跳过）
+    - info_message: 人类可读的描述
+
+    注意：失败不抛异常（web handler 必须容错，备份失败不影响保存）。
+    """
+    try:
+        # 去重：今天已备份过则跳过
+        if has_backup_today():
+            latest = list_backups()[0] if list_backups() else None
+            return None, f"今天已备份过（{latest.name if latest else '?'}），跳过"
+
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        out = BACKUP_DIR / f"dicts_{ts}.tar.gz"
+
+        # 检查所有源文件存在
+        missing = [f for f in DICT_FILES if not (ROOT / f).exists()]
+        if missing and len(missing) == len(DICT_FILES):
+            return None, f"所有字典文件都不存在，跳过备份"
+
+        # 写 tar.gz
+        total_bytes = 0
+        written_count = 0
+        with tarfile.open(out, "w:gz") as tar:
+            for rel in DICT_FILES:
+                src = ROOT / rel
+                if not src.exists():
+                    continue
+                tar.add(src, arcname=rel)
+                total_bytes += src.stat().st_size
+                written_count += 1
+
+        # 清理旧备份
+        cleanup_old(days)
+
+        msg = f"已自动备份 {written_count} 个字典文件 ({total_bytes:,} 字节)"
+        if verbose:
+            print(f"✅ 自动备份：{out.name} ({written_count} files, {total_bytes:,} bytes)")
+        return out, msg
+    except Exception as e:
+        return None, f"备份失败：{e}"
+
+
 def create_backup() -> Path:
-    """创建新备份，返回备份文件路径。"""
+    """CLI API：创建新备份（CLI 命令调用）。"""
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     out = BACKUP_DIR / f"dicts_{ts}.tar.gz"
