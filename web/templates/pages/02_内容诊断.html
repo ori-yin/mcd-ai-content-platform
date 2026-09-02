@@ -29,15 +29,6 @@
       </select>
     </div>
 
-    <div class="form-row">
-      <label>AI 改写策略（可选）</label>
-      <select name="action">
-        {% for opt in action_opts %}
-        <option value="{{ opt }}" {% if (task.action or 'regen') == opt %}selected{% endif %}>{{ opt }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
     <div class="form-row form-row-wide">
       <label>标题（短信 / 企微1v1 可空）</label>
       <input type="text" name="title" maxlength="200"

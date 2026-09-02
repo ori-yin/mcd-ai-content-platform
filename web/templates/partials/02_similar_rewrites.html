@@ -6,6 +6,7 @@
   - rewrites（list[dict]）
   - rewrite_error（str）
   - action（str）
+  - rewrite_note（str，备注，会作为 LLM 改写的额外要求传入）
 #}
 
 {% if similar_summary and similar_summary.count and similar_summary.count > 0 %}
@@ -41,6 +42,10 @@
 <div class="subsection">
   <div class="subsection-label">AI 改写候选</div>
   <form method="post" action="/api/diagnosis/rewrite">
+    <div class="form-row form-row-wide">
+      <label>备注（可选）</label>
+      <textarea name="rewrite_note" rows="2" placeholder="必须出现 / 不得出现 / 法务或业务补充">{{ rewrite_note or '' }}</textarea>
+    </div>
     <button type="submit" class="btn btn-dark">生成改写（{{ action }}）</button>
   </form>
 

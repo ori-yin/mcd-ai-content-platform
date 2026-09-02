@@ -444,6 +444,7 @@ def _02_context() -> dict:
         "similar_rows": S_02["similar_rows"],
         "rewrites": S_02["rewrites"],
         "rewrite_error": S_02["rewrite_error"],
+        "rewrite_note": S_02["rewrite_note"],
         "action": S_02["action"],
         "error_msg": S_02["error_msg"],
     })
@@ -533,6 +534,7 @@ def _do_rewrite():
     body = S_02["body"]
     channel = S_02["channel"]
     action = S_02["action"]
+    rewrite_note = S_02["rewrite_note"]
 
     diag = S_02["diagnose"] or {}
     local = (diag.get("diag") or {}).copy()
@@ -558,9 +560,10 @@ def _do_rewrite():
 
     channel_rules, _brand_rules = load_rules()
     channel_max = (channel_rules.get("channels") or {}).get(channel, {})
+    extra_ctx = f"备注（用户额外要求）：{rewrite_note}" if rewrite_note else ""
     user_prompt = copy_rewrite.build_user_prompt(
         action=action, title=title, body=body,
-        channel_max=channel_max, extra_context="",
+        channel_max=channel_max, extra_context=extra_ctx,
     )
     full_prompt = f"{copy_rewrite.get_system_prompt(action)}\n\n{user_prompt}"
     try:
@@ -582,6 +585,8 @@ async def api_02_rewrite(request: Request) -> Response:
     if not S_02.get("body"):
         S_02["rewrite_error"] = "请先完成诊断"
         return RedirectResponse(url="/diagnosis", status_code=303)
+    form = await request.form()
+    S_02["rewrite_note"] = (form.get("rewrite_note") or "").strip()
     try:
         _do_rewrite()
     except Exception as e:  # noqa: BLE001
