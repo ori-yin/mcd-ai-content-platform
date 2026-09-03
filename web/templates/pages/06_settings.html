@@ -1,21 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}06 字典维护 · McD AI 内容平台{% endblock %}
+{% block title %}字典维护 · McD AI 内容平台{% endblock %}
 
 {% block content %}
 
-{# 顶部说明 #}
-<div class="panel-card">
-  <div class="settings-head">
-    <div class="panel-heading" style="margin:0">字典维护</div>
-    <a href="/settings/logout" class="btn-secondary">退出登录</a>
-  </div>
-  <div class="card-desc" style="margin-top:10px">
-    这里维护 5 个核心配置：3 个 YAML（渠道规则 / 维度权重 / 含券关键词）+ 1 个产品词典（jieba 分词用）+ 1 个 CTR 基准 JSON。保存后立即生效（产品词典会自动热重载 jieba，CTR 基准校验 JSON 格式）。
-  </div>
-</div>
-
-{# flash #}
 {% if flash_err %}
 <div class="warning-banner">{{ flash_err }}</div>
 {% endif %}
@@ -23,7 +11,17 @@
 <div class="success-banner">{{ flash_msg }}</div>
 {% endif %}
 
-{# 5 个字典 panel #}
+<div class="panel-card">
+  <div class="settings-head">
+    <div class="panel-heading">字典维护说明</div>
+    <a href="/settings/logout" class="btn-secondary">退出登录</a>
+  </div>
+  <div class="card-desc">
+    这里维护 6 个核心配置：3 个 YAML（渠道规则 / 维度权重 / 含券关键词）+ 2 个文本文件（产品词典 / 停用词）+ 1 个 CTR 基准 JSON。
+    保存后立即生效（产品词典自动重载 jieba，停用词刷新缓存，CTR 基准校验 JSON 格式）。
+  </div>
+</div>
+
 {% for d in dicts %}
 <div class="panel-card">
   <div class="panel-heading">
@@ -39,12 +37,14 @@
   {% if d.error %}
     <div class="warning-banner">读取失败：{{ d.error }}</div>
   {% else %}
-  <form method="post" action="/api/settings/save/{{ d.id }}" class="dict-form">
-    <textarea name="content" rows="14" class="dict-textarea"
-              spellcheck="false"
-              data-init-id="dict-init-{{ d.id }}"></textarea>
+  <form method="post" action="/api/settings/save/{{ d.id }}" class="form-grid">
+    <div class="form-row form-row-wide">
+      <textarea name="content" rows="14" class="dict-textarea"
+                spellcheck="false"
+                data-init-id="dict-init-{{ d.id }}"></textarea>
+    </div>
 
-    <div class="dict-actions">
+    <div class="form-row form-row-wide dict-actions">
       <button type="submit" class="btn btn-dark btn-submit">
         保存
       </button>

@@ -306,7 +306,7 @@ def _settings_auth_or_redirect(request: Request):
 # ============================================================
 # 字典维护（Phase 39 · 2026-09-02）
 # ============================================================
-# 5 个核心配置：3 个 yaml + 1 个 txt + 1 个 json
+# 6 个核心配置：3 个 yaml + 2 个 txt + 1 个 json
 # 注意：路径相对 PROJECT_ROOT，不能让用户传（防路径遍历）
 DICTIONARIES = [
     {"id": "channel_rules", "name": "渠道规则",
@@ -1536,7 +1536,7 @@ async def settings_logout():
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, msg: str = "", err: str = ""):
-    """字典维护页面：5 个字典，每个含 textarea + 保存/下载。"""
+    """字典维护页面：6 个字典，每个含 textarea + 保存/下载。"""
     if (r := _settings_auth_or_redirect(request)):
         return r
     ctx = base_context("settings")

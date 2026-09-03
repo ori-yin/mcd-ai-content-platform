@@ -287,8 +287,9 @@ a:hover{color:var(--black)}
 
 /* ============== Settings Page（字典维护）============== */
 .settings-head{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.settings-head .panel-heading{margin:0}
+.settings-head + .card-desc{margin-top:10px}
 .login-wrap{max-width:380px;margin:80px auto 0}
-.dict-form{display:flex;flex-direction:column;gap:10px;margin-top:10px}
 .dict-textarea{
   width:100%;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
