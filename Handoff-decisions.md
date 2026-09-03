@@ -471,6 +471,44 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ---
 
+### 2026-09-03 · Phase 47 字典维护 UI 重设 + smoke tmpdir 教训
+
+**背景**：Handoff-todo.md §6.10 列出的"字典维护 UI 重设"待办（Handoff 4 文件 2026-09-02 同步完成）。原 06_settings.html 是 Phase 40-43 阶段产物，form 用 `.dict-form` 自定义类、textarea + actions 用裸 div 嵌套，与 design.md §6 体系（panel-card + panel-heading + form-grid + form-row）脱节；与 04/05 业务页 UI 不统一。
+
+**重设范围**（用户拍板"字典维护 UI 重设（推荐）"）：
+- 标题去"06"前缀（Phase 27 URL 语义化尾巴）
+- 顶部 panel-card 去掉与 topbar 重复的"字典维护"标题 → 改"字典维护说明"，保留退出登录按钮
+- 6 个字典 panel 走标准 `panel-card + panel-heading` 编号 1-6
+- form 改统一 `form-grid + form-row form-row-wide`（替换原 `.dict-form` 自定义类）
+- 新加 1 个 CSS 类 `.dict-actions-row`（让 actions 行在 form-row form-row-wide 内横排 button 组）
+- 文案修正"5 个核心配置"→"6 个核心配置"（Phase 41 加 stopwords 后 DICTIONARIES 实际是 6 个，docstring 同步修正）
+
+**改动文件**（4 个 web 文件）：
+- `web/templates/pages/06_settings.html` — 标题 / 顶部说明 / 6 panel 编号 / form 改 form-grid / 文案 5→6
+- `web/templates/pages/06_settings_login.html` — panel-heading "字典维护" → "请输入密码"（去 topbar 重复）
+- `web/static/css/style.css` — 新加 `.dict-actions-row`
+- `web/app.py` — docstring "5 个字典" → "6 个字典"（与 DICTIONARIES 列表一致）
+
+**不动**：
+- 业务层 0 行改动 / 鉴权链路不变 / textarea + tojson + script tag 数据传递机制保留 / cookie path = / 保留
+- LLM 配置入口集成（settings 页加 LLM 卡片）—— 当前已通过右上角 pill 跳 modal 实现，不重复做
+
+**踩坑 · e2e smoke 不能动真字典文件**（教训 §20）：
+- smoke 用 `POST /api/settings/save/channel_rules` 验证保存链路 → `_write_dict_file` 把 `config/channel_rules.yaml` 真覆盖为 `# test content from smoke 2026-09-03`（36 字节）
+- 修复：`git checkout HEAD -- config/channel_rules.yaml` 还原（981 字节 / 39 行 / 原始 yaml 内容）
+- **根因**：`_write_dict_file` 走 atomic rename 但写的是真实路径，没做"测试模式"开关
+- **铁律**：任何 `POST /api/*/save` / `_write_*_file` 类端点 e2e smoke 必须 tmpdir 隔离；不支持 dry-run 的旧端点 → 单元测试覆盖，smoke 用 GET 类端点验证下载
+
+**验证**：
+- `python tests/verify.py` 848 PASS / 0 FAIL（无回归）
+- curl smoke：/settings/login 200 / 未鉴权 /settings 303 / 登录 303 / 鉴权 GET /settings 200（40634 字节，含 6 字典 panel）
+- 字典下载 200（1517 字节 channel_rules.yaml 原文）
+- 6 个字典 panel 全部命中 panel-heading + form-grid + form-row form-row-wide + dict-actions-row + dict-textarea（45 处 CSS 类出现）
+
+**Commit**（用户决定时机，未自动 commit）：4 个 web 文件未 commit；Handoff-lessons.md 第 20 条已落档。
+
+---
+
 ## 已压缩删节（细节查 git log）
 
 - `setup_and_run.bat` 闪退 5 次迭代详细历史（v1-v5 各版）

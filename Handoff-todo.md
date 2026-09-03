@@ -261,3 +261,25 @@
 
 ---
 
+## 6.10 Phase 47 字典维护 UI 重设 + smoke tmpdir 教训（2026-09-03）
+
+**已完成**（Phase 47 · 4 个 web 文件 + Handoff-lessons.md 第 20 条）：
+- ✅ 06_settings.html 重设：标题去"06"前缀 / 顶部说明去 topbar 重复 / 6 panel 编号 1-6 / form 改 form-grid + form-row / 文案 5→6 修正
+- ✅ 06_settings_login.html 微调：panel-heading "字典维护" → "请输入密码"
+- ✅ style.css 新加 `.dict-actions-row`（让 actions 行在 form-row form-row-wide 内横排 button 组）
+- ✅ app.py docstring "5 个字典" → "6 个字典"（与 DICTIONARIES 列表一致）
+- ✅ Handoff-lessons.md 第 20 条落档：字典 e2e smoke 必须 tmpdir 隔离，不能动真文件
+
+**踩坑**（避免下次复现）：
+- ⚠️ smoke 测保存链路 `POST /api/settings/save/channel_rules` → 真覆盖 `config/channel_rules.yaml` 为 `# test content from smoke 2026-09-03`（36 字节）→ `git checkout HEAD --` 还原
+- ⚠️ 任何 `POST /api/*/save` / `_write_*_file` / atomic write 类端点 → **e2e smoke 必须 tmpdir 隔离**，不能让请求体落真文件
+- ⚠️ 写新文件工具函数时，**第一步加 dry-run / test mode 参数**（参考 `tools/calibrate_baseline.py --db` 模式）
+- ⚠️ 不支持 dry-run 的旧端点 → smoke 用 GET 类端点验证下载，save 链路靠单元测试覆盖
+
+**TODO 后续**（不属于本轮）：
+- ⏳ 02/03/04/05 页面 UI 细节微调（Phase 37 统一后的零碎细节）
+- ⏳ P4 历史洞察 signature 第 8 Tab（待 UI 重设阶段一起做，feedback.db 当前 0 行）
+- ⏳ L2 模型训练数据准备（领导口径"输入因子有效性检查 vs 第一版 base"差距分析）
+
+---
+

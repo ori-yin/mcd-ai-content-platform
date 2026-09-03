@@ -204,6 +204,29 @@ cmd 严格要 CRLF；Write 工具默认 LF。
 
 ---
 
+### 20. 字典 e2e smoke 必须 tmpdir 隔离，不能动真文件（2026-09-03 · Phase 47）
+
+**坑**：Phase 47 字典维护 UI 重设做端到端 smoke 时，curl `POST /api/settings/save/channel_rules` 验证保存链路 → `_write_dict_file` 把 `config/channel_rules.yaml` 真覆盖为 `# test content from smoke 2026-09-03`（36 字节）。修复靠 `git checkout HEAD -- config/channel_rules.yaml` 还原。
+
+**根因**：
+- `_write_dict_file` 走 atomic rename（tmp + rename）但写的是**真实路径** `config/channel_rules.yaml`，不是 test fixture
+- smoke 测保存链路时只想到"看 303 重定向"，没意识到这次 POST 真会落盘
+- 鉴权 + 路由 + _write_dict_file 三层都没做"测试模式"开关（不像 calibrate_baseline.py 有 `--db` 参数走 tmp db）
+
+**铁律**：
+- 任何 `POST /api/*/save` / `_write_*_file` / atomic write 类端点 → e2e smoke **必须用 tmpdir 隔离**，不能让请求体落真文件
+- 写新的"写文件"类工具函数时，**第一步加 dry-run / test mode 参数**（参考 `tools/calibrate_baseline.py --db` 模式），单元测试和 smoke 都能切到 tmpdir
+- 不支持 dry-run 的旧端点 → smoke 用 GET 类端点验证（`/api/settings/download/{dict_id}` 返回原文件），save 链路靠 `tests/verify.py` 单元测试覆盖（Phase 44 §18 单元测试已覆盖 `_write_dict_file` 16 边界）
+
+**避坑指引**：
+- 写新文件前先问：测试能不能用 tmpdir？如果不能，**能不能加 dry-run flag？** 如果都不能，**这个端点就不能 e2e smoke，只能单元测试**
+- 真要 smoke save 链路：先 `cp` 原文件到 `/tmp/orig.yaml` → smoke 完 `cp /tmp/orig.yaml config/orig.yaml` 还原（最笨但最稳）
+- 不推荐"先存起来 → smoke 完恢复"模式：smoke 中途崩了无法恢复 → 还是要 git checkout 兜底
+
+---
+
+---
+
 ## 已删（详见 git log 早期 commit / memory）
 
 | 类别 | 删节项 |
