@@ -309,3 +309,29 @@
 
 ---
 
+## 6.12 Phase 49 性能优化 4 项落地（2026-09-03）
+
+**已完成**（B/C/D/A 4 项落地 + 每次改完 bench + 848 回归）：
+- ✅ **B** Jinja 关 auto_reload + 开 cache（`web/app.py:216-230`）— `/studio` cold **12.4s → 1.2s（-90%）**
+- ✅ **C** startup 字典预热（`web/app.py:1875-1905`）— lru_cache miss 提前填充（无害，**不解决 1.2s**，那是 ASGI 不可控）
+- ✅ **D** /static/* 加 Cache-Control（`web/app.py:215-228` middleware）— warm `/` **16ms → 4ms（-75%）**；`curl -I` 确认含 `cache-control: public, max-age=3600`
+- ✅ **A** base.html `<body hx-boost="true">`（`base.html:61`）— bench 测不出，**浏览器侧站内跳转感官提升最大**
+
+**新增洞察**：
+- ⚠️ `_01_context()` 内部只 **2ms**（trace_01.py 实测）— 1.2s cold 不是字典/模板/渲染，是 **ASGI 首次 HTTP 处理 + Windows uvicorn 启动开销**，用户代码不可根治
+- ⚠️ Jinja2Templates 生产必须显式关 auto_reload（默认 True），cache=None 时编译结果不缓存；dict 缓存即可（不用 LRUCache，jinja2 顶层不导出）
+- ⚠️ StaticFiles 默认不发 cache 头，浏览器 heuristic 多走重下载 — 加 middleware 是最稳的实现方式（与现有 StaticFiles 不耦合）
+- ⚠️ hx-boost bench 测不出服务端收益，**真实效果在浏览器**（避免重下载 CSS/JS/HTMX + 重解析 head + 重排 DOM）
+
+**新增 5 个 trace/bench 脚本**：`tools/_archive/bench_routes.py` + `trace_studio.py` / `trace_studio_v2.py` / `trace_01.py` / `trace_01b.py`（隔离 import chain + 分阶段计时找瓶颈）
+
+**验证**：每次优化后立即跑 `tests/verify.py`（848 PASS / 0 FAIL）+ `bench_routes.py` 5 轮对照 + `curl -I` 确认 D 头 + `grep hx-boost` 确认 A。
+
+**TODO 后续**（不属于本轮）：
+- ⏳ **F** SQLite 索引优化（先 `EXPLAIN QUERY PLAN` 实测缺口；records.db / feedback.db 缺 task_signature / plan_id / uploaded_at 索引？）
+- ⏳ **G** L1 模型 + 字典是否需要重复预热（hook 计时器实测 predict_l1 首次 2.88s 的优化空间）
+- ⏳ **H** 业务层 lazy import（70 个模块级 import，HTMX 跳转只用到 2-3 个；风险大先不动）
+- ⏳ **I** base.html 3 个 `<a href="#">` 死链清理（文档/帮助/反馈，5 分钟工作）
+
+---
+

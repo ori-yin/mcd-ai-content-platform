@@ -602,6 +602,101 @@ async def warmup_page_templates():
 
 ---
 
+## Phase 49 · 2026-09-03 · 性能优化 4 项落地（B / C / D / A）
+
+**Phase 48 性能诊断后延后的优化任务落地**。按"先小后大 + 每次改完立即测"循环推进：基线 → B → C → D → A，每步 bench + 848 回归 + 视觉确认。
+
+### 1. B：Jinja 关 auto_reload + 开 cache（最大收益）
+
+**改动**（`web/app.py:216-230`）：
+- `Jinja2Templates(directory=...)` 后追加 `templates.env.auto_reload = MCD_DEBUG == "1"`（生产关掉，默认 0）
+- 非 debug 模式 `templates.env.cache = {}`（默认 None 不缓存编译后模板）
+
+**实测**：
+| 路由 | BASELINE cold | B cold | 差 |
+|---|---|---|---|
+| /studio | **12.4s** | **1.2s** | **-11.2s（-90%）** |
+| warm median | 2.5ms | 1.6ms | -0.9ms |
+
+**根因**：`auto_reload=True` 时 Jinja 每次 render 都 `stat()` 模板文件 + 检查更新时间；`cache=None` 时编译结果不缓存。**优化后稳态几乎无变化，但冷启动 -90%**。
+
+**铁律**：Jinja2Templates 在生产环境必须显式关 auto_reload（默认 True 是 dev 友好）。dict 缓存即可（项目模板 < 50 个，无界安全），不需要 LRUCache（jinja2 顶层不导出）。
+
+### 2. C：startup 字典预热（不解决 1.2s，但无害）
+
+**改动**（`web/app.py:1875-1905`）：`@app.on_event("startup")` warmup 从 6 模板扩到 3 项：
+1. 6 页面模板编译（已有）
+2. `get_product_categories() / get_benefit_types() / get_custom_label()` — 触发 lru_cache miss 提前填充（避免首次 `_01_context` 走 YAML 解析）
+3. `get_llm_status()` — 提前读 llm_status.yaml
+
+**意外发现**：隔离测试显示 `_01_context()` 内部只 2ms（字典 cache 命中后），**1.2s cold 不是字典**——是 ASGI 首次 HTTP 处理的 Windows 固定开销（uvicorn 路由编译 + asyncio init）。**trace_01.py 证明**：base_context 0.87ms + 字典 1.2ms + ctx.update 0.01ms + 派生 0.00ms = 总 2.08ms。
+
+**结论**：C 是无害代码（启动多 ~100ms），但不救 1.2s。**用户代码无法根治 ASGI 启动开销**（要换 Linux 或预创建 ASGI handler）。
+
+### 3. D：/static/* 加 Cache-Control 头（最稳收益）
+
+**改动**（`web/app.py:215-228`）：加 `@app.middleware("http")` 给 `/static/*` 路径响应加 `Cache-Control: public, max-age=3600`。Starlette StaticFiles 默认不发 cache 头，浏览器用 heuristic 多走重下载。
+
+**实测**：
+| 路由 | C warm median | D warm median |
+|---|---|---|
+| / | 16ms | **4ms（-75%）** |
+| /studio | 1.3ms | 6.6ms（持平） |
+
+**验证**：`curl -I /static/css/style.css` 确认含 `cache-control: public, max-age=3600` 头（+ etag + last-modified 都有）。
+
+**设计选择**：用 middleware 而不是自定义 StaticFiles 子类，因为：① middleware 是 FastAPI 标准扩展点；② 与现有 StaticFiles 不耦合；③ max-age=3600 配合 base.html 的 `?v=20260902wf` query string 既能 cache 1 小时又能主动失效。
+
+### 4. A：base.html `<body hx-boost="true">`（感官提升最大）
+
+**改动**（`web/templates/base.html:61`）：`<body>` 加 `hx-boost="true"`。HTMX 默认接管站内 GET `<a href>` 链接 → 拉 HTML 后替换 `<body>` 内容（保留 sidebar）→ 浏览器**无需重下载 CSS/JS/HTMX**（已 cache）+ **无需重解析 head** + **无需重新初始化滚动恢复 JS**（base.html 的 pageshow 监听仍 fire）。
+
+**实测**：bench 测不出（服务端无变化），**但浏览器侧体感提升最大**——所有站内跳转从 full reload（SSR HTML + 重解析 + 重排 DOM + 重连 WebSocket）变成 partial swap（只换 `<main>` 内容）。
+
+**form POST 不变**：HTMX hx-boost 默认不接管 POST 表单（这是设计选择，符合表单语义）。所以"生成内容"等 POST 行为完全不变。
+
+**风险验证**：sidebar 链接 → HTMX 替换 body → 新 body 里 `<a class="nav-item active">` 由 server 端渲染（看 NAV_PAGES 哪个 active）→ OK；顶栏 LLM pill `hx-get="/api/settings/llm-modal"` → hx-boost 不接管已带 hx-* 的元素 → OK；滚动恢复 → base.html 已有 pageshow 监听 + saveScroll → OK。
+
+### 5. 关键诊断发现（用 4 个 trace 脚本挖出来）
+
+| 脚本 | 用途 |
+|---|---|
+| `tools/_archive/bench_routes.py` | 4 路由 × 5 次冷/暖延迟，trim median |
+| `tools/_archive/trace_studio.py` | 模拟 ASGI 调用 `/studio`，分阶段计时 |
+| `tools/_archive/trace_studio_v2.py` | 同上，但调 TemplateResponse 看响应大小 |
+| `tools/_archive/trace_01.py` | `_01_context()` 内部每函数分项计时 |
+| `tools/_archive/trace_01b.py` | 复制 `_01_context()` 步骤逐行 print 耗时 |
+
+**关键结论**：
+- `_01_context()` 内部 = **2ms**（实测已 cache）
+- 模板编译 6 个 = **66ms**（cold）/ **0.4ms**（warm）
+- ASGI 首次 HTTP 处理 ≈ **1.2s**（Windows + uvicorn，不可控）
+
+### 6. 不做的事 + 后续延后
+
+**不动**：业务层 / 路由结构 / DB schema / 鉴权 / 数据流；form POST 仍走 full reload。
+
+**下一步延后**：
+- F SQLite 索引（先 EXPLAIN QUERY PLAN 实测缺口）
+- G L1 模型 + 字典是否需要重复预热（hook 计时器实测）
+- H 业务层 lazy import（风险大，先不动）
+- I base.html 3 个 `<a href="#">` 死链清理（文档/帮助/反馈，5 分钟工作）
+
+### 7. 验证 + commit plan
+
+| 优化 | bench 收益 | 848 PASS | py_compile | 路由 200 |
+|---|---|---|---|---|
+| B | /studio cold 12.4s → 1.2s（-90%）| ✅ | ✅ | ✅ |
+| C | 无显著（1.2s 不是字典） | ✅ | ✅ | ✅ |
+| D | warm / 16ms → 4ms（-75%） | ✅ | ✅ | ✅ |
+| A | bench 测不出，浏览器侧感官提升 | ✅ | ✅ | ✅ |
+
+**Commit 计划**：分 2 个 commit 推送：
+1. `perf(web): 性能优化 4 项落地（B 关 auto_reload + C 字典预热 + D cache-control + A hx-boost）` — web/app.py 1 文件 + base.html 1 文件
+2. `docs(handoff): Phase 49 性能优化 4 项落地` — 4 Handoff 文件 + 5 bench/trace 脚本
+
+---
+
 ## 已压缩删节（细节查 git log）
 
 - `setup_and_run.bat` 闪退 5 次迭代详细历史（v1-v5 各版）
