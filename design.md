@@ -700,7 +700,7 @@ def test_design_md_no_inline_style():
        .l1-pill .l1-label .l1-value .l1-meta
        .model-select .dot .chev .avatar .settings-bar .settings-form .settings-label
        .info-card .code-wrap .code .line-no
-       .fb-section .fb-kpis
+       .fb-section .metric-row
 表格    .batch-wrap .batch-table
 Tabs    .ins-tab .ins-panel
 状态    .status

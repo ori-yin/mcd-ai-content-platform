@@ -8,7 +8,8 @@
   <div class="panel-heading">1 上传回流数据</div>
   <div class="card-desc">
     支持 CSV / Excel。必填列：task_signature + channel + reach_success + click_count。
-    兼容别名：签名 / 渠道 / 触达成功 / 点击人次。如缺 task_signature，按 channel + coupon + plan_type 自动兜底生成。
+    兼容别名：「签名 / 渠道 / 触达成功 / 点击人次」。
+    如缺 task_signature，按 channel + coupon + plan_type 自动兜底生成。
   </div>
 
   {% if error_msg %}
@@ -47,7 +48,7 @@
 <div class="panel-card fb-section">
   <div class="panel-heading">2 数据汇总</div>
 
-  <div class="fb-kpis">
+  <div class="metric-row metric-row-quad">
     <div class="metric-box"><div class="ml">总记录数</div><div class="mv">{{ summary.total }}</div></div>
     <div class="metric-box"><div class="ml">独立 signature</div><div class="mv">{{ summary.n_signature }}</div></div>
     <div class="metric-box"><div class="ml">总触达</div><div class="mv">{{ "{:,}".format(summary.total_reach) }}</div></div>
@@ -68,7 +69,7 @@
       <tbody>
       {% for r in agg_rows %}
       <tr>
-        <td><code>{{ r.signature }}</code></td>
+        <td>{{ r.signature }}</td>
         <td>{{ r.channel }}</td>
         <td>{{ r.n_records }}</td>
         <td>{{ "{:,}".format(r['触达']) }}</td>

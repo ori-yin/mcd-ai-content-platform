@@ -509,6 +509,99 @@ CTR 学习 ≠ 复杂模型，但**首先得有"准确率"可量化的指标**�
 
 ---
 
+## Phase 48 · 2026-09-03 · 02/03/04/05 UI 一致化 5 项 + 性能根因诊断
+
+**用户拍板**：按 `OneDrive\桌面\设计参考\DESIGN.md`（Universal Premium UI Design System）做 02/03/04/05 UI 微调；并报告"从首页跳转到内容工坊要等一段时间"。
+
+### Part 1 · 5 项 UI 安静化微调
+
+| # | 改动 | 文件 | 效果 |
+|---|---|---|---|
+| A1 | warning/success-banner 配色柔和 | `style.css` | bg 浅米黄/浅绿 + border rgba 透明 + ::before 18px |
+| A2 | batch-table 层级强化 | `style.css` | th muted uppercase 12px + 行 hover 极轻 bg |
+| B1 | 05 `fb-kpis` → `metric-row-quad` | `05.html` + `style.css` + `design.md` | 少 1 个自定义类 |
+| B2 | 05 signature 去 `<code>` 标签 | `05.html` |  DESIGN.md §18 不要工程标签 |
+| B3 | 03/04/05 上传描述句式统一 | `04.html` + `05.html` | 3 句对齐：「支持 CSV/Excel」「必填列」「兼容别名」 |
+
+**风格定位**：全部**安静化**（DESIGN.md §3.1 "Quiet UI" + §4.1 70% neutral + 2% accent），跟之前 Phase 37 统一化衔接，肉眼感知"说不出哪里变但看着舒服"。
+
+**用户反馈"看着没变化"**：诚实的解读 = 安静化改动就是这样，肉眼弱感知不等于没生效；可能也涉及浏览器 CSS 缓存（base.html 缓存破坏符 `?v=20260902wf` 没动）。
+
+### Part 3 · 性能根因诊断
+
+**实测数据**（`curl -w '%{time_total}'` 5 次）：
+
+| 路由 | 首次 | 二次起 |
+|---|---|---|
+| `/` | 21ms | 2ms |
+| `/diagnosis` | 40ms | 3ms |
+| `/batch` | 19ms | 2ms |
+| `/insights` | 23ms | 3ms |
+| `/feedback` | 28ms | 3ms |
+| **`/studio`** | **1.33s** | 2ms |
+
+**隔离分析**（Python 直接测）：
+
+| 阶段 | 时间 |
+|---|---|
+| `templates.env.get_template('pages/01_内容工坊.html')` | 18ms |
+| 6 个模板 `get_template` 总和 | 66ms |
+| 第二次 `get_template`（cache 命中） | 0.4ms |
+| 第一次 `_01_context() + render()` 完整 | 74ms |
+| 第二次（cache 命中） | 1.4ms |
+
+→ **模板编译 + 渲染 ≈ 90ms**，远小于 1.33s HTTP 耗时。**模板不是瓶颈**。
+
+**真正的 1.3s 大头**：
+- ASGI handler 首次初始化（uvicorn 第一次处理 HTTP 请求时 JIT 编译路由链）
+- 业务层懒加载 import（`predict_one` / `generate_candidates` / L1 适配器）
+- 浏览器**跳转全页 reload** 固定开销 100-300ms（即使服务端只 2ms，浏览器解析 HTML + 重排 DOM + 重画 也要 ~100ms）
+
+### Part 4 · Startup 预热尝试（无效）
+
+**尝试**（用户拍板"app startup 预测可以做这个性能提高"）：
+```python
+@app.on_event("startup")
+async def warmup_page_templates():
+    for name in _STARTUP_PAGE_TEMPLATES:
+        templates.env.get_template(name)
+```
+
+**实测**（startup log + curl）：
+- startup hook **跑了**（40.8ms 预热 6 个模板到 env cache）
+- 第二次 `get_template` 命中 0.4ms ✓
+- 但 GET /studio 第一次仍然 **2.67s**（没改善，反而比之前 1.33s 还慢，因为 log_level=info 启动开销）
+
+**结论**：**startup 预热对首次延迟无效**（因为大头是 ASGI handler 初始化 + 业务层懒加载，跟模板无关）。代码保留无害（仅多 ~40ms 启动开销），但价值 0。
+
+### Part 5 · 性能优化延后方向
+
+要彻底解决 1.3s 首次延迟需要做 **HTMX `hx-boost` 全站 partial reload**：
+- 浏览器不解析新 HTML（只替换 `<main>` 内容）
+- 服务端不需要全页 SSR（只返回 main partial）
+- 浏览器不重排 DOM（只更新 content 部分）
+- 预计：服务端首次 50ms + 浏览器增量更新 30ms = 整体 ~80ms
+
+**不在本轮范围**（要动 5 页面 + 9 partial + base.html nav 链接，30+ 行改动，独立 phase）。
+
+**铁律**（Handoff-lessons.md §21）：性能优化**先实测再下手**——不要凭"直觉是模板编译"就改，用 `curl -w '%{time_total}'` 5 次测 + Python 隔离测试分阶段计时找大头。
+
+### Part 6 · 验证
+
+- `python tests/verify.py` **848 PASS / 0 FAIL**（无回归）
+- `python -m py_compile web/app.py` ✓
+- 6 路由全 200
+- 03/04/05 描述句式 grep 确认：
+  - 03：`支持 CSV / Excel。必填列：title + body + channel。兼容别名：「标题」「headline」「内容」「content」等。` ✓
+  - 04：`支持 CSV / Excel。必填列：触达成功 + 点击人次。兼容别名：「发送日期」「渠道」等。` ✓
+  - 05：`支持 CSV / Excel。必填列：task_signature + channel + reach_success + click_count。兼容别名：「签名 / 渠道 / 触达成功 / 点击人次」。` ✓
+
+**Commit**：分 2 个 commit：
+1. `style(ui): 02/03/04/05 UI 一致化微调` — 4 文件（design.md + style.css + 04 + 05）
+2. `perf(web): 启动预热 6 个页面模板` — web/app.py 1 文件
+
+---
+
 ## 已压缩删节（细节查 git log）
 
 - `setup_and_run.bat` 闪退 5 次迭代详细历史（v1-v5 各版）

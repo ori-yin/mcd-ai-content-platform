@@ -618,8 +618,9 @@ tr:last-child td:last-child{border-bottom-right-radius:8px}
   width:100%;border-collapse:separate;border-spacing:0;
   font-size:12.5px;border:1px solid var(--line);border-radius:9px;overflow:hidden;
 }
-.batch-table th{background:#fafafa;padding:10px 12px;text-align:left;font-weight:600;color:#454c55;border-bottom:1px solid var(--line);position:sticky;top:0}
-.batch-table td{padding:9px 12px;border-bottom:1px solid var(--line);color:#555d66}
+.batch-table th{background:#fafafa;padding:10px 12px;text-align:left;font-weight:500;color:var(--muted);border-bottom:1px solid var(--line);position:sticky;top:0;font-size:11.5px;letter-spacing:.3px;text-transform:uppercase}
+.batch-table td{padding:9px 12px;border-bottom:1px solid var(--line);color:#555d66;transition:background .15s}
+.batch-table tbody tr:hover td{background:#fafbfc}
 .batch-table tr:last-child td{border-bottom:0}
 .batch-wrap{max-height:520px;overflow:auto;border-radius:9px}
 
@@ -644,7 +645,6 @@ tr:last-child td:last-child{border-bottom-right-radius:8px}
    05 真实结果回流
    ============================================================ */
 .fb-section{margin-top:18px}
-.fb-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
 
 /* ============================================================
    Common 按钮
@@ -706,7 +706,6 @@ tr:last-child td:last-child{border-bottom-right-radius:8px}
   .advanced-grid,.status-grid{grid-template-columns:1fr}
   .doc-illustration{opacity:.35}
   .metric-row{grid-template-columns:repeat(2,1fr)}
-  .fb-kpis{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:1100px){
   .main{padding:0 22px}
@@ -744,10 +743,10 @@ tr:last-child td:last-child{border-bottom-right-radius:8px}
 .modal-close{font-size:24px;color:var(--muted);cursor:pointer;line-height:1;padding:2px 8px;border-radius:6px;transition:all .15s}
 .modal-close:hover{color:var(--text);background:var(--soft)}
 .modal-body{padding:22px 24px 20px}
-.success-banner{display:flex;align-items:center;gap:10px;background:#f0faf3;border:1px solid #b8e6c4;color:#1d6a3e;padding:12px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;line-height:1.5}
-.success-banner::before{content:"✓";display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;background:var(--green);color:#fff;border-radius:50%;font-weight:700;font-size:13px;flex-shrink:0}
-.warning-banner{display:flex;align-items:flex-start;gap:10px;background:#fef7e8;border:1px solid #f0d68a;color:#7a5b0a;padding:12px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;line-height:1.6}
-.warning-banner::before{content:"!";display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;background:var(--yellow);color:var(--black);border-radius:50%;font-weight:700;font-size:13px;flex-shrink:0}
+.success-banner{display:flex;align-items:center;gap:10px;background:#f4f9f6;border:1px solid rgba(67,173,115,.16);color:#1d6a3e;padding:11px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;line-height:1.5}
+.success-banner::before{content:"✓";display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:rgba(67,173,115,.85);color:#fff;border-radius:50%;font-weight:700;font-size:11.5px;flex-shrink:0}
+.warning-banner{display:flex;align-items:flex-start;gap:10px;background:#fdf9ed;border:1px solid rgba(217,167,43,.18);color:#7a5b0a;padding:11px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;line-height:1.6}
+.warning-banner::before{content:"!";display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;background:rgba(217,167,43,.78);color:var(--black);border-radius:50%;font-weight:700;font-size:11.5px;flex-shrink:0}
 .warning-banner>div{flex:1;white-space:pre-line;font-family:'SF Mono',Consolas,monospace;font-size:12px}
 .modal-card label{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
 .modal-card label>span{font-size:12px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px}

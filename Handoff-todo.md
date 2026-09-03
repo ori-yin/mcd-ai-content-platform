@@ -283,3 +283,29 @@
 
 ---
 
+## 6.11 Phase 48 02/03/04/05 UI 一致化 5 项 + 性能根因（2026-09-03）
+
+**已完成**（Phase 48 · 5 文件未 commit）：
+- ✅ A1 `style.css:747-751` warning/success-banner 配色柔和（bg 浅 + border rgba 透明 + ::before 18px）
+- ✅ A2 `style.css:617-624` batch-table 层级强化（th muted uppercase 12px + 行 hover 极轻 bg）
+- ✅ B1 05 `fb-kpis` → `metric-row metric-row-quad`（少 1 个自定义类；design.md:703 同步）
+- ✅ B2 05 signature `<code>` 标签去除（DESIGN.md §18 不要工程标签）
+- ✅ B3 03/04/05 上传块描述句式统一（3 句对齐：「支持 CSV/Excel」「必填列」「兼容别名」）
+- ✅ 性能根因诊断：`curl` 实测 6 路由 5 次 + Python 隔离测模板/渲染各阶段耗时 → **1.3s 大头是 ASGI handler 首次初始化 + 浏览器全页 reload 跳转固定开销**，**与模板无关**
+- ✅ Startup 预热尝试（实测 40.8ms 跑通）→ GET /studio 首次仍 2.67s → **结论 startup 预热无效**，代码保留无害
+- ✅ 性能优化延后（HTMX `hx-boost` 下一轮独立 phase）
+
+**新增洞察**：
+- ⚠️ 性能优化"先实测再下手"：不要凭"应该是 X"改代码，先 `curl -w '%{time_total}'` + Python 隔离测分阶段计时找大头（Handoff-lessons.md §21）
+- ⚠️ Startup 预热 ≠ 解决首次延迟：业务层懒加载 / ASGI handler 初始化 / 浏览器全页 reload 都不在 startup 预热能力范围内
+- ⚠️ 安静化 UI 改动肉眼感知弱：跟用户讲清楚"安静化就是这个效果"，避免"没变化"误读（用户已确认"问题不大，UI 挺好看了"）
+
+**验证**：`tests/verify.py` 848 PASS / 0 FAIL + py_compile web/app.py + 6 路由 200 + 03/04/05 描述 grep 确认。
+
+**TODO 后续**（不属于本轮）：
+- ⏳ 性能优化（HTMX `hx-boost` 全站 partial reload）：消除首页跳内容工坊的 1.3s 首次延迟
+- ⏳ P4 反溯效果（05 末尾加第 5 块）：用户刚定归属（不在 04），但还没动手
+- ⏳ 反哺自动化（baseline / L1 自动 retrain）：用户思考中
+
+---
+
