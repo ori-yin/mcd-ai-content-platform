@@ -15,6 +15,7 @@ DataFrame 不直接放 dict（pandas 对象不能 JSON 化），
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import Any, Optional
 import pandas as pd
 
@@ -136,6 +137,38 @@ def get_df(ref_id: Optional[int]) -> Optional[pd.DataFrame]:
 def release_df(ref_id: Optional[int]) -> None:
     if ref_id is not None and ref_id in _df_registry:
         del _df_registry[ref_id]
+
+
+# ============================================================
+# 04 历史洞察 per-tab 缓存
+# ============================================================
+# 切 tab / 调 slider 不变 df 也不变参数时直接命中，避免每次 GET /insights 重算
+# rank_plans / word_frequency / emoji_frequency / daily_trend / owner_compare 等。
+# key: (df_ref, tab, frozenset(params.items())) — df_ref 变化自动失效（用户上传新文件）。
+# 单进程内最多 64 条 LRU，单条 ~10-50 KB → 上限 ~3 MB。
+_INSIGHTS_CACHE: "OrderedDict[tuple, Any]" = OrderedDict()
+_INSIGHTS_CACHE_MAX = 64
+
+
+def insights_cache_get(key: tuple) -> Optional[Any]:
+    """按 key 取缓存；LRU 命中时移到末尾。miss 返回 None。"""
+    if key in _INSIGHTS_CACHE:
+        _INSIGHTS_CACHE.move_to_end(key)
+        return _INSIGHTS_CACHE[key]
+    return None
+
+
+def insights_cache_put(key: tuple, value: Any) -> None:
+    """写缓存；超 max 时 LRU 淘汰最旧条目。"""
+    _INSIGHTS_CACHE[key] = value
+    _INSIGHTS_CACHE.move_to_end(key)
+    while len(_INSIGHTS_CACHE) > _INSIGHTS_CACHE_MAX:
+        _INSIGHTS_CACHE.popitem(last=False)
+
+
+def insights_cache_clear() -> None:
+    """上传新文件时调用，清掉所有旧 df 的缓存。"""
+    _INSIGHTS_CACHE.clear()
 
 
 # ============================================================

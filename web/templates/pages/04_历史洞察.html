@@ -49,38 +49,8 @@
 </div>
 
 <div class="panel-card panel-flat">
-  <div class="ins-tabs">
-    {% set tabs = [
-      ('rank', '高效 Plan 排行'),
-      ('wf',   '高低表现词'),
-      ('ef',   'Emoji 表现'),
-      ('tl',   '标题字数'),
-      ('sim',  '历史相似'),
-      ('daily','每日趋势'),
-      ('owner','Owner 对比'),
-    ] %}
-    {% for tid, tname in tabs %}
-    <a href="/insights?tab={{ tid }}" class="ins-tab {% if active_tab == tid %}active{% endif %}">{{ tname }}</a>
-    {% endfor %}
-  </div>
-
-  <div class="ins-panel active">
-    {% if active_tab == 'rank' %}
-      {% include "partials/04_rank.html" %}
-    {% elif active_tab == 'wf' %}
-      {% include "partials/04_word_freq.html" %}
-    {% elif active_tab == 'ef' %}
-      {% include "partials/04_table.html" %}
-    {% elif active_tab == 'tl' %}
-      {% include "partials/04_title_len.html" %}
-    {% elif active_tab == 'sim' %}
-      {% include "partials/04_similar.html" %}
-    {% elif active_tab == 'daily' %}
-      {% include "partials/04_daily_trend.html" %}
-    {% elif active_tab == 'owner' %}
-      {% include "partials/04_owner.html" %}
-    {% endif %}
-  </div>
+  {# Phase 51：HTMX 局部替换 fragment（包含 tabs nav + 内容）#}
+  {% include "_insights_tab_block.html" %}
 </div>
 
 {% endif %}

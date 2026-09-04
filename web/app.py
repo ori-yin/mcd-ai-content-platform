@@ -141,6 +141,7 @@ import web.state as state
 from web.state import (
     S_01, S_02, S_03, S_04, S_05,
     store_df, get_df, release_df, reset_01, form_change_signature,
+    insights_cache_get, insights_cache_put, insights_cache_clear,
 )
 
 
@@ -1045,68 +1046,76 @@ def _df_to_rows(df, columns: Optional[list] = None, limit: int = 5000) -> list[d
     return rows
 
 
-@app.get("/insights", response_class=HTMLResponse)
-async def page_04(request: Request) -> HTMLResponse:
-    ctx = base_context("insights")
-    df = get_df(S_04["df_ref"])
-
-    # 顶部数据概览（即使没数据也要渲染页面）
-    ins = {
-        "filename": S_04["filename"],
-        "n_rows": S_04["n_rows"],
-        "n_has_copy": S_04["n_has_copy"],
-        "n_channels": S_04["n_channels"],
-        "channels": S_04["channels"],
-        "date_range": S_04["date_range"],
+def _insights_default_params() -> dict:
+    """04 历史洞察所有 tab 的 query 参数默认值。"""
+    return {
+        "min_reach": "1000", "top_n": "30",
+        "wf_min_plans": "3", "wf_top_n": "50", "wf_compare_sel": "",
+        "ef_min_plans": "3", "ef_top_n": "20", "ef_compare_sel": "",
+        "rank_plan_sel": "",
+        "sim_title": "", "sim_body": "", "sim_topk": "5",
+        "by_channel": "",
+        "oc_min_plans": "3", "oc_min_reach": "1000",
     }
-    ctx["ins"] = ins
-    ctx["error_msg"] = S_04["error_msg"]
-    ctx["active_tab"] = request.query_params.get("tab", "rank")
-    ctx["params"] = {k: request.query_params.get(k, "") for k in (
-        "min_reach", "top_n",
-        "wf_min_plans", "wf_top_n", "wf_compare_sel",
-        "ef_min_plans", "ef_top_n", "ef_compare_sel",
-        "rank_plan_sel",
-        "sim_title", "sim_body", "sim_topk",
-        "by_channel",
-        "oc_min_plans", "oc_min_reach",
-    )}
-    # 默认值
-    ctx["params"].setdefault("min_reach", "1000")
-    ctx["params"].setdefault("top_n", "30")
-    ctx["params"].setdefault("wf_min_plans", "3")
-    ctx["params"].setdefault("wf_top_n", "50")
-    ctx["params"].setdefault("wf_compare_sel", "")
-    ctx["params"].setdefault("ef_min_plans", "3")
-    ctx["params"].setdefault("ef_top_n", "20")
-    ctx["params"].setdefault("ef_compare_sel", "")
-    ctx["params"].setdefault("rank_plan_sel", "")
-    ctx["params"].setdefault("sim_topk", "5")
-    ctx["params"].setdefault("oc_min_plans", "3")
-    ctx["params"].setdefault("oc_min_reach", "1000")
 
-    if df is None or df.empty:
-        return templates.TemplateResponse(
-            request, "pages/04_历史洞察.html", ctx
-        )
 
-    active_tab = ctx["active_tab"]
-    p = ctx["params"]
+def _build_insights_ctx(active_tab: str, params: dict) -> dict:
+    """拼装 /insights 页面顶层 ctx（ins 概览 + active_tab + params）。"""
+    return {
+        "ins": {
+            "filename": S_04["filename"],
+            "n_rows": S_04["n_rows"],
+            "n_has_copy": S_04["n_has_copy"],
+            "n_channels": S_04["n_channels"],
+            "channels": S_04["channels"],
+            "date_range": S_04["date_range"],
+        },
+        "error_msg": S_04["error_msg"],
+        "active_tab": active_tab,
+        "params": params,
+    }
 
-    # 按 tab 分发计算
+
+def _compute_insights_tab_context(df, active_tab: str, p: dict) -> dict:
+    """Phase 51：04 历史洞察 tab 计算 helper（带 per-tab LRU 缓存）。
+
+    page_04 + /api/insights/tab 共用。返回 dict 是 ctx 的字段增量，
+    调用方 update 到自己的 ctx 即可。
+
+    cache key = (df_ref, tab, frozenset(params.items()))，
+    df 变更（/api/insights/upload）时统一 clear。
+    """
+    def _insights_cached(tab: str, params: dict, compute_fn):
+        key = (S_04["df_ref"], tab, frozenset(params.items()))
+        hit = insights_cache_get(key)
+        if hit is not None:
+            return hit
+        val = compute_fn()
+        insights_cache_put(key, val)
+        return val
+
+    ctx: dict = {}
+
     if active_tab == "rank":
         min_reach = _safe_int(p["min_reach"], 1000)
         top_n = _safe_int(p["top_n"], 30)
-        out = rank_plans(df, min_reach=min_reach, top_n=top_n)
-        if not out.empty:
-            show = out.copy()
-            show["加权CTR%"] = show["加权CTR%"].apply(lambda v: round(float(v), 2))
-        else:
-            show = out
-        ctx["df_rows"] = _df_to_rows(show, columns=list(show.columns) if not show.empty else None)
-        ctx["columns"] = list(show.columns) if not show.empty else []
 
-        # 单 plan 详情（按 Plan ID 精确查询；input → result 一对，仿 wf）
+        def _compute_rank():
+            out = rank_plans(df, min_reach=min_reach, top_n=top_n)
+            if not out.empty:
+                show = out.copy()
+                show["加权CTR%"] = show["加权CTR%"].apply(lambda v: round(float(v), 2))
+            else:
+                show = out
+            return {
+                "df_rows": _df_to_rows(show, columns=list(show.columns) if not show.empty else None),
+                "columns": list(show.columns) if not show.empty else [],
+            }
+
+        cached = _insights_cached("rank", {"min_reach": min_reach, "top_n": top_n}, _compute_rank)
+        ctx["df_rows"] = cached["df_rows"]
+        ctx["columns"] = cached["columns"]
+
         sel = p["rank_plan_sel"].strip()
         ctx["plan_detail"] = None
         if sel:
@@ -1115,26 +1124,38 @@ async def page_04(request: Request) -> HTMLResponse:
     elif active_tab == "wf":
         min_plans = _safe_int(p["wf_min_plans"], 3)
         top_n = _safe_int(p["wf_top_n"], 50)
-        wf = word_frequency(df, min_plans=min_plans).head(top_n)
-        if wf.empty:
-            high = low = wf
-            ctx["high_rows"] = []
-            ctx["low_rows"] = []
-            ctx["high_cols"] = ctx["low_cols"] = []
-            ctx["wf_words"] = []
-        else:
+
+        def _compute_wf():
+            wf = word_frequency(df, min_plans=min_plans).head(top_n)
+            if wf.empty:
+                return {
+                    "high_rows": [], "low_rows": [],
+                    "high_cols": [], "low_cols": [],
+                    "wf_words": [],
+                }
             high = wf[wf["差值"] > 0].head(15)
             low = wf[wf["差值"] < 0].head(15)
-            # 数字列保留 4 位
             for sub in (high, low):
                 for col in sub.columns:
                     if sub[col].dtype.kind == "f":
                         sub[col] = sub[col].round(4)
-            ctx["high_rows"] = _df_to_rows(high)
-            ctx["high_cols"] = list(high.columns)
-            ctx["low_rows"] = _df_to_rows(low)
-            ctx["low_cols"] = list(low.columns)
-            ctx["wf_words"] = wf[wf.columns[0]].tolist()[:50]
+            return {
+                "high_rows": _df_to_rows(high),
+                "high_cols": list(high.columns),
+                "low_rows": _df_to_rows(low),
+                "low_cols": list(low.columns),
+                "wf_words": wf[wf.columns[0]].tolist()[:50],
+            }
+
+        cached = _insights_cached(
+            "wf", {"wf_min_plans": min_plans, "wf_top_n": top_n}, _compute_wf
+        )
+        ctx["high_rows"] = cached["high_rows"]
+        ctx["high_cols"] = cached["high_cols"]
+        ctx["low_rows"] = cached["low_rows"]
+        ctx["low_cols"] = cached["low_cols"]
+        ctx["wf_words"] = cached["wf_words"]
+
         ctx["compare"] = None
         sel = p["wf_compare_sel"]
         if sel:
@@ -1158,14 +1179,23 @@ async def page_04(request: Request) -> HTMLResponse:
     elif active_tab == "ef":
         min_plans = _safe_int(p["ef_min_plans"], 3)
         top_n = _safe_int(p["ef_top_n"], 20)
-        ef = emoji_frequency(df, min_plans=min_plans).head(top_n)
-        for col in ef.columns:
-            if ef[col].dtype.kind == "f":
-                ef[col] = ef[col].round(4)
-        ctx["df_rows"] = _df_to_rows(ef)
-        ctx["columns"] = list(ef.columns)
 
-        # emoji 对比（input → result 一对，仿 wf）；复用 compare_token(col=_emojis)
+        def _compute_ef():
+            ef = emoji_frequency(df, min_plans=min_plans).head(top_n)
+            for col in ef.columns:
+                if ef[col].dtype.kind == "f":
+                    ef[col] = ef[col].round(4)
+            return {
+                "df_rows": _df_to_rows(ef),
+                "columns": list(ef.columns),
+            }
+
+        cached = _insights_cached(
+            "ef", {"ef_min_plans": min_plans, "ef_top_n": top_n}, _compute_ef
+        )
+        ctx["df_rows"] = cached["df_rows"]
+        ctx["columns"] = cached["columns"]
+
         sel = p["ef_compare_sel"].strip()
         ctx["ef_compare"] = None
         if sel:
@@ -1189,7 +1219,9 @@ async def page_04(request: Request) -> HTMLResponse:
                 }
 
     elif active_tab == "tl":
-        if "标题" in df.columns and "Plan ID" in df.columns:
+        def _compute_tl():
+            if "标题" not in df.columns or "Plan ID" not in df.columns:
+                return {"df_rows": []}
             work = df.copy()
             work["_title_len"] = work["标题"].astype(str).str.len()
             bins = [-1, 0, 5, 10, 15, 20, 1000]
@@ -1210,15 +1242,19 @@ async def page_04(request: Request) -> HTMLResponse:
                     "点击": click,
                     "加权CTR%": weighted_ctr(click, reach),
                 })
-            ctx["df_rows"] = rows
-        else:
-            ctx["df_rows"] = []
+            return {"df_rows": rows}
+
+        cached = _insights_cached("tl", {}, _compute_tl)
+        ctx["df_rows"] = cached["df_rows"]
 
     elif active_tab == "sim":
         q_title = p.get("sim_title", "")
         q_body = p.get("sim_body", "")
         top_k = _safe_int(p["sim_topk"], 5)
-        if q_title or q_body:
+
+        def _compute_sim():
+            if not q_title and not q_body:
+                return {"df_rows": [], "columns": []}
             sim = find_similar_plans(df, q_title, q_body, top_k=top_k)
             if sim is not None and not sim.empty:
                 show_cols = [c for c in ("plan_id", "plan_name", "channel", "ctr", "similarity")
@@ -1226,49 +1262,117 @@ async def page_04(request: Request) -> HTMLResponse:
                 for col in sim.columns:
                     if sim[col].dtype.kind == "f":
                         sim[col] = sim[col].round(4)
-                ctx["df_rows"] = _df_to_rows(sim, columns=show_cols)
-                ctx["columns"] = show_cols
-            else:
-                ctx["df_rows"] = []
-                ctx["columns"] = []
-        else:
-            ctx["df_rows"] = []
-            ctx["columns"] = []
+                return {
+                    "df_rows": _df_to_rows(sim, columns=show_cols),
+                    "columns": show_cols,
+                }
+            return {"df_rows": [], "columns": []}
+
+        cached = _insights_cached(
+            "sim",
+            {"sim_title": q_title, "sim_body": q_body, "sim_topk": top_k},
+            _compute_sim,
+        )
+        ctx["df_rows"] = cached["df_rows"]
+        ctx["columns"] = cached["columns"]
 
     elif active_tab == "daily":
-        summary = daily_summary(df) or {}
-        ctx["summary"] = summary
         by_channel = bool(p.get("by_channel"))
-        out = daily_aggregate(df, channel_col="渠道" if by_channel else None)
-        if not out.empty:
-            for col in out.columns:
-                if out[col].dtype.kind == "f":
-                    out[col] = out[col].round(4)
-            show_cols = [c for c in (
-                "date", "channel", "n_records", "触达成功", "点击", "加权CTR%", "周环比%",
-            ) if c in out.columns]
-            ctx["df_rows"] = _df_to_rows(out, columns=show_cols)
-            ctx["columns"] = show_cols
-        else:
-            ctx["df_rows"] = []
-            ctx["columns"] = []
+
+        def _compute_daily():
+            summary = daily_summary(df) or {}
+            out = daily_aggregate(df, channel_col="渠道" if by_channel else None)
+            if not out.empty:
+                for col in out.columns:
+                    if out[col].dtype.kind == "f":
+                        out[col] = out[col].round(4)
+                show_cols = [c for c in (
+                    "date", "channel", "n_records", "触达成功", "点击", "加权CTR%", "周环比%",
+                ) if c in out.columns]
+                return {
+                    "summary": summary,
+                    "df_rows": _df_to_rows(out, columns=show_cols),
+                    "columns": show_cols,
+                }
+            return {"summary": summary, "df_rows": [], "columns": []}
+
+        cached = _insights_cached("daily", {"by_channel": by_channel}, _compute_daily)
+        ctx["summary"] = cached["summary"]
+        ctx["df_rows"] = cached["df_rows"]
+        ctx["columns"] = cached["columns"]
 
     elif active_tab == "owner":
         min_plans = _safe_int(p["oc_min_plans"], 3)
         min_reach = _safe_int(p["oc_min_reach"], 1000)
-        out = owner_compare(df, min_plans=min_plans, min_reach=min_reach)
-        if not out.empty:
-            for col in out.columns:
-                if out[col].dtype.kind == "f":
-                    out[col] = out[col].round(4)
-            ctx["df_rows"] = _df_to_rows(out)
-            ctx["columns"] = list(out.columns)
-        else:
-            ctx["df_rows"] = []
-            ctx["columns"] = []
+
+        def _compute_owner():
+            out = owner_compare(df, min_plans=min_plans, min_reach=min_reach)
+            if not out.empty:
+                for col in out.columns:
+                    if out[col].dtype.kind == "f":
+                        out[col] = out[col].round(4)
+                return {
+                    "df_rows": _df_to_rows(out),
+                    "columns": list(out.columns),
+                }
+            return {"df_rows": [], "columns": []}
+
+        cached = _insights_cached(
+            "owner",
+            {"oc_min_plans": min_plans, "oc_min_reach": min_reach},
+            _compute_owner,
+        )
+        ctx["df_rows"] = cached["df_rows"]
+        ctx["columns"] = cached["columns"]
+
+    else:
+        # 未知 tab：兜底空
+        ctx["df_rows"] = []
+
+    return ctx
+
+
+@app.get("/insights", response_class=HTMLResponse)
+async def page_04(request: Request) -> HTMLResponse:
+    ctx = base_context("insights")
+    df = get_df(S_04["df_ref"])
+
+    params = _insights_default_params()
+    for k in list(params.keys()):
+        v = request.query_params.get(k, "")
+        if v:
+            params[k] = v
+    active_tab = request.query_params.get("tab", "rank")
+
+    ctx.update(_build_insights_ctx(active_tab, params))
+
+    if df is not None and not df.empty:
+        ctx.update(_compute_insights_tab_context(df, active_tab, params))
 
     return templates.TemplateResponse(
         request, "pages/04_历史洞察.html", ctx
+    )
+
+
+# Phase 51：HTMX tab 局部替换端点（/api/insights/tab?tab=X）
+# 返回 #ins-tab-block 片段，避免全页 reload + 滚到顶。
+# tab 链接 + 各 tab filter form 都用 hx-get 走这个端点。
+@app.get("/api/insights/tab", response_class=HTMLResponse)
+async def api_04_tab(request: Request) -> HTMLResponse:
+    df = get_df(S_04["df_ref"])
+    params = _insights_default_params()
+    for k in list(params.keys()):
+        v = request.query_params.get(k, "")
+        if v:
+            params[k] = v
+    active_tab = request.query_params.get("tab", "rank")
+
+    ctx = _build_insights_ctx(active_tab, params)
+    if df is not None and not df.empty:
+        ctx.update(_compute_insights_tab_context(df, active_tab, params))
+
+    return templates.TemplateResponse(
+        request, "_insights_tab_block.html", ctx
     )
 
 
@@ -1296,6 +1400,9 @@ async def api_04_upload(request: Request, file: UploadFile = File(...)) -> Respo
     # 释放旧 df
     if S_04["df_ref"] is not None:
         release_df(S_04["df_ref"])
+
+    # 新 df 上线，旧 tab 缓存全部失效
+    insights_cache_clear()
 
     try:
         df = add_tokens(df)

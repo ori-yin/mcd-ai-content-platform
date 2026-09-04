@@ -265,7 +265,12 @@ def tokenize(text, stopwords: list, whitelist: list, banned: Optional[list] = No
 
 def add_tokens(df: pd.DataFrame, cols=("标题", "正文"), dict_path: Optional[str] = None,
                stop_path: Optional[str] = None) -> pd.DataFrame:
-    """给每行加 _tokens（词集合）、_emojis（emoji集合）、_len（标题+正文字数）。"""
+    """给每行加 _tokens（frozenset）/ _emojis（frozenset）/ _len（标题+正文字数）。
+
+    另加 `_tokens_joined` / `_emojis_joined`（"|token1|token2|" 形式），
+    供 compare_token / compare_tokens 走 str.contains 向量化查词（避免行 apply，48k+ 行提速 50-100x）。
+    注意 frozenset 迭代顺序不稳定，joined 列仅用于 contains 查询，不能作为稳定 key。
+    """
     stop = load_stopwords(stop_path)
     white = load_single_char_whitelist(dict_path)
     banned = set(banned_words(stop_path))
@@ -273,14 +278,18 @@ def add_tokens(df: pd.DataFrame, cols=("标题", "正文"), dict_path: Optional[
 
     def _row(r):
         txt = " ".join(str(r[c]) for c in have)
+        tokens = tokenize(txt, stop, white, banned)
+        emojis = extract_emojis(txt)
         return pd.Series({
-            "_tokens": frozenset(tokenize(txt, stop, white, banned)),
-            "_emojis": frozenset(extract_emojis(txt)),
+            "_tokens": frozenset(tokens),
+            "_tokens_joined": "|" + "|".join(tokens) + "|" if tokens else "",
+            "_emojis": frozenset(emojis),
+            "_emojis_joined": "|" + "|".join(emojis) + "|" if emojis else "",
             "_len": len(txt.replace(" ", "")),
         })
 
     df = df.copy()
-    df[["_tokens", "_emojis", "_len"]] = df.apply(_row, axis=1)
+    df[["_tokens", "_tokens_joined", "_emojis", "_emojis_joined", "_len"]] = df.apply(_row, axis=1)
     return df
 
 
@@ -348,13 +357,27 @@ def emoji_frequency(df: pd.DataFrame, plan_col: str = "Plan ID", min_plans: int 
 
 def compare_token(df: pd.DataFrame, token: str, col: str = "_tokens",
                   plan_col: str = "Plan ID") -> dict:
-    """某词/emoji 含 vs 不含 的 plan 加权 CTR + 样本量。df=None 时返回空结果。"""
+    """某词/emoji 含 vs 不含 的 plan 加权 CTR + 样本量。df=None 时返回空结果。
+
+    Phase 51：向量化 — 优先用 `_tokens_joined` / `_emojis_joined` 列走 str.contains，
+    比行级 df[col].apply(lambda s: token in s) 在 48k+ 行提速 50-100x。
+    老列 _tokens / _emojis 仍保留（其它模块可能用），缺失 joined 列时自动降级回 apply。
+    """
     if df is None or df.empty:
         return {"word": token, "含": {"n_records": 0, "n_plans": 0, "reach": 0, "click": 0, "ctr": 0.0},
                 "不含": {"n_records": 0, "n_plans": 0, "reach": 0, "click": 0, "ctr": 0.0}}
     if col not in df.columns:
         df = add_tokens(df)
-    mask = df[col].apply(lambda s: token in s)
+    joined_col = "_tokens_joined" if col == "_tokens" else (
+        "_emojis_joined" if col == "_emojis" else None
+    )
+    if joined_col and joined_col in df.columns:
+        # 向量化：f"|{token}|" 走 str.contains regex=False，| 分隔防部分匹配（"免费" 不会撞 "免费送"）
+        needle = f"|{token}|"
+        mask = df[joined_col].str.contains(needle, regex=False, na=False)
+    else:
+        # 老路径：行 apply（frozenset O(1) 查）
+        mask = df[col].apply(lambda s: token in s)
     has_plan = plan_col in df.columns
 
     def _block(sub):

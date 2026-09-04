@@ -18,11 +18,12 @@
 </div>
 {% endif %}
 
-<form method="get" action="/insights">
+<form method="get" hx-get="/api/insights/tab" hx-target="#ins-tab-block" hx-swap="outerHTML">
   <input type="hidden" name="tab" value="daily">
   <label class="checkbox-label">
     <input type="checkbox" name="by_channel" value="1" {% if params.by_channel %}checked{% endif %}
-           onchange="this.form.submit()">
+           hx-trigger="change" hx-get="/api/insights/tab" hx-target="#ins-tab-block" hx-swap="outerHTML"
+           hx-include="closest form">
     按渠道拆分
   </label>
 </form>

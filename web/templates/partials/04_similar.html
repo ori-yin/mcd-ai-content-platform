@@ -1,6 +1,6 @@
 {# partials/04_similar.html — Tab 5: 历史相似 #}
 
-<form method="get" action="/insights" class="form-grid form-grid-quad">
+<form method="get" hx-get="/api/insights/tab" hx-target="#ins-tab-block" hx-swap="outerHTML" class="form-grid form-grid-quad">
   <input type="hidden" name="tab" value="sim" />
   <div class="form-row">
     <label>查询标题</label>

@@ -1,6 +1,6 @@
 {# partials/04_owner.html — Tab 7: Owner 对比 #}
 
-<form method="get" action="/insights" class="form-grid form-grid-tri">
+<form method="get" hx-get="/api/insights/tab" hx-target="#ins-tab-block" hx-swap="outerHTML" class="form-grid form-grid-tri">
   <input type="hidden" name="tab" value="owner" />
   <div class="form-row">
     <label>最少 plan 数</label>

@@ -5,7 +5,7 @@
   - compare（dict，含 reach_with/reach_without/delta_pp/ctr_with/ctr_without/n_plans_with/n_plans_without/sel_word）
 #}
 
-<form method="get" action="/insights" class="form-grid form-grid-quad">
+<form method="get" hx-get="/api/insights/tab" hx-target="#ins-tab-block" hx-swap="outerHTML" class="form-grid form-grid-quad">
   <input type="hidden" name="tab" value="wf" />
   <div class="form-row">
     <label>最少 plan 数</label>

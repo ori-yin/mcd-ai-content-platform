@@ -5,7 +5,7 @@
   - params（dict: min_reach/top_n）
 #}
 
-<form method="get" action="/insights" class="form-grid form-grid-quad">
+<form method="get" hx-get="/api/insights/tab" hx-target="#ins-tab-block" hx-swap="outerHTML" class="form-grid form-grid-quad">
   <input type="hidden" name="tab" value="rank" />
   <div class="form-row">
     <label>最小触达过滤</label>

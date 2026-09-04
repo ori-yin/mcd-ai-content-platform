@@ -84,7 +84,11 @@ def rank_plans(
         plan_name = sub["Plan名称"].iloc[0] if "Plan名称" in sub.columns else ""
         channel = sub["渠道"].iloc[0] if "渠道" in sub.columns else ""
         owner = sub["owner"].iloc[0] if "owner" in sub.columns else ""
-        n_days = sub[date_col].dt.date.nunique() if has_date else 0
+        # n_days：CSV 上来 发送日期 常是字符串，.dt.date 会 AttributeError；这里容错降级
+        if has_date and pd.api.types.is_datetime64_any_dtype(sub[date_col]):
+            n_days = sub[date_col].dt.date.nunique()
+        else:
+            n_days = 0
         title_len_mean = round(sub["标题"].astype(str).str.len().mean(), 1) if has_title else 0.0
         body_len_mean = round(sub["正文"].astype(str).str.len().mean(), 1) if has_body else 0.0
         # 高效词命中数（依赖 _tokens 已加）
